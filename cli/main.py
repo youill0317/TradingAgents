@@ -40,7 +40,9 @@ from cli.utils import (
     select_llm_provider,
     select_research_depth,
     select_shallow_thinking_agent,
+    select_workflow,
 )
+from tradingagents.dataflows.market_scan import resolve_sectors
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.graph.analyst_execution import (
     AnalystWallTimeTracker,
@@ -48,6 +50,7 @@ from tradingagents.graph.analyst_execution import (
     get_initial_analyst_node,
     sync_analyst_tracker_from_chunk,
 )
+from tradingagents.graph.market_graph import MarketAnalysisGraph
 from tradingagents.graph.trading_graph import TradingAgentsGraph
 from tradingagents.reporting import write_report_tree
 
@@ -492,8 +495,36 @@ def update_display(layout, spinner_text=None, stats_handler=None, start_time=Non
     layout["footer"].update(Panel(stats_table, border_style="grey50"))
 
 
-def get_user_selections():
-    """Get all user selections before starting the analysis display."""
+def create_question_box(title, prompt, default=None):
+    """Render one boxed questionnaire step."""
+    box_content = f"[bold]{title}[/bold]\n"
+    box_content += f"[dim]{prompt}[/dim]"
+    if default:
+        box_content += f"\n[dim]Default: {default}[/dim]"
+    return Panel(box_content, border_style="blue", padding=(1, 2))
+
+
+def thinking_value_or_prompt(env_var, config_key, label, box_title, box_body, prompt_fn):
+    """Return the env-configured reasoning/thinking value, or prompt for it.
+
+    When ``env_var`` is set the interactive choice is skipped and the value
+    the env overlay placed on DEFAULT_CONFIG is used — mirroring the
+    env-precedence rule applied to the other selection steps.
+    """
+    if os.environ.get(env_var):
+        value = DEFAULT_CONFIG[config_key]
+        console.print(f"[green]✓ {label} from environment:[/green] {value}")
+        return value
+    console.print(create_question_box(box_title, box_body))
+    return prompt_fn()
+
+
+def _show_welcome(workflow_steps: str | None = None):
+    """Print the ASCII banner and announcements.
+
+    Extracted from ``get_user_selections`` so both workflows show it exactly
+    once, before the workflow choice rather than inside one branch of it.
+    """
     # Display ASCII art welcome message
     with open(Path(__file__).parent / "static" / "welcome.txt", encoding="utf-8") as f:
         welcome_ascii = f.read()
@@ -501,8 +532,9 @@ def get_user_selections():
     # Create welcome box content
     welcome_content = f"{welcome_ascii}\n"
     welcome_content += "[bold green]TradingAgents: Multi-Agents LLM Financial Trading Framework - CLI[/bold green]\n\n"
-    welcome_content += "[bold]Workflow Steps:[/bold]\n"
-    welcome_content += "I. Analyst Team → II. Research Team → III. Trader → IV. Risk Management → V. Portfolio Management\n\n"
+    if workflow_steps:
+        welcome_content += "[bold]Workflow Steps:[/bold]\n"
+        welcome_content += f"{workflow_steps}\n\n"
     welcome_content += (
         "[dim]Built by [Tauric Research](https://github.com/TauricResearch)[/dim]"
     )
@@ -523,105 +555,43 @@ def get_user_selections():
     announcements = fetch_announcements()
     display_announcements(console, announcements)
 
-    # Create a boxed questionnaire for each step
-    def create_question_box(title, prompt, default=None):
-        box_content = f"[bold]{title}[/bold]\n"
-        box_content += f"[dim]{prompt}[/dim]"
-        if default:
-            box_content += f"\n[dim]Default: {default}[/dim]"
-        return Panel(box_content, border_style="blue", padding=(1, 2))
 
-    def thinking_value_or_prompt(env_var, config_key, label, box_title, box_body, prompt_fn):
-        """Return the env-configured reasoning/thinking value, or prompt for it.
+TICKER_WORKFLOW_STEPS = (
+    "I. Analyst Team → II. Research Team → III. Trader → "
+    "IV. Risk Management → V. Portfolio Management"
+)
+MARKET_WORKFLOW_STEPS = "I. Macro Analyst → II. Sector Analyst → III. Market Strategist"
 
-        When ``env_var`` is set the interactive choice is skipped and the value
-        the env overlay placed on DEFAULT_CONFIG is used — mirroring the
-        env-precedence rule applied to the other selection steps.
-        """
-        if os.environ.get(env_var):
-            value = DEFAULT_CONFIG[config_key]
-            console.print(f"[green]✓ {label} from environment:[/green] {value}")
-            return value
-        console.print(create_question_box(box_title, box_body))
-        return prompt_fn()
 
-    # Step 1: Ticker symbol
-    console.print(
-        create_question_box(
-            "Step 1: Ticker Symbol",
-            "Enter the ticker, with exchange suffix when needed (e.g. SPY, 0700.HK, BTC-USD)",
-            "SPY",
-        )
-    )
-    selected_ticker = get_ticker()
-    asset_type = detect_asset_type(selected_ticker)
-    # Only announce when it's not the default stock path, to avoid printing
-    # "stock" on every run.
-    if asset_type.value != "stock":
-        console.print(
-            f"[green]Detected asset type:[/green] {asset_type.value}"
-        )
+def select_output_language_step(step: str) -> str:
+    """Ask for the report language, honouring TRADINGAGENTS_OUTPUT_LANGUAGE.
 
-    # Step 2: Analysis date
-    default_date = datetime.datetime.now().strftime("%Y-%m-%d")
-    console.print(
-        create_question_box(
-            "Step 2: Analysis Date",
-            "Enter the analysis date (YYYY-MM-DD)",
-            default_date,
-        )
-    )
-    analysis_date = get_analysis_date()
-
-    # Step 3: Output language (skipped when set via TRADINGAGENTS_OUTPUT_LANGUAGE)
+    Shared by both workflows; ``step`` is the label prefix so each numbers its
+    own steps.
+    """
     if os.environ.get("TRADINGAGENTS_OUTPUT_LANGUAGE"):
         output_language = DEFAULT_CONFIG["output_language"]
         console.print(
             f"[green]✓ Output language from environment:[/green] {output_language}"
         )
-    else:
-        console.print(
-            create_question_box(
-                "Step 3: Output Language",
-                "Select the language for analyst reports and final decision"
-            )
-        )
-        output_language = ask_output_language()
-
-    # Step 4: Select analysts
+        return output_language
     console.print(
         create_question_box(
-            "Step 4: Analysts Team", "Select your LLM analyst agents for the analysis"
+            f"{step}: Output Language",
+            "Select the language for analyst reports and final decision",
         )
     )
-    selected_analysts = select_analysts(asset_type)
-    console.print(
-        f"[green]Selected analysts:[/green] {', '.join(analyst.value for analyst in selected_analysts)}"
-    )
+    return ask_output_language()
 
-    # Step 5: Research depth (skipped when both round counts are set via env).
-    # Research depth maps to the debate + risk round counts; when both are
-    # supplied through TRADINGAGENTS_MAX_DEBATE_ROUNDS / _MAX_RISK_ROUNDS we keep
-    # the run non-interactive and honor the env values (#977).
-    depth_from_env = bool(os.environ.get("TRADINGAGENTS_MAX_DEBATE_ROUNDS")) and bool(
-        os.environ.get("TRADINGAGENTS_MAX_RISK_ROUNDS")
-    )
-    if depth_from_env:
-        selected_research_depth = DEFAULT_CONFIG["max_debate_rounds"]
-        console.print(
-            f"[green]✓ Research depth from environment:[/green] "
-            f"{DEFAULT_CONFIG['max_debate_rounds']} debate / "
-            f"{DEFAULT_CONFIG['max_risk_discuss_rounds']} risk rounds"
-        )
-    else:
-        console.print(
-            create_question_box(
-                "Step 5: Research Depth", "Select your research depth level"
-            )
-        )
-        selected_research_depth = select_research_depth()
 
-    # Step 6: LLM Provider (skipped when set via TRADINGAGENTS_LLM_PROVIDER).
+def select_llm_stack(provider_step: str, models_step: str, thinking_step: str) -> dict:
+    """Ask for provider, endpoint, models, and reasoning knobs.
+
+    Shared by the ticker and market workflows so both configure the LLM the same
+    way. The env-precedence rules here are load-bearing — duplicating them per
+    workflow would let the two drift apart silently.
+    """
+    # Provider step: LLM Provider (skipped when set via TRADINGAGENTS_LLM_PROVIDER).
     # The backend URL comes from TRADINGAGENTS_LLM_BACKEND_URL when set,
     # otherwise the provider's default endpoint — the same value the menu
     # would have picked.
@@ -638,7 +608,7 @@ def get_user_selections():
     else:
         console.print(
             create_question_box(
-                "Step 6: LLM Provider", "Select your LLM provider"
+                f"{provider_step}: LLM Provider", "Select your LLM provider"
             )
         )
         selected_llm_provider, backend_url = select_llm_provider()
@@ -674,7 +644,7 @@ def get_user_selections():
         # doesn't fail later at the first API call.
         ensure_api_key(selected_llm_provider)
 
-    # Step 7: Thinking agents (skipped when either model is set via environment)
+    # Models step: Thinking agents (skipped when either model is set via environment)
     if os.environ.get("TRADINGAGENTS_QUICK_THINK_LLM") or os.environ.get("TRADINGAGENTS_DEEP_THINK_LLM"):
         selected_shallow_thinker = DEFAULT_CONFIG["quick_think_llm"]
         selected_deep_thinker = DEFAULT_CONFIG["deep_think_llm"]
@@ -685,13 +655,13 @@ def get_user_selections():
     else:
         console.print(
             create_question_box(
-                "Step 7: Thinking Agents", "Select your thinking agents for analysis"
+                f"{models_step}: Thinking Agents", "Select your thinking agents for analysis"
             )
         )
         selected_shallow_thinker = select_shallow_thinking_agent(selected_llm_provider)
         selected_deep_thinker = select_deep_thinking_agent(selected_llm_provider)
 
-    # Step 8: Provider-specific reasoning/thinking configuration. Each knob is
+    # Thinking step: Provider-specific reasoning/thinking configuration. Each knob is
     # settable via its TRADINGAGENTS_* env var; when that var is set (or the
     # provider itself came from env) the prompt is skipped and the configured
     # value is used — same env-precedence rule as the steps above. None = each
@@ -708,28 +678,23 @@ def get_user_selections():
     elif provider_lower == "google":
         thinking_level = thinking_value_or_prompt(
             "TRADINGAGENTS_GOOGLE_THINKING_LEVEL", "google_thinking_level",
-            "Gemini thinking mode", "Step 8: Thinking Mode",
+            "Gemini thinking mode", f"{thinking_step}: Thinking Mode",
             "Configure Gemini thinking mode", ask_gemini_thinking_config,
         )
     elif provider_lower == "openai":
         reasoning_effort = thinking_value_or_prompt(
             "TRADINGAGENTS_OPENAI_REASONING_EFFORT", "openai_reasoning_effort",
-            "Reasoning effort", "Step 8: Reasoning Effort",
+            "Reasoning effort", f"{thinking_step}: Reasoning Effort",
             "Configure OpenAI reasoning effort level", ask_openai_reasoning_effort,
         )
     elif provider_lower == "anthropic":
         anthropic_effort = thinking_value_or_prompt(
             "TRADINGAGENTS_ANTHROPIC_EFFORT", "anthropic_effort",
-            "Claude effort", "Step 8: Effort Level",
+            "Claude effort", f"{thinking_step}: Effort Level",
             "Configure Claude effort level", ask_anthropic_effort,
         )
 
     return {
-        "ticker": selected_ticker,
-        "asset_type": asset_type.value,
-        "analysis_date": analysis_date,
-        "analysts": selected_analysts,
-        "research_depth": selected_research_depth,
         "llm_provider": selected_llm_provider.lower(),
         "backend_url": backend_url,
         "shallow_thinker": selected_shallow_thinker,
@@ -737,7 +702,87 @@ def get_user_selections():
         "google_thinking_level": thinking_level,
         "openai_reasoning_effort": reasoning_effort,
         "anthropic_effort": anthropic_effort,
+    }
+
+
+def get_user_selections(show_welcome: bool = True):
+    """Get all user selections before starting the analysis display."""
+    if show_welcome:
+        _show_welcome(TICKER_WORKFLOW_STEPS)
+
+    # Step 1: Ticker symbol
+    console.print(
+        create_question_box(
+            "Step 1: Ticker Symbol",
+            "Enter the ticker, with exchange suffix when needed (e.g. SPY, 0700.HK, BTC-USD)",
+            "SPY",
+        )
+    )
+    selected_ticker = get_ticker()
+    asset_type = detect_asset_type(selected_ticker)
+    # Only announce when it's not the default stock path, to avoid printing
+    # "stock" on every run.
+    if asset_type.value != "stock":
+        console.print(
+            f"[green]Detected asset type:[/green] {asset_type.value}"
+        )
+
+    # Step 2: Analysis date
+    default_date = datetime.datetime.now().strftime("%Y-%m-%d")
+    console.print(
+        create_question_box(
+            "Step 2: Analysis Date",
+            "Enter the analysis date (YYYY-MM-DD)",
+            default_date,
+        )
+    )
+    analysis_date = get_analysis_date()
+
+    output_language = select_output_language_step("Step 3")
+
+    # Step 4: Select analysts
+    console.print(
+        create_question_box(
+            "Step 4: Analysts Team", "Select your LLM analyst agents for the analysis"
+        )
+    )
+    selected_analysts = select_analysts(asset_type)
+    console.print(
+        f"[green]Selected analysts:[/green] {', '.join(analyst.value for analyst in selected_analysts)}"
+    )
+
+    # Step 5: Research depth (skipped when both round counts are set via env).
+    # Research depth maps to the debate + risk round counts; when both are
+    # supplied through TRADINGAGENTS_MAX_DEBATE_ROUNDS / _MAX_RISK_ROUNDS we keep
+    # the run non-interactive and honor the env values (#977).
+    depth_from_env = bool(os.environ.get("TRADINGAGENTS_MAX_DEBATE_ROUNDS")) and bool(
+        os.environ.get("TRADINGAGENTS_MAX_RISK_ROUNDS")
+    )
+    if depth_from_env:
+        selected_research_depth = DEFAULT_CONFIG["max_debate_rounds"]
+        console.print(
+            f"[green]✓ Research depth from environment:[/green] "
+            f"{DEFAULT_CONFIG['max_debate_rounds']} debate / "
+            f"{DEFAULT_CONFIG['max_risk_discuss_rounds']} risk rounds"
+        )
+    else:
+        console.print(
+            create_question_box(
+                "Step 5: Research Depth", "Select your research depth level"
+            )
+        )
+        selected_research_depth = select_research_depth()
+
+    llm = select_llm_stack("Step 6", "Step 7", "Step 8")
+
+    return {
+        "ticker": selected_ticker,
+        "asset_type": asset_type.value,
+        "analysis_date": analysis_date,
+        "analysts": selected_analysts,
+        "research_depth": selected_research_depth,
         "output_language": output_language,
+        **llm,
     }
 
 
@@ -971,6 +1016,36 @@ def format_tool_args(args, max_length=80) -> str:
         return result[:max_length - 3] + "..."
     return result
 
+def _apply_llm_selections(config: dict, selections: dict) -> dict:
+    """Copy the shared LLM selections onto a config dict, in place.
+
+    Both workflows build their config from the same selections, so the mapping
+    lives here rather than being written out twice.
+    """
+    config["quick_think_llm"] = selections["shallow_thinker"]
+    config["deep_think_llm"] = selections["deep_thinker"]
+    config["backend_url"] = selections["backend_url"]
+    config["llm_provider"] = selections["llm_provider"].lower()
+    # Provider-specific thinking configuration
+    config["google_thinking_level"] = selections.get("google_thinking_level")
+    config["openai_reasoning_effort"] = selections.get("openai_reasoning_effort")
+    config["anthropic_effort"] = selections.get("anthropic_effort")
+    config["output_language"] = selections.get("output_language", "English")
+    return config
+
+
+def _build_market_config(selections: dict) -> dict:
+    """Assemble the market-scan config. No debate rounds, no checkpointing."""
+    return _apply_llm_selections(DEFAULT_CONFIG.copy(), selections)
+
+
+def get_market_selections() -> dict:
+    """Prompt for just what a market scan needs: language and the LLM stack."""
+    output_language = select_output_language_step("Step 1")
+    llm = select_llm_stack("Step 2", "Step 3", "Step 4")
+    return {"output_language": output_language, **llm}
+
+
 def _build_run_config(selections: dict, checkpoint: bool | None) -> dict:
     """Assemble the run config from interactive selections, honoring env precedence.
 
@@ -985,15 +1060,7 @@ def _build_run_config(selections: dict, checkpoint: bool | None) -> dict:
         config["max_debate_rounds"] = selections["research_depth"]
     if not os.environ.get("TRADINGAGENTS_MAX_RISK_ROUNDS"):
         config["max_risk_discuss_rounds"] = selections["research_depth"]
-    config["quick_think_llm"] = selections["shallow_thinker"]
-    config["deep_think_llm"] = selections["deep_thinker"]
-    config["backend_url"] = selections["backend_url"]
-    config["llm_provider"] = selections["llm_provider"].lower()
-    # Provider-specific thinking configuration
-    config["google_thinking_level"] = selections.get("google_thinking_level")
-    config["openai_reasoning_effort"] = selections.get("openai_reasoning_effort")
-    config["anthropic_effort"] = selections.get("anthropic_effort")
-    config["output_language"] = selections.get("output_language", "English")
+    _apply_llm_selections(config, selections)
     # --checkpoint/--no-checkpoint overrides only when explicitly given; omitting
     # the flag preserves TRADINGAGENTS_CHECKPOINT_ENABLED / the default (#976).
     if checkpoint is not None:
@@ -1001,9 +1068,9 @@ def _build_run_config(selections: dict, checkpoint: bool | None) -> dict:
     return config
 
 
-def run_analysis(checkpoint: bool | None = None):
+def run_analysis(checkpoint: bool | None = None, show_welcome: bool = True):
     # First get all user selections
-    selections = get_user_selections()
+    selections = get_user_selections(show_welcome=show_welcome)
 
     config = _build_run_config(selections, checkpoint)
 
@@ -1280,6 +1347,144 @@ def run_analysis(checkpoint: bool | None = None):
         display_complete_report(final_state)
 
 
+def run_market_scan(
+    date: str | None = None,
+    sectors: list[str] | None = None,
+    limit: int = 10,
+    save: bool = False,
+    show_welcome: bool = True,
+):
+    """Run the market-wide scan and render its report."""
+    if show_welcome:
+        _show_welcome(MARKET_WORKFLOW_STEPS)
+
+    if date is None:
+        date = datetime.datetime.now().strftime("%Y-%m-%d")
+
+    # Reuse the ticker workflow's provider/model prompts so both paths configure
+    # the LLM identically; only the ticker-specific questions are skipped.
+    selections = get_market_selections()
+    config = _build_market_config(selections)
+
+    stats_handler = StatsCallbackHandler()
+    graph = MarketAnalysisGraph(config=config, debug=False, callbacks=[stats_handler])
+
+    console.print(
+        f"\n[bold cyan]Scanning the market as of {date}...[/bold cyan]\n"
+        "[dim]Macro Analyst → Sector Analyst → Market Strategist. "
+        "This makes several LLM calls and can take a few minutes.[/dim]\n"
+    )
+
+    with console.status("[bold green]Running market scan...", spinner="dots"):
+        final_state = graph.scan(
+            trade_date=date, sectors=sectors, candidate_limit=limit
+        )
+
+    console.print("\n[bold cyan]Market Scan Complete![/bold cyan]\n")
+
+    for title, key in (
+        ("I. Macro Analyst", "macro_report"),
+        ("II. Sector Analyst", "sector_report"),
+        ("III. Market Strategist", "market_scan_report"),
+    ):
+        content = final_state.get(key)
+        if not content:
+            continue
+        console.print(Rule(title, style="cyan"))
+        console.print(Markdown(content))
+        console.print()
+
+    if save:
+        try:
+            report_file = graph.save_reports(final_state)
+            console.print(f"[green]✓ Report saved to:[/green] {report_file.parent.resolve()}")
+        except Exception as e:
+            console.print(f"[red]Error saving report: {e}[/red]")
+
+    console.print(
+        Panel(
+            "A shortlist is a starting point, not a decision. Run "
+            "[bold]tradingagents analyze[/bold] on a name to analyse it in depth.",
+            border_style="yellow",
+            title="Next step",
+        )
+    )
+    return final_state
+
+
+@app.callback(invoke_without_command=True)
+def main(ctx: typer.Context):
+    """TradingAgents CLI.
+
+    With no subcommand, ask which workflow to run. This callback is also what
+    keeps the bare ``tradingagents`` command working at all: Typer only treats a
+    lone command as the default, so adding a second one would otherwise turn the
+    documented no-argument invocation into "Missing command." (exit 2).
+    """
+    if ctx.invoked_subcommand is not None:
+        return
+
+    try:
+        _show_welcome()
+        workflow = select_workflow()
+        if workflow == "market":
+            run_market_scan(show_welcome=False)
+        else:
+            run_analysis(show_welcome=False)
+    except _NO_CONSOLE_ERRORS:
+        _report_no_console()
+        raise typer.Exit(code=1) from None
+
+
+def _report_no_console():
+    """Emit one actionable line when the terminal has no console buffer (#1138)."""
+    typer.echo(
+        "Error: no Windows console available. The interactive CLI needs a real "
+        "console buffer — run it from Windows Terminal, PowerShell, or cmd.exe "
+        "rather than a piped or embedded terminal.",
+        err=True,
+    )
+
+
+@app.command()
+def market(
+    date: str = typer.Option(
+        None, "--date", help="Date to scan for (YYYY-MM-DD). Defaults to today."
+    ),
+    sectors: str = typer.Option(
+        None,
+        "--sectors",
+        help="Comma-separated sectors to screen (e.g. 'Technology,Energy'). "
+        "Omit to let the Sector Analyst choose.",
+    ),
+    limit: int = typer.Option(
+        10, "--limit", help="Maximum number of shortlist candidates."
+    ),
+    save: bool = typer.Option(
+        False, "--save", help="Write the scan's markdown report tree to disk."
+    ),
+):
+    """Survey the whole market: regime, sector rotation, and a candidate shortlist."""
+    sector_list = (
+        [s.strip() for s in sectors.split(",") if s.strip()] if sectors else None
+    )
+    if sector_list:
+        # Reject a typo here rather than letting the Sector Analyst find out.
+        # The vendor does validate, but only once the model has already spent a
+        # turn calling the tool with the bad name. This also canonicalises case,
+        # so "technology" reaches the prompt as "Technology".
+        try:
+            sector_list = resolve_sectors(sector_list)
+        except ValueError as e:
+            raise typer.BadParameter(str(e), param_hint="--sectors") from None
+
+    try:
+        run_market_scan(date=date, sectors=sector_list, limit=limit, save=save)
+    except _NO_CONSOLE_ERRORS:
+        _report_no_console()
+        raise typer.Exit(code=1) from None
+
+
 @app.command()
 def analyze(
     checkpoint: bool | None = typer.Option(
@@ -1294,6 +1499,7 @@ def analyze(
         help="Delete all saved checkpoints before running (force fresh start).",
     ),
 ):
+    """Analyse a single ticker in depth: analysts, debate, risk review, decision."""
     if clear_checkpoints:
         from tradingagents.graph.checkpointer import clear_all_checkpoints
         n = clear_all_checkpoints(DEFAULT_CONFIG["data_cache_dir"])
@@ -1304,12 +1510,7 @@ def analyze(
         # A terminal with no console buffer cannot host the interactive prompts.
         # Emit one actionable line on stderr instead of a prompt_toolkit
         # traceback; plain text, since rich may not render here either (#1138).
-        typer.echo(
-            "Error: no Windows console available. The interactive CLI needs a real "
-            "console buffer — run it from Windows Terminal, PowerShell, or cmd.exe "
-            "rather than a piped or embedded terminal.",
-            err=True,
-        )
+        _report_no_console()
         raise typer.Exit(code=1) from None
 
 

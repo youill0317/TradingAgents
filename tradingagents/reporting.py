@@ -99,3 +99,39 @@ def write_report_tree(final_state: dict, ticker: str, save_path) -> Path:
     header = f"# Trading Analysis Report: {ticker}\n\nGenerated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
     (save_path / "complete_report.md").write_text(header + "\n\n".join(sections), encoding="utf-8")
     return save_path / "complete_report.md"
+
+
+def write_market_report_tree(final_state: dict, save_path) -> Path:
+    """Save a market scan's reports to ``save_path``; return the complete-report path.
+
+    A separate writer from ``write_report_tree`` rather than a generalisation of
+    it: the two workflows share no sections, so one function handling both would
+    be a pile of empty-key checks rather than shared logic.
+    """
+    save_path = Path(save_path)
+    save_path.mkdir(parents=True, exist_ok=True)
+
+    trade_date = final_state.get("trade_date", "")
+    sections = []
+
+    parts = [
+        ("macro_report", "macro.md", "I. Macro Analyst"),
+        ("sector_report", "sector.md", "II. Sector Analyst"),
+        ("market_scan_report", "strategist.md", "III. Market Strategist"),
+    ]
+    for key, filename, heading in parts:
+        content = final_state.get(key)
+        if not content:
+            continue
+        (save_path / filename).write_text(content, encoding="utf-8")
+        sections.append(f"## {heading}\n\n{content}")
+
+    complete = save_path / "complete_report.md"
+    header = (
+        f"# Market Scan — {trade_date}\n\n"
+        f"_Generated {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}._\n\n"
+        "This is a scan, not a recommendation: every candidate below still needs "
+        "its own analysis before it means anything.\n"
+    )
+    complete.write_text(header + "\n" + "\n\n".join(sections), encoding="utf-8")
+    return complete

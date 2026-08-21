@@ -339,3 +339,149 @@ def render_sentiment_report(report: SentimentReport) -> str:
         "",
         report.narrative,
     ])
+
+
+# ---------------------------------------------------------------------------
+# Market Strategist
+# ---------------------------------------------------------------------------
+
+
+class MarketRegime(str, Enum):
+    """Coarse read on what the market is doing, used by the Market Strategist.
+
+    Deliberately coarse: the regime label is a routing hint for the candidate
+    list, not a forecast.  The nuance lives in ``regime_evidence``.
+    """
+
+    RISK_ON = "Risk-On"
+    RISK_OFF = "Risk-Off"
+    ROTATION = "Rotation"
+    RANGE_BOUND = "Range-Bound"
+    STRESSED = "Stressed"
+
+
+class Conviction(str, Enum):
+    """How strongly a candidate is put forward."""
+
+    HIGH = "High"
+    MEDIUM = "Medium"
+    LOW = "Low"
+
+
+class MarketCandidate(BaseModel):
+    """One name on the shortlist, with the reason it is there."""
+
+    ticker: str = Field(
+        description=(
+            "The exchange ticker symbol exactly as it appeared in the screen "
+            "results (e.g. 'NVDA'). Never invent a symbol that was not returned "
+            "by a tool."
+        ),
+    )
+    sector: str = Field(
+        description=(
+            "The sector this name was screened under, copied verbatim from the "
+            "screen results."
+        ),
+    )
+    thesis: str = Field(
+        description=(
+            "Two to three sentences on why this name fits the current market "
+            "regime and its sector's position, citing specific figures from the "
+            "macro and sector reports."
+        ),
+    )
+    conviction: Conviction = Field(
+        description=(
+            "High only when the macro regime and the sector evidence point the "
+            "same way for this name; Low when the case rests on a single signal."
+        ),
+    )
+
+    @field_validator("ticker", mode="before")
+    @classmethod
+    def _normalize_ticker(cls, v):
+        """Strip and upper-case the symbol so it can be matched against a report.
+
+        Normalise rather than validate, for the same reason
+        ``_coerce_optional_float`` coerces instead of erroring (#1058): a
+        raising validator fails the whole structured call and drops the report
+        to the free-text fallback, losing every other field with it. Whether the
+        symbol is *real* is checked in the Market Strategist node, where a bad
+        one costs one candidate instead of the report.
+        """
+        return v.strip().upper() if isinstance(v, str) else v
+
+
+class MarketScanReport(BaseModel):
+    """Structured output produced by the Market Strategist.
+
+    Unlike the per-ticker agents, this one answers "what should we look at?"
+    rather than "should we buy this?".  It deliberately carries no rating: a
+    shortlist entry is a prompt for further analysis, not a position call.
+    """
+
+    regime: MarketRegime = Field(
+        description="The single regime label that best fits the current market.",
+    )
+    regime_evidence: str = Field(
+        description=(
+            "Why that regime, anchored in specific numbers from the macro report "
+            "— policy rate, yield curve, inflation trend, VIX level, dollar. "
+            "Three to five sentences. Name the figures, not just their direction."
+        ),
+    )
+    sector_view: str = Field(
+        description=(
+            "Which sectors are leading and lagging, citing the trailing returns "
+            "and the spread versus SPY, and what that rotation implies about "
+            "where the market thinks it is heading. Three to five sentences."
+        ),
+    )
+    candidates: list[MarketCandidate] = Field(
+        description=(
+            "The shortlist, strongest first. Only names that actually appeared "
+            "in the screen results. Prefer a short, well-argued list over a long "
+            "one; return an empty list if the evidence supports no candidate."
+        ),
+    )
+
+
+def render_market_scan_report(report: MarketScanReport) -> str:
+    """Render a MarketScanReport to the markdown shape the CLI and report tree expect."""
+    parts = [
+        f"**Market Regime:** **{report.regime.value}**",
+        "",
+        "## Regime Evidence",
+        "",
+        report.regime_evidence,
+        "",
+        "## Sector View",
+        "",
+        report.sector_view,
+        "",
+        "## Candidates",
+        "",
+    ]
+
+    if not report.candidates:
+        parts.append("_No candidate met the bar this scan._")
+        return "\n".join(parts)
+
+    parts.extend([
+        "| # | Ticker | Sector | Conviction | Thesis |",
+        "| --- | --- | --- | --- | --- |",
+    ])
+    for i, c in enumerate(report.candidates, start=1):
+        # Pipes inside the thesis would break the table; escape them.
+        thesis = c.thesis.replace("|", "\\|").replace("\n", " ")
+        parts.append(
+            f"| {i} | {c.ticker} | {c.sector} | {c.conviction.value} | {thesis} |"
+        )
+
+    parts.extend([
+        "",
+        "_A shortlist entry is a prompt for further analysis, not a position "
+        "call. Run `tradingagents analyze` on a name before acting on it._",
+    ])
+    return "\n".join(parts)

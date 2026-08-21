@@ -18,6 +18,10 @@ from .errors import (
     VendorRateLimitError,
 )
 from .fred import get_macro_data as get_fred_macro_data
+from .market_scan import (
+    get_sector_performance as get_yfinance_sector_performance,
+    screen_equities as screen_yfinance_equities,
+)
 from .polymarket import get_prediction_markets as get_polymarket_prediction_markets
 from .y_finance import (
     get_balance_sheet as get_yfinance_balance_sheet,
@@ -73,6 +77,13 @@ TOOLS_CATEGORIES = {
         "description": "Market-implied probabilities for forward-looking events",
         "tools": [
             "get_prediction_markets",
+        ]
+    },
+    "market_scan": {
+        "description": "Market-wide sector rotation and equity screening",
+        "tools": [
+            "get_sector_performance",
+            "screen_equities",
         ]
     }
 }
@@ -140,6 +151,13 @@ VENDOR_METHODS = {
     # prediction_markets
     "get_prediction_markets": {
         "polymarket": get_polymarket_prediction_markets,
+    },
+    # market_scan
+    "get_sector_performance": {
+        "yfinance": get_yfinance_sector_performance,
+    },
+    "screen_equities": {
+        "yfinance": screen_yfinance_equities,
     },
 }
 
