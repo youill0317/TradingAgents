@@ -35,6 +35,7 @@ def test_registry_membership():
     ("minimax", "https://api.minimax.io/v1", MinimaxChatOpenAI, False),
     ("minimax-cn", "https://api.minimaxi.com/v1", MinimaxChatOpenAI, False),
     ("openrouter", "https://openrouter.ai/api/v1", NormalizedChatOpenAI, False),
+    ("llmgateway", "https://api.llmgateway.io/v1", NormalizedChatOpenAI, False),
     ("mistral", "https://api.mistral.ai/v1", NormalizedChatOpenAI, False),
     ("kimi", "https://api.moonshot.ai/v1", NormalizedChatOpenAI, False),
     ("groq", "https://api.groq.com/openai/v1", NormalizedChatOpenAI, False),
@@ -46,6 +47,16 @@ def test_registry_spec(provider, base_url, chat_class, responses):
     assert spec.base_url == base_url
     assert spec.chat_class is chat_class
     assert spec.use_responses_api is responses
+
+
+@pytest.mark.unit
+def test_llmgateway_client_uses_registered_config(monkeypatch):
+    from tradingagents.llm_clients import create_llm_client
+
+    monkeypatch.setenv("LLM_GATEWAY_API_KEY", "dummy")
+    llm = create_llm_client(provider="llmgateway", model="claude-opus-5").get_llm()
+    assert type(llm).__name__ == "NormalizedChatOpenAI"
+    assert str(llm.openai_api_base) == "https://api.llmgateway.io/v1"
 
 
 @pytest.mark.unit
