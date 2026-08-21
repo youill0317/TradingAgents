@@ -144,8 +144,17 @@ export ZHIPU_CN_API_KEY=...        # GLM via BigModel (China, open.bigmodel.cn)
 export MINIMAX_API_KEY=...         # MiniMax — Global (api.minimax.io)
 export MINIMAX_CN_API_KEY=...      # MiniMax — China (api.minimaxi.com)
 export OPENROUTER_API_KEY=...      # OpenRouter
+export LLM_GATEWAY_API_KEY=...     # LLM Gateway (DevPass or pay-as-you-go)
 export ALPHA_VANTAGE_API_KEY=...   # Alpha Vantage
 ```
+
+For LLM Gateway, use `llm_provider: "llmgateway"` with a model ID from `GET /v1/models`, e.g. `claude-opus-5`.
+
+**Use the bare model ID, not a provider-prefixed one.** On DevPass — the flat-rate plan — a prefixed ID such as `openai/gpt-4o` is rejected with `403 Direct provider routing is not available on coding plans`; the gateway picks the provider itself. Prefixed IDs work only on pay-as-you-go accounts. DevPass is also capped at 120 RPM, and serves chat completions but not embeddings (which TradingAgents does not use anyway).
+
+Note the key name: this project reads `LLM_GATEWAY_API_KEY`, following the official SDK examples. The `llmgateway` CLI uses the different spelling `LLMGATEWAY_API_KEY`, so having one set does not mean the other is.
+
+There is deliberately no reasoning-effort setting for this provider: which parameter is valid depends on the model the gateway routes to, so offering one knob would silently do nothing for half the catalog.
 
 For Azure OpenAI, copy `.env.enterprise.example` to `.env.enterprise` and fill in your credentials.
 
@@ -197,7 +206,7 @@ An interface will appear showing results as they load, letting you track the age
 
 ### Implementation Details
 
-We built TradingAgents with LangGraph to ensure flexibility and modularity. The framework supports multiple LLM providers: OpenAI, Google, Anthropic, xAI, DeepSeek, Qwen (Alibaba DashScope, international and China endpoints), GLM (Zhipu), MiniMax (global + China), OpenRouter, Ollama for local models, and Azure OpenAI for enterprise.
+We built TradingAgents with LangGraph to ensure flexibility and modularity. The framework supports multiple LLM providers: OpenAI, Google, Anthropic, xAI, DeepSeek, Qwen (Alibaba DashScope, international and China endpoints), GLM (Zhipu), MiniMax (global + China), OpenRouter, LLM Gateway (including DevPass), Ollama for local models, and Azure OpenAI for enterprise.
 
 ### Python Usage
 
@@ -221,7 +230,7 @@ from tradingagents.graph.trading_graph import TradingAgentsGraph
 from tradingagents.default_config import DEFAULT_CONFIG
 
 config = DEFAULT_CONFIG.copy()
-config["llm_provider"] = "openai"        # e.g. openai, google, anthropic, deepseek, groq, ollama; openai_compatible covers any OpenAI-compatible endpoint (vLLM, LM Studio, llama.cpp, ...)
+config["llm_provider"] = "openai"        # e.g. openai, google, anthropic, deepseek, llmgateway, groq, ollama; openai_compatible covers any OpenAI-compatible endpoint (vLLM, LM Studio, llama.cpp, ...)
 config["deep_think_llm"] = "gpt-5.5"     # Model for complex reasoning
 config["quick_think_llm"] = "gpt-5.4-mini" # Model for quick tasks
 config["max_debate_rounds"] = 2

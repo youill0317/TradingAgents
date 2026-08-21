@@ -182,6 +182,7 @@ MODEL_OPTIONS: ProviderModeOptions = {
     # changing) models — offer "Custom model ID" rather than a list that goes
     # stale. The endpoint + key are wired by the provider; the user picks the
     # model their account has access to.
+    "llmgateway": _CUSTOM_ONLY,
     "mistral": _CUSTOM_ONLY,
     "kimi": _CUSTOM_ONLY,
     "groq": _CUSTOM_ONLY,

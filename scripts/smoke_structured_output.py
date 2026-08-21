@@ -37,6 +37,7 @@ PROVIDER_DEFAULTS = {
     "qwen": ("qwen3.7-plus", None),
     "glm": ("glm-5", None),
     "xai": ("grok-4.3", None),
+    "llmgateway": ("claude-opus-5", None),
 }
 
 
