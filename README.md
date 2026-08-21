@@ -167,7 +167,44 @@ Launch the interactive CLI:
 tradingagents          # installed command
 python -m cli.main     # alternative: run directly from source
 ```
-You will see a screen where you can select your desired tickers, analysis date, LLM provider, research depth, and more.
+You will first be asked which workflow to run:
+
+- **Ticker Analysis** — analyse one ticker in depth. You then select the ticker, analysis date, LLM provider, research depth, and more. This is the original workflow.
+- **Market Scan** — survey the whole market instead of a single name (see below).
+
+Either workflow can also be launched directly, skipping the menu, which is what you want for scripts and cron:
+
+```bash
+tradingagents analyze  # ticker analysis
+tradingagents market   # market scan
+```
+
+### Market Scan
+
+Ticker analysis answers "is this name a buy?". The market scan answers the question that comes before it — what is the market doing, and which names are worth analysing at all.
+
+```bash
+tradingagents market                                  # scan every sector, today
+tradingagents market --sectors Technology,Energy      # only these sectors
+tradingagents market --date 2026-08-19 --limit 5 --save
+```
+
+Three agents run in sequence:
+
+| Agent | Question | Data |
+| --- | --- | --- |
+| Macro Analyst | What regime are we in? | FRED (policy rate, yield curve, inflation, labour, VIX, dollar), global news, prediction markets |
+| Sector Analyst | Where is capital rotating? | Sector-ETF performance vs SPY, equity screener |
+| Market Strategist | Which names deserve a look? | The two reports above |
+
+The output is a regime call, a sector-rotation table, and a shortlist of candidates with the reasoning behind each. It needs no API key beyond your LLM provider's (`FRED_API_KEY` is optional and only enriches the macro report).
+
+**The shortlist is not a recommendation.** It carries no rating and makes no position call — each entry is a prompt to run `tradingagents analyze` on that ticker.
+
+Two limits worth knowing:
+
+- The screener and sector data come from Yahoo's **unofficial** endpoints. They can change or rate-limit without notice; when they do, the scan fails loudly rather than returning a thinner list that looks complete.
+- The screener has **no historical mode**. A scan for a past date returns today's market, so it only ever sees the survivors. Past-dated scans say so in the output; treat the scan as a present-day tool.
 
 ### Markets and tickers
 

@@ -164,6 +164,48 @@ def select_analysts(asset_type: AssetType = AssetType.STOCK) -> list[AnalystType
     return choices
 
 
+def select_workflow() -> str:
+    """Choose between the per-ticker analysis and the market-wide scan.
+
+    Shown when the CLI is launched with no subcommand. Returns "analyze" or
+    "market".
+    """
+    WORKFLOW_OPTIONS = [
+        (
+            "Ticker Analysis  - Analyse one ticker in depth "
+            "(analysts, debate, risk review, decision)",
+            "analyze",
+        ),
+        (
+            "Market Scan      - Survey the whole market "
+            "(regime, sector rotation, candidate shortlist)",
+            "market",
+        ),
+    ]
+
+    choice = questionary.select(
+        "Select Your [Workflow]:",
+        choices=[
+            questionary.Choice(display, value=value)
+            for display, value in WORKFLOW_OPTIONS
+        ],
+        instruction="\n- Use arrow keys to navigate\n- Press Enter to select",
+        style=questionary.Style(
+            [
+                ("selected", "fg:yellow noinherit"),
+                ("highlighted", "fg:yellow noinherit"),
+                ("pointer", "fg:yellow noinherit"),
+            ]
+        ),
+    ).ask()
+
+    if choice is None:
+        console.print("\n[red]No workflow selected. Exiting...[/red]")
+        exit(1)
+
+    return choice
+
+
 def select_research_depth() -> int:
     """Select research depth using an interactive selection."""
 

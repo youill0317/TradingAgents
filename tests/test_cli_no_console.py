@@ -37,6 +37,11 @@ def test_missing_console_prints_actionable_message(monkeypatch):
         raise _NoConsole("No Windows console found. Are you running cmd.exe?")
 
     monkeypatch.setattr(m, "run_analysis", _boom)
+    # The no-argument path now shows the banner and asks which workflow to run
+    # before dispatching, so stub both out; the behaviour under test is the
+    # console-failure handling, not the menu.
+    monkeypatch.setattr(m, "_show_welcome", lambda *a, **k: None)
+    monkeypatch.setattr(m, "select_workflow", lambda: "analyze")
 
     result = CliRunner().invoke(m.app, [])
     assert result.exit_code == 1
@@ -53,5 +58,7 @@ def test_unrelated_errors_still_propagate(monkeypatch):
         raise ValueError("unrelated")
 
     monkeypatch.setattr(m, "run_analysis", _boom)
+    monkeypatch.setattr(m, "_show_welcome", lambda *a, **k: None)
+    monkeypatch.setattr(m, "select_workflow", lambda: "analyze")
     result = CliRunner().invoke(m.app, [])
     assert isinstance(result.exception, ValueError)
