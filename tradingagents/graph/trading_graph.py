@@ -62,6 +62,47 @@ def _coerce_max_retries(value):
     return n
 
 
+def build_provider_kwargs(config: dict[str, Any]) -> dict[str, Any]:
+    """Build provider-specific kwargs for LLM client creation from a config dict.
+
+    A module function rather than a method because both graphs (per-ticker and
+    market scan) must construct their clients the same way; duplicating these
+    rules would let the two drift apart silently.
+    """
+    kwargs = {}
+    provider = config.get("llm_provider", "").lower()
+
+    if provider == "google":
+        thinking_level = config.get("google_thinking_level")
+        if thinking_level:
+            kwargs["thinking_level"] = thinking_level
+
+    elif provider == "openai":
+        reasoning_effort = config.get("openai_reasoning_effort")
+        if reasoning_effort:
+            kwargs["reasoning_effort"] = reasoning_effort
+
+    elif provider == "anthropic":
+        effort = config.get("anthropic_effort")
+        if effort:
+            kwargs["effort"] = effort
+
+    # Sampling temperature is cross-provider: forward it whenever set.
+    # float() here so a value coming from a TRADINGAGENTS_TEMPERATURE env
+    # string ("0.2") works the same as a programmatic float.
+    temperature = config.get("temperature")
+    if temperature is not None and temperature != "":
+        kwargs["temperature"] = float(temperature)
+
+    # SDK retry budget is cross-provider. Forward it only when explicitly set
+    # so each provider keeps its own default (usually 2) otherwise (#1091).
+    max_retries = config.get("llm_max_retries")
+    if max_retries is not None and max_retries != "":
+        kwargs["max_retries"] = _coerce_max_retries(max_retries)
+
+    return kwargs
+
+
 class TradingAgentsGraph:
     """Main class that orchestrates the trading agents framework."""
 
@@ -152,38 +193,7 @@ class TradingAgentsGraph:
 
     def _get_provider_kwargs(self) -> dict[str, Any]:
         """Get provider-specific kwargs for LLM client creation."""
-        kwargs = {}
-        provider = self.config.get("llm_provider", "").lower()
-
-        if provider == "google":
-            thinking_level = self.config.get("google_thinking_level")
-            if thinking_level:
-                kwargs["thinking_level"] = thinking_level
-
-        elif provider == "openai":
-            reasoning_effort = self.config.get("openai_reasoning_effort")
-            if reasoning_effort:
-                kwargs["reasoning_effort"] = reasoning_effort
-
-        elif provider == "anthropic":
-            effort = self.config.get("anthropic_effort")
-            if effort:
-                kwargs["effort"] = effort
-
-        # Sampling temperature is cross-provider: forward it whenever set.
-        # float() here so a value coming from a TRADINGAGENTS_TEMPERATURE env
-        # string ("0.2") works the same as a programmatic float.
-        temperature = self.config.get("temperature")
-        if temperature is not None and temperature != "":
-            kwargs["temperature"] = float(temperature)
-
-        # SDK retry budget is cross-provider. Forward it only when explicitly set
-        # so each provider keeps its own default (usually 2) otherwise (#1091).
-        max_retries = self.config.get("llm_max_retries")
-        if max_retries is not None and max_retries != "":
-            kwargs["max_retries"] = _coerce_max_retries(max_retries)
-
-        return kwargs
+        return build_provider_kwargs(self.config)
 
     def _create_tool_nodes(self) -> dict[str, ToolNode]:
         """Create tool nodes for different data sources using abstract methods."""
