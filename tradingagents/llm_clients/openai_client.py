@@ -9,7 +9,7 @@ from langchain_openai import ChatOpenAI
 
 from .api_key_env import get_api_key_env
 from .base_client import BaseLLMClient, normalize_content
-from .capabilities import get_capabilities
+from .capabilities import _bare_model_id, get_capabilities
 from .validators import validate_model
 
 
@@ -177,7 +177,7 @@ _OPENAI_REASONING_MODEL = re.compile(r"^(gpt-5|o[1-9])")
 
 def _supports_reasoning_effort(model: str) -> bool:
     """Whether the (native OpenAI) model accepts ``reasoning_effort``."""
-    return bool(_OPENAI_REASONING_MODEL.match(model.lower().strip()))
+    return bool(_OPENAI_REASONING_MODEL.match(_bare_model_id(model).lower().strip()))
 
 
 @dataclass(frozen=True)
