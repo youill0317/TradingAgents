@@ -5,6 +5,7 @@ from dataclasses import FrozenInstanceError
 import pytest
 
 from tradingagents.llm_clients.capabilities import (
+    _bare_model_id,
     get_capabilities,
 )
 
@@ -55,6 +56,26 @@ class TestPatternMatches:
     def test_future_minimax_m4_highspeed_inherits_thinking_quirks(self):
         caps = get_capabilities("MiniMax-M4-highspeed")
         assert caps.supports_tool_choice is False
+
+
+@pytest.mark.unit
+class TestGatewayModelIds:
+    @pytest.mark.parametrize(
+        "bare_model,gateway_model",
+        [
+            ("deepseek-reasoner", "deepseek/deepseek-reasoner"),
+            ("deepseek-v3.2", "alibaba/deepseek-v3.2:cn-beijing"),
+        ],
+    )
+    def test_vendor_prefix_and_region_pin_preserve_capabilities(
+        self, bare_model, gateway_model
+    ):
+        caps = get_capabilities(gateway_model)
+        assert caps == get_capabilities(bare_model)
+        assert caps.supports_tool_choice is False
+
+    def test_unprefixed_colon_is_preserved(self):
+        assert _bare_model_id("bedrock-model:0") == "bedrock-model:0"
 
 
 @pytest.mark.unit
