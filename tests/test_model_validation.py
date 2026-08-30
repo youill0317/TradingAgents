@@ -43,6 +43,28 @@ class ModelValidationTests(unittest.TestCase):
         self.assertIn("not-a-real-openai-model", str(caught[0].message))
         self.assertIn("openai", str(caught[0].message))
 
+    def test_llmgateway_offers_defaults_and_still_accepts_any_model(self):
+        """DevPass users get a shortlist; the gateway's other models still work."""
+        from tradingagents.llm_clients.model_catalog import get_model_options
+
+        for mode in ("quick", "deep"):
+            values = [value for _, value in get_model_options("llmgateway", mode)]
+            with self.subTest(mode=mode):
+                self.assertIn("gpt-5.6-luna", values)
+                self.assertNotIn("claude-opus-5", values)
+                # DevPass rejects a vendor-prefixed ID with 403, so the
+                # shortlist must stay bare.
+                self.assertTrue(all("/" not in v for v in values), values)
+                # Custom stays last so it doesn't push the defaults off-screen.
+                self.assertEqual(values[-1], "custom")
+
+        # A shortlist, not a whitelist: anything the account can route to works.
+        self.assertTrue(validate_model("llmgateway", "some-other-model"))
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            DummyLLMClient("llmgateway", "some-other-model").get_llm()
+        self.assertEqual(caught, [])
+
     def test_openrouter_and_ollama_accept_custom_models_without_warning(self):
         for provider in ("openrouter", "ollama"):
             client = DummyLLMClient(provider, "custom-model-name")

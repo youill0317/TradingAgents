@@ -8,6 +8,7 @@ to the decision log — a shortlist is not a decision.
 
 import logging
 import os
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -47,7 +48,7 @@ class MarketAnalysisGraph:
         """Initialize the market scan graph.
 
         Args:
-            debug: Whether to stream intermediate state
+            debug: Whether to pretty-print intermediate messages while streaming
             config: Configuration dictionary. If None, uses default config
             callbacks: Optional callback handlers (e.g. for token/tool stats)
         """
@@ -115,6 +116,7 @@ class MarketAnalysisGraph:
         trade_date: str | None = None,
         sectors: list[str] | None = None,
         candidate_limit: int = 10,
+        on_chunk: Callable[[dict], None] | None = None,
     ) -> dict:
         """Run the market scan and return the final state.
 
@@ -122,6 +124,7 @@ class MarketAnalysisGraph:
             trade_date: Date to scan for (yyyy-mm-dd). Defaults to today.
             sectors: Sectors to restrict screening to; None lets the analyst choose.
             candidate_limit: Maximum shortlist size.
+            on_chunk: Optional callback invoked for each streamed graph state.
 
         Returns:
             The final graph state, including ``market_scan_report``.
@@ -144,13 +147,15 @@ class MarketAnalysisGraph:
         if self.callbacks:
             graph_config["callbacks"] = self.callbacks
 
-        if self.debug:
+        if self.debug or on_chunk is not None:
             final_state = None
             for chunk in self.graph.stream(
                 initial_state, stream_mode="values", config=graph_config
             ):
-                if chunk.get("messages"):
+                if self.debug and chunk.get("messages"):
                     chunk["messages"][-1].pretty_print()
+                if on_chunk is not None:
+                    on_chunk(chunk)
                 final_state = chunk
         else:
             final_state = self.graph.invoke(initial_state, config=graph_config)
