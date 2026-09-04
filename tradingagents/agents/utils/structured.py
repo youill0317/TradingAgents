@@ -28,6 +28,10 @@ logger = logging.getLogger(__name__)
 
 T = TypeVar("T", bound=BaseModel)
 
+
+class StructuredOutputError(RuntimeError):
+    """Raised when a safety-critical structured result cannot be validated."""
+
 # Schema-only structured output binds exactly one tool (the schema itself), so a
 # model that reaches for a search tool emits an unknown tool call and the whole
 # structured attempt is discarded for a free-text retry. Agents on this path
@@ -87,3 +91,31 @@ def invoke_structured_or_freetext(
 
     response = plain_llm.invoke(prompt)
     return response.content
+
+
+def invoke_structured_required(
+    structured_llm: Any | None,
+    prompt: Any,
+    schema: type[T],
+    agent_name: str,
+) -> T:
+    """Return a validated structured result, never an unvalidated text fallback.
+
+    This is for outputs that become executable inputs to another stage (for
+    example, market-scan ticker candidates).  A prose fallback is useful for a
+    narrative report, but must not be allowed to bypass schema and grounding
+    checks on actionable fields.
+    """
+    if structured_llm is None:
+        raise StructuredOutputError(
+            f"{agent_name}: provider does not support required structured output"
+        )
+    try:
+        result = structured_llm.invoke(prompt)
+        if result is None:
+            raise ValueError("structured output returned no parsed result")
+        return schema.model_validate(result)
+    except Exception as exc:
+        raise StructuredOutputError(
+            f"{agent_name}: structured output could not be validated: {exc}"
+        ) from exc

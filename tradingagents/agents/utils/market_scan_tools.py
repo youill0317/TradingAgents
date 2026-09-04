@@ -44,10 +44,10 @@ def screen_equities(
     min_volume: Annotated[float, "Minimum daily share volume"] = 1e6,
     sort_field: Annotated[
         str,
-        "Screener field to rank by: 'percentchange' for today's movers, "
-        "'intradaymarketcap' for the largest names, 'dayvolume' for the "
-        "most active.",
-    ] = "percentchange",
+        "Screener field to rank by: 'intradaymarketcap' for the largest names, "
+        "'dayvolume' for the most active, or 'percentchange' for today's movers. "
+        "Prefer market cap unless the thesis specifically requires momentum.",
+    ] = "intradaymarketcap",
     limit: Annotated[int, "Maximum number of matches to return"] = 25,
     curr_date: Annotated[str | None, "Current date in yyyy-mm-dd format"] = None,
 ) -> str:
@@ -59,8 +59,8 @@ def screen_equities(
     its own.
 
     Note: the screener reflects the market as it stands today; it has no
-    historical mode. Results for a past date carry survivorship bias and are
-    labelled as such.
+    historical mode. A past date is rejected instead of mixing current rows
+    into a historical report.
 
     Args:
         sector (str): Sector name, or omit for a market-wide sweep

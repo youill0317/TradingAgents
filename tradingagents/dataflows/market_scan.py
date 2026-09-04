@@ -16,6 +16,7 @@ layer reports them rather than inventing data.
 """
 
 import logging
+import math
 from datetime import datetime
 
 import pandas as pd
@@ -60,6 +61,9 @@ US_EXCHANGES = ("NMS", "NYQ")
 
 # Yahoo caps screener pages; keep requests well under it.
 MAX_SCREEN_SIZE = 100
+ALLOWED_SORT_FIELDS = ("percentchange", "intradaymarketcap", "dayvolume")
+MIN_LOOKBACK_DAYS = 5
+MAX_LOOKBACK_DAYS = 252
 
 
 def _pct_return(symbol: str, curr_date: str, look_back_days: int) -> float | None:
@@ -106,6 +110,11 @@ def get_sector_performance(
         best-to-worst, including each sector's spread versus SPY.
     """
     datetime.strptime(curr_date, "%Y-%m-%d")  # validate early, fail loudly
+    if not MIN_LOOKBACK_DAYS <= int(look_back_days) <= MAX_LOOKBACK_DAYS:
+        raise ValueError(
+            f"look_back_days must be between {MIN_LOOKBACK_DAYS} and "
+            f"{MAX_LOOKBACK_DAYS}"
+        )
 
     bench = {sym: _pct_return(sym, curr_date, look_back_days) for sym in BENCHMARKS}
     spy = bench.get("SPY")
@@ -212,7 +221,7 @@ def screen_equities(
     min_market_cap: float = 1e10,
     min_volume: float = 1e6,
     min_price: float = 5.0,
-    sort_field: str = "percentchange",
+    sort_field: str = "intradaymarketcap",
     limit: int = 25,
     curr_date: str | None = None,
 ) -> str:
@@ -234,21 +243,36 @@ def screen_equities(
     Returns:
         A markdown report of the matches, ranked within each sector.
     """
+    if curr_date:
+        requested_date = datetime.strptime(curr_date, "%Y-%m-%d").date()
+        today = datetime.now().date()
+        if requested_date != today:
+            raise ValueError(
+                "UNSUPPORTED_HISTORICAL_UNIVERSE: Yahoo's screener is live-only; "
+                f"it cannot produce a point-in-time universe for {curr_date}."
+            )
+
     sectors = resolve_sectors(sector)
-    size = max(1, min(int(limit), MAX_SCREEN_SIZE))
+    if sort_field not in ALLOWED_SORT_FIELDS:
+        raise ValueError(
+            f"sort_field must be one of: {', '.join(ALLOWED_SORT_FIELDS)}"
+        )
+    for name, value in (
+        ("min_market_cap", min_market_cap),
+        ("min_volume", min_volume),
+        ("min_price", min_price),
+    ):
+        try:
+            number = float(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"{name} must be a finite non-negative number") from exc
+        if not math.isfinite(number) or number < 0:
+            raise ValueError(f"{name} must be a finite non-negative number")
+    size = int(limit)
+    if not 1 <= size <= MAX_SCREEN_SIZE:
+        raise ValueError(f"limit must be between 1 and {MAX_SCREEN_SIZE}")
 
     header = [f"## Equity screen ({sort_field}, top {size} per sector)"]
-
-    # The screener reports today's book — it has no historical mode. Scanning a
-    # past date therefore only ever sees today's survivors, so say so plainly
-    # rather than letting a backtest quietly inherit survivorship bias.
-    if curr_date and curr_date != datetime.now().strftime("%Y-%m-%d"):
-        header.append(
-            f"\n> **Warning — survivorship bias.** The screener returns the "
-            f"*current* market, not the market as of {curr_date}. Delisted and "
-            f"since-shrunk names are missing, and the figures below are today's. "
-            f"Treat this list as a present-day scan, not a historical one."
-        )
 
     header.append(
         f"\n_Filters: US listings ({'/'.join(US_EXCHANGES)}), market cap > "

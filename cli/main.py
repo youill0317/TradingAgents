@@ -1438,6 +1438,9 @@ def run_market_scan(
     limit: int = 10,
     save: bool = False,
     show_welcome: bool = True,
+    non_interactive: bool = False,
+    output: Path | None = None,
+    display_report: bool | None = None,
 ):
     """Run the market-wide scan and render its report."""
     if show_welcome:
@@ -1448,8 +1451,11 @@ def run_market_scan(
 
     # Reuse the ticker workflow's provider/model prompts so both paths configure
     # the LLM identically; only the ticker-specific questions are skipped.
-    selections = get_market_selections()
-    config = _build_market_config(selections)
+    if non_interactive:
+        config = DEFAULT_CONFIG.copy()
+    else:
+        selections = get_market_selections()
+        config = _build_market_config(selections)
 
     stats_handler = StatsCallbackHandler()
     graph = MarketAnalysisGraph(config=config, debug=False, callbacks=[stats_handler])
@@ -1622,12 +1628,17 @@ def run_market_scan(
 
     # --save keeps its old meaning (save without asking); without it the scan
     # asks the same save questions the ticker workflow asks.
-    if save or typer.prompt("Save report?", default="Y").strip().upper() in ("Y", "YES", ""):
+    should_save = save or non_interactive or output is not None
+    if not should_save:
+        should_save = typer.prompt("Save report?", default="Y").strip().upper() in (
+            "Y", "YES", "",
+        )
+    if should_save:
         stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         default_path = Path.cwd() / "reports" / f"market_scan_{stamp}"
-        save_path = Path(
+        save_path = output or Path(
             str(default_path)
-            if save
+            if save or non_interactive
             else typer.prompt(
                 "Save path (press Enter for default)", default=str(default_path)
             ).strip()
@@ -1639,10 +1650,13 @@ def run_market_scan(
         except Exception as e:
             console.print(f"[red]Error saving report: {e}[/red]")
 
-    display_choice = typer.prompt(
-        "\nDisplay full report on screen?", default="Y"
-    ).strip().upper()
-    if display_choice in ("Y", "YES", ""):
+    if display_report is None:
+        display_full = False if non_interactive else typer.prompt(
+            "\nDisplay full report on screen?", default="Y"
+        ).strip().upper() in ("Y", "YES", "")
+    else:
+        display_full = display_report
+    if display_full:
         display_report_sections(
             "Complete Market Scan Report",
             (
@@ -1732,8 +1746,23 @@ def market(
         help="Save the report without asking (skips the save prompt). Reports "
         "are written under results_dir as the scan runs either way.",
     ),
+    non_interactive: bool = typer.Option(
+        False,
+        "--non-interactive",
+        help="Use configured provider/model values and do not prompt.",
+    ),
+    output: Path | None = typer.Option(  # noqa: B008 - Typer declaration
+        None,
+        "--output",
+        help="Directory for the report tree; implies --save.",
+    ),
+    display_report: bool = typer.Option(
+        False,
+        "--display-report",
+        help="Display all report sections after completion.",
+    ),
 ):
-    """Survey the whole market: regime, sector rotation, and a candidate shortlist."""
+    """Scan liquid US large caps: regime, sector rotation, and candidates."""
     sector_list = (
         [s.strip() for s in sectors.split(",") if s.strip()] if sectors else None
     )
@@ -1748,7 +1777,15 @@ def market(
             raise typer.BadParameter(str(e), param_hint="--sectors") from None
 
     try:
-        run_market_scan(date=date, sectors=sector_list, limit=limit, save=save)
+        run_market_scan(
+            date=date,
+            sectors=sector_list,
+            limit=limit,
+            save=save,
+            non_interactive=non_interactive,
+            output=output,
+            display_report=display_report if non_interactive else None,
+        )
     except _NO_CONSOLE_ERRORS:
         _report_no_console()
         raise typer.Exit(code=1) from None

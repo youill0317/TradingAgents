@@ -19,12 +19,11 @@ from tradingagents.agents.utils.agent_utils import (
 def create_macro_analyst(llm):
     def macro_analyst_node(state):
         current_date = state["trade_date"]
+        historical = state.get("scan_mode") == "historical"
 
-        tools = [
-            get_macro_indicators,
-            get_global_news,
-            get_prediction_markets,
-        ]
+        tools = [get_macro_indicators]
+        if not historical:
+            tools.extend([get_global_news, get_prediction_markets])
 
         system_message = (
             "You are a macro strategist establishing the market regime. You are "
@@ -50,6 +49,11 @@ def create_macro_analyst(llm):
             "pretending to a clean story hides the risk.\n\n"
             "Append a markdown table summarising each indicator, its latest "
             "value, its direction, and what it signals."
+            + (
+                " This is a historical review. Do not use current news or current "
+                "prediction-market odds as evidence for the historical date."
+                if historical else ""
+            )
             + get_language_instruction()
         )
 
@@ -84,6 +88,7 @@ def create_macro_analyst(llm):
         return {
             "messages": [result],
             "macro_report": report,
+            "macro_tool_rounds": state.get("macro_tool_rounds", 0) + 1,
         }
 
     return macro_analyst_node

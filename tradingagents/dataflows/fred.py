@@ -183,6 +183,11 @@ def get_macro_data(
             "series_id": series_id,
             "observation_start": start_date,
             "observation_end": curr_date,
+            # Pin the vintage to what was publicly available on curr_date.
+            # observation_end alone filters dates but otherwise returns today's
+            # revised history, which is point-in-time leakage.
+            "realtime_start": curr_date,
+            "realtime_end": curr_date,
             "sort_order": "asc",
         },
     ).get("observations", [])
@@ -200,6 +205,7 @@ def get_macro_data(
         f"- Frequency: {frequency}"
         f"{f' ({seasonal})' if seasonal else ''}\n"
         f"- Window: {start_date} to {curr_date}\n"
+        f"- Vintage available as of: {curr_date}\n"
     )
 
     if not points:
