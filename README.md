@@ -186,11 +186,12 @@ Either workflow can also be launched directly, skipping the menu, which is what 
 ```bash
 tradingagents analyze  # ticker analysis
 tradingagents market   # market scan
+tradingagents market --non-interactive --output reports/latest
 ```
 
 ### Market Scan
 
-Ticker analysis answers "is this name a buy?". The market scan answers the question that comes before it — what is the market doing, and which names are worth analysing at all.
+Ticker analysis answers "is this name a buy?". The US large-cap scan answers the question that comes before it — what is the market doing, and which liquid NYSE/Nasdaq names are worth analysing at all.
 
 ```bash
 tradingagents market                                  # scan every sector, today
@@ -213,7 +214,7 @@ The output is a regime call, a sector-rotation table, and a shortlist of candida
 Two limits worth knowing:
 
 - The screener and sector data come from Yahoo's **unofficial** endpoints. They can change or rate-limit without notice; when they do, the scan fails loudly rather than returning a thinner list that looks complete.
-- The screener has **no historical mode**. A scan for a past date returns today's market, so it only ever sees the survivors. Past-dated scans say so in the output; treat the scan as a present-day tool.
+- The screener has **no historical mode**. Past-dated runs are explicitly marked `INCOMPLETE` and return no candidates instead of mixing today's survivors into a historical report.
 
 ### Markets and tickers
 

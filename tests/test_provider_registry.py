@@ -7,6 +7,7 @@ import pytest
 from tradingagents.llm_clients.openai_client import (
     OPENAI_COMPATIBLE_PROVIDERS,
     DeepSeekChatOpenAI,
+    GatewayChatOpenAI,
     MinimaxChatOpenAI,
     NormalizedChatOpenAI,
     is_openai_compatible,
@@ -35,7 +36,7 @@ def test_registry_membership():
     ("minimax", "https://api.minimax.io/v1", MinimaxChatOpenAI, False),
     ("minimax-cn", "https://api.minimaxi.com/v1", MinimaxChatOpenAI, False),
     ("openrouter", "https://openrouter.ai/api/v1", NormalizedChatOpenAI, False),
-    ("llmgateway", "https://api.llmgateway.io/v1", NormalizedChatOpenAI, False),
+    ("llmgateway", "https://api.llmgateway.io/v1", GatewayChatOpenAI, False),
     ("mistral", "https://api.mistral.ai/v1", NormalizedChatOpenAI, False),
     ("kimi", "https://api.moonshot.ai/v1", NormalizedChatOpenAI, False),
     ("groq", "https://api.groq.com/openai/v1", NormalizedChatOpenAI, False),
@@ -55,7 +56,7 @@ def test_llmgateway_client_uses_registered_config(monkeypatch):
 
     monkeypatch.setenv("LLM_GATEWAY_API_KEY", "dummy")
     llm = create_llm_client(provider="llmgateway", model="claude-opus-5").get_llm()
-    assert type(llm).__name__ == "NormalizedChatOpenAI"
+    assert type(llm).__name__ == "GatewayChatOpenAI"
     assert str(llm.openai_api_base) == "https://api.llmgateway.io/v1"
 
 

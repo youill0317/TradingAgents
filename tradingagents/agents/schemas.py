@@ -368,6 +368,21 @@ class Conviction(str, Enum):
     LOW = "Low"
 
 
+class ScanMode(str, Enum):
+    """Point-in-time contract for a market scan."""
+
+    LIVE = "live"
+    HISTORICAL = "historical"
+
+
+class ScanStatus(str, Enum):
+    """Whether the final shortlist passed its required validation gates."""
+
+    COMPLETE = "COMPLETE"
+    DEGRADED = "DEGRADED"
+    INCOMPLETE = "INCOMPLETE"
+
+
 class MarketCandidate(BaseModel):
     """One name on the shortlist, with the reason it is there."""
 
@@ -421,6 +436,14 @@ class MarketScanReport(BaseModel):
     shortlist entry is a prompt for further analysis, not a position call.
     """
 
+    status: ScanStatus = Field(
+        default=ScanStatus.COMPLETE,
+        description="Completeness of the validated scan output.",
+    )
+    warnings: list[str] = Field(
+        default_factory=list,
+        description="Machine-readable reasons for degraded or incomplete output.",
+    )
     regime: MarketRegime = Field(
         description="The single regime label that best fits the current market.",
     )
@@ -450,6 +473,9 @@ class MarketScanReport(BaseModel):
 def render_market_scan_report(report: MarketScanReport) -> str:
     """Render a MarketScanReport to the markdown shape the CLI and report tree expect."""
     parts = [
+        f"**Status:** **{report.status.value}**",
+        *(["", "## Warnings", "", *[f"- {w}" for w in report.warnings]] if report.warnings else []),
+        "",
         f"**Market Regime:** **{report.regime.value}**",
         "",
         "## Regime Evidence",

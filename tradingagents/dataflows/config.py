@@ -1,9 +1,12 @@
+from contextlib import contextmanager
+from contextvars import ContextVar
 from copy import deepcopy
 
 import tradingagents.default_config as default_config
 
 # Use default config but allow it to be overridden
 _config: dict | None = None
+_run_config: ContextVar[dict | None] = ContextVar("tradingagents_run_config", default=None)
 
 
 def initialize_config():
@@ -32,9 +35,22 @@ def set_config(config: dict):
 
 def get_config() -> dict:
     """Get the current configuration."""
+    scoped = _run_config.get()
+    if scoped is not None:
+        return deepcopy(scoped)
     if _config is None:
         initialize_config()
     return deepcopy(_config)
+
+
+@contextmanager
+def config_context(config: dict):
+    """Isolate one graph run's data configuration from concurrent runs."""
+    token = _run_config.set(deepcopy(config))
+    try:
+        yield
+    finally:
+        _run_config.reset(token)
 
 
 # Initialize with default config

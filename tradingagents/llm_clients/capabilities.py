@@ -89,9 +89,17 @@ _DEFAULT = ModelCapabilities(
     preferred_structured_method="function_calling",
 )
 
+_UNKNOWN_GATEWAY = ModelCapabilities(
+    supports_tool_choice=False,
+    supports_json_mode=False,
+    supports_json_schema=False,
+    preferred_structured_method="none",
+)
+
 
 # Exact-ID matches take precedence over pattern matches.
 _BY_ID: dict[str, ModelCapabilities] = {
+    "gpt-5.6-luna": _DEFAULT,
     "deepseek-chat": _DEEPSEEK_CHAT,
     "deepseek-reasoner": _DEEPSEEK_THINKING,
     "deepseek-v4-flash": _DEEPSEEK_THINKING,
@@ -127,7 +135,9 @@ def _bare_model_id(model_name: str) -> str:
     return model_name.rsplit("/", 1)[-1].split(":", 1)[0]
 
 
-def get_capabilities(model_name: str) -> ModelCapabilities:
+def get_capabilities(
+    model_name: str, *, conservative_unknown: bool = False
+) -> ModelCapabilities:
     """Resolve capabilities by exact ID, then pattern, then default."""
     if model_name in _BY_ID:
         return _BY_ID[model_name]
@@ -137,4 +147,4 @@ def get_capabilities(model_name: str) -> ModelCapabilities:
     for pattern, caps in _BY_PATTERN:
         if pattern.match(bare_model_name):
             return caps
-    return _DEFAULT
+    return _UNKNOWN_GATEWAY if conservative_unknown else _DEFAULT

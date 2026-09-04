@@ -68,6 +68,19 @@ class LocalCompatibleChatOpenAI(NormalizedChatOpenAI):
         return super().with_structured_output(schema, method=method, **kwargs)
 
 
+class GatewayChatOpenAI(NormalizedChatOpenAI):
+    """Fail closed for unknown gateway routes with unverified capabilities."""
+
+    def with_structured_output(self, schema, *, method=None, **kwargs):
+        caps = get_capabilities(self.model_name, conservative_unknown=True)
+        if caps.preferred_structured_method == "none":
+            raise NotImplementedError(
+                f"Structured output capability is unknown for gateway model "
+                f"{self.model_name!r}"
+            )
+        return super().with_structured_output(schema, method=method, **kwargs)
+
+
 def _input_to_messages(input_: Any) -> list:
     """Normalise a langchain LLM input to a list of message objects.
 
@@ -220,7 +233,9 @@ OPENAI_COMPATIBLE_PROVIDERS: dict[str, ProviderSpec] = {
     "minimax":    ProviderSpec(base_url="https://api.minimax.io/v1", chat_class=MinimaxChatOpenAI),
     "minimax-cn": ProviderSpec(base_url="https://api.minimaxi.com/v1", chat_class=MinimaxChatOpenAI),
     "openrouter": ProviderSpec(base_url="https://openrouter.ai/api/v1"),
-    "llmgateway": ProviderSpec(base_url="https://api.llmgateway.io/v1"),
+    "llmgateway": ProviderSpec(
+        base_url="https://api.llmgateway.io/v1", chat_class=GatewayChatOpenAI
+    ),
     "mistral":    ProviderSpec(base_url="https://api.mistral.ai/v1"),
     "kimi":       ProviderSpec(base_url="https://api.moonshot.ai/v1"),
     "groq":       ProviderSpec(base_url="https://api.groq.com/openai/v1"),

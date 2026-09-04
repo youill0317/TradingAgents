@@ -7,8 +7,8 @@ from live responses:
    that dominate any percent-change sort with illiquid noise.
 2. Yahoo leaves every screener row's ``sector`` empty, so the only way to
    attribute a hit to a sector is to have asked for that sector.
-3. The screener has no historical mode, so a past-dated scan is a present-day
-   snapshot and must say so.
+3. The screener has no historical mode, so a past-dated candidate scan must
+   fail closed instead of mixing today's survivors into a historical report.
 """
 from __future__ import annotations
 
@@ -89,10 +89,24 @@ class TestScreenEquities:
         # The error has to teach the caller the vocabulary, not just say "no".
         assert "Technology" in str(exc.value)
 
-    def test_past_date_is_labelled_as_a_present_day_snapshot(self, captured_screens):
-        result = ms.screen_equities(sector="Energy", curr_date="2024-05-10")
-        assert "survivorship bias" in result.lower()
-        assert "2024-05-10" in result
+    def test_past_date_fails_closed(self, captured_screens):
+        with pytest.raises(ValueError, match="UNSUPPORTED_HISTORICAL_UNIVERSE"):
+            ms.screen_equities(sector="Energy", curr_date="2024-05-10")
+        assert captured_screens == []
+
+    @pytest.mark.parametrize("limit", [0, -1, 101])
+    def test_rejects_out_of_range_limit(self, limit):
+        with pytest.raises(ValueError, match="limit must be between"):
+            ms.screen_equities(sector="Energy", limit=limit)
+
+    @pytest.mark.parametrize("value", [float("nan"), float("inf"), -1])
+    def test_rejects_invalid_numeric_filters(self, value):
+        with pytest.raises(ValueError, match="finite non-negative"):
+            ms.screen_equities(sector="Energy", min_volume=value)
+
+    def test_rejects_unknown_sort_field(self):
+        with pytest.raises(ValueError, match="sort_field"):
+            ms.screen_equities(sector="Energy", sort_field="marketCap;drop")
 
     def test_today_gets_no_warning(self, captured_screens, monkeypatch):
         today = ms.datetime.now().strftime("%Y-%m-%d")
@@ -223,7 +237,11 @@ class TestStrategistGrounding:
 
         report = self._report(["XOM", "FAKE1"])
         with caplog.at_level("WARNING"):
-            grounded = _ground_candidates(report, "| XOM | Exxon |", limit=10)
+            grounded = _ground_candidates(
+                report,
+                "## Equity screen\n### Energy\n| Symbol | Name |\n| --- | --- |\n| XOM | Exxon |",
+                limit=10,
+            )
 
         assert [c.ticker for c in grounded.candidates] == ["XOM"]
         # A dropped candidate must be visible, not silently vanish.
@@ -233,7 +251,9 @@ class TestStrategistGrounding:
         from tradingagents.agents.managers.market_strategist import _ground_candidates
 
         names = ["AAA", "BBB", "CCC", "DDD"]
-        grounded = _ground_candidates(self._report(names), " ".join(names), limit=2)
+        rows = "\n".join(f"| {name} | Name |" for name in names)
+        evidence = f"## Equity screen\n### Energy\n| Symbol | Name |\n| --- | --- |\n{rows}"
+        grounded = _ground_candidates(self._report(names), evidence, limit=2)
 
         assert len(grounded.candidates) == 2
 
@@ -241,7 +261,11 @@ class TestStrategistGrounding:
         """The schema normalises the symbol so grounding is not defeated by spacing."""
         from tradingagents.agents.managers.market_strategist import _ground_candidates
 
-        grounded = _ground_candidates(self._report([" xom "]), "| XOM |", limit=10)
+        grounded = _ground_candidates(
+            self._report([" xom "]),
+            "## Equity screen\n### Energy\n| Symbol | Name |\n| --- | --- |\n| XOM | Exxon |",
+            limit=10,
+        )
 
         assert [c.ticker for c in grounded.candidates] == ["XOM"]
 
@@ -253,6 +277,24 @@ class TestStrategistGrounding:
 
         assert grounded.candidates == []
         assert grounded.regime_evidence == "ev", "the rest of the report survives"
+
+    def test_uppercase_prose_tokens_are_not_tickers(self):
+        from tradingagents.agents.managers.market_strategist import _ground_candidates
+
+        grounded = _ground_candidates(
+            self._report(["GDP", "VIX", "ETF"]),
+            "GDP weakened while VIX rose; the ETF lagged.",
+            limit=10,
+        )
+        assert grounded.candidates == []
+
+    def test_real_ticker_with_wrong_sector_is_dropped(self):
+        from tradingagents.agents.managers.market_strategist import _ground_candidates
+
+        report = self._report(["XOM"])
+        report.candidates[0].sector = "Technology"
+        evidence = "## Equity screen\n### Energy\n| Symbol | Name |\n| --- | --- |\n| XOM | Exxon |"
+        assert _ground_candidates(report, evidence, limit=10).candidates == []
 
 
 class TestMarketGraph:
@@ -288,9 +330,10 @@ class TestMarketGraph:
                     ])
                 # Name the ticker the stub strategist returns: the real node
                 # drops any candidate the Sector Analyst never mentioned.
-                return AIMessage(
-                    content=f"{self.name} report | XOM |", tool_calls=[]
-                )
+                return AIMessage(content=(
+                    f"{self.name} report\n## Equity screen\n### Energy\n"
+                    "| Symbol | Name |\n| --- | --- |\n| XOM | Exxon |"
+                ), tool_calls=[])
 
             def bind_tools(self, tools):
                 return RunnableLambda(self._respond)
@@ -348,7 +391,10 @@ class TestMarketGraph:
 
         assert state["macro_report"], "macro report must reach the final state"
         assert state["sector_report"], "sector report must reach the final state"
-        assert "XOM" in state["market_scan_report"]
+        assert state["market_scan_report"], "strategist report must reach final state"
+        assert "XOM" not in state["market_scan_report"], (
+            "a ticker named only by the analyst is not raw screener evidence"
+        )
 
     def test_strategist_receives_both_upstream_reports(self):
         """The synthesis is worthless if either report silently fails to arrive."""
@@ -475,7 +521,18 @@ class TestMarketAnalysisGraphScan:
 
         state = graph.scan()
 
-        assert state["trade_date"] == ms.datetime.now().strftime("%Y-%m-%d")
+        from zoneinfo import ZoneInfo
+
+        assert state["trade_date"] == ms.datetime.now(
+            ZoneInfo("America/New_York")
+        ).strftime("%Y-%m-%d")
+
+    def test_scan_rejects_future_date_and_bad_candidate_limit(self, monkeypatch, tmp_path):
+        graph = self._patched_graph(monkeypatch, tmp_path)
+        with pytest.raises(ValueError, match="future"):
+            graph.scan(trade_date="2999-01-01")
+        with pytest.raises(ValueError, match="between 1 and 25"):
+            graph.scan(candidate_limit=0)
 
     def test_scan_rejects_a_malformed_date(self, monkeypatch, tmp_path):
         graph = self._patched_graph(monkeypatch, tmp_path)
