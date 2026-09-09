@@ -96,6 +96,8 @@ def _fetch_subreddit_rss(
     limit: int,
     timeout: float,
     _retry: bool = True,
+    *,
+    raise_on_error: bool = False,
 ) -> list[dict]:
     """Default path: parse the public Atom search feed for a subreddit.
 
@@ -117,13 +119,19 @@ def _fetch_subreddit_rss(
                 sub, ticker, wait,
             )
             time.sleep(wait)
-            return _fetch_subreddit_rss(ticker, sub, limit, timeout, _retry=False)
+            return _fetch_subreddit_rss(
+                ticker, sub, limit, timeout, _retry=False, raise_on_error=raise_on_error
+            )
         logger.warning("Reddit RSS fetch failed for r/%s · %s: %s", sub, ticker, exc)
+        if raise_on_error:
+            raise
         return []
     except (OSError, http.client.HTTPException, ET.ParseError) as exc:
         # OSError covers URLError/TimeoutError/connection resets; HTTPException
         # covers chunked-transfer errors (IncompleteRead/BadStatusLine, #1024).
         logger.warning("Reddit RSS fetch failed for r/%s · %s: %s", sub, ticker, exc)
+        if raise_on_error:
+            raise
         return []
 
     posts = []
@@ -131,7 +139,11 @@ def _fetch_subreddit_rss(
         title_el = entry.find("atom:title", _ATOM_NS)
         published_el = entry.find("atom:published", _ATOM_NS)
         content_el = entry.find("atom:content", _ATOM_NS)
+        link_el = entry.find("atom:link[@rel='alternate']", _ATOM_NS)
+        if link_el is None:
+            link_el = entry.find("atom:link", _ATOM_NS)
         posts.append({
+            "url": link_el.get("href", "") if link_el is not None else "",
             "title": (title_el.text if title_el is not None else "") or "",
             "score": None,
             "num_comments": None,
@@ -248,3 +260,12 @@ def fetch_reddit_posts(
             f"{', '.join(f'r/{s}' for s in subreddits)} in the past 7 days>"
         )
     return "\n\n".join(blocks)
+
+
+def collect_reddit_topic(query: str, subreddit: str, limit: int = 5) -> dict:
+    """Preserve topic evidence and distinguish failed requests from empty feeds."""
+    try:
+        posts = _fetch_subreddit_rss(query, subreddit, limit, 10.0, raise_on_error=True)
+        return {"status": "success" if posts else "empty", "posts": posts}
+    except (OSError, http.client.HTTPException, ET.ParseError) as exc:
+        return {"status": "failed", "posts": [], "error": type(exc).__name__}

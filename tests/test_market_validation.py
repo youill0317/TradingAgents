@@ -1,0 +1,104 @@
+"""Candidate grounding and deterministic scan completion."""
+from unittest.mock import Mock
+
+import pytest
+
+from tradingagents.agents.managers import market_strategist as strategist
+from tradingagents.agents.schemas import MarketScanReport
+from tradingagents.agents.utils.structured import StructuredOutputError
+
+SCREEN = "## Equity screen\n### Energy\n| Symbol | Name |\n| --- | --- |\n| XOM | Exxon |"
+
+
+def report(tickers=("XOM",), **overrides):
+    return MarketScanReport(**{
+        "regime": "Risk-On", "regime_evidence": "Global context", "sector_view": "Energy",
+        "candidates": [{"ticker": t, "sector": "Energy", "thesis": "Evidence",
+                        "conviction": "High"} for t in tickers], **overrides,
+    })
+
+
+def run(monkeypatch, answer=None, **overrides):
+    monkeypatch.setattr(strategist, "bind_structured", lambda *a: None)
+    invoke = Mock(return_value=answer or report())
+    monkeypatch.setattr(strategist, "invoke_structured_required", invoke)
+    state = {"macro_report": "Global conditions", "sector_report": "Energy report",
+             "screen_evidence": SCREEN, **overrides}
+    return strategist.create_market_strategist(None)(state), invoke
+
+
+def test_candidate_filters_record_every_drop():
+    result = strategist._ground_candidates(report(("XOM", "XOM", "FAKE")), SCREEN, 1)
+    assert [c.ticker for c in result.candidates] == ["XOM"]
+    assert result.warnings == ["CANDIDATE_DUPLICATE:XOM", "CANDIDATE_NOT_GROUNDED:FAKE"]
+    restricted = strategist._ground_candidates(report(), SCREEN, 10, ["Technology"])
+    assert not restricted.candidates
+    assert restricted.warnings == ["CANDIDATE_SECTOR_NOT_REQUESTED:XOM"]
+
+
+@pytest.mark.parametrize("warning", ["SCREEN_EVIDENCE_MISSING", "SECTOR_DATA_UNAVAILABLE"])
+def test_required_data_failure_blocks_candidates(monkeypatch, warning):
+    result, _ = run(monkeypatch, data_warnings=[warning])
+    assert result["scan_status"] == "INCOMPLETE"
+    assert not result["market_scan_result"]["candidates"]
+
+
+@pytest.mark.parametrize("field", ["macro_report", "sector_report", "screen_evidence"])
+def test_missing_required_evidence_blocks_candidates(monkeypatch, field):
+    result, _ = run(monkeypatch, **{field: ""})
+    assert result["scan_status"] == "INCOMPLETE"
+    assert not result["market_scan_result"]["candidates"]
+
+
+def test_model_cannot_set_completion_status(monkeypatch):
+    result, _ = run(monkeypatch, report(status="INCOMPLETE", warnings=["invented"]))
+    assert result["scan_status"] == "COMPLETE"
+    assert result["scan_warnings"] == []
+
+
+def test_partial_data_lowers_conviction_and_preserves_global_context(monkeypatch):
+    result, invoke = run(monkeypatch, data_warnings=["FRED_MISSING"],
+                         global_snapshot={"region": "Japan"})
+    assert result["scan_status"] == "DEGRADED"
+    assert result["market_scan_result"]["candidates"][0]["conviction"] == "Low"
+    assert "Japan" in invoke.call_args.args[1]
+
+
+def test_successful_empty_screen_is_complete(monkeypatch):
+    result, _ = run(monkeypatch, report(()),
+                    screen_evidence="## Equity screen\n### Energy\nNo matches.")
+    assert result["scan_status"] == "COMPLETE"
+    assert not result["market_scan_result"]["candidates"]
+
+
+def test_invalid_output_preserves_data_warnings(monkeypatch):
+    monkeypatch.setattr(strategist, "bind_structured", lambda *a: None)
+    monkeypatch.setattr(strategist, "invoke_structured_required",
+                        Mock(side_effect=StructuredOutputError("invalid")))
+    result = strategist.create_market_strategist(None)({"data_warnings": ["FRED_MISSING"]})
+    assert result["scan_status"] == "INCOMPLETE"
+    assert "FRED_MISSING" in result["scan_warnings"]
+    assert "STRUCTURED_OUTPUT_INVALID" in result["scan_warnings"]
+
+
+@pytest.mark.parametrize("sector_return", ["n/a", "nan%", "bad%"])
+def test_candidate_needs_own_sector_performance(monkeypatch, sector_return):
+    sector_table = (
+        "## Sector performance\n### Sectors (best to worst)\n"
+        "| Rank | Sector | ETF | Return | vs SPY |\n"
+        f"| 1 | Energy | XLE | {sector_return} | n/a |\n"
+        "| 2 | Technology | XLK | +2.00% | +1.00% |"
+    )
+    result, _ = run(monkeypatch, sector_evidence=sector_table)
+    assert result["scan_status"] == "DEGRADED"
+    assert result["market_scan_result"]["candidates"] == []
+    assert "CANDIDATE_SECTOR_DATA_MISSING:XOM" in result["scan_warnings"]
+
+
+def test_candidate_with_sector_return_survives_missing_benchmark(monkeypatch):
+    result, _ = run(monkeypatch, sector_evidence=(
+        "## Sector performance\n### Sectors (best to worst)\n"
+        "| 1 | Energy | XLE | +2.00% | n/a |"
+    ), data_warnings=["SECTOR_DATA_PARTIAL"])
+    assert [c["ticker"] for c in result["market_scan_result"]["candidates"]] == ["XOM"]
+    assert result["scan_status"] == "DEGRADED"

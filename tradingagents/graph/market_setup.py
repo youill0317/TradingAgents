@@ -42,6 +42,11 @@ class MarketState(MessagesState):
     code_commit: Annotated[str, "Git commit used for the run"]
     quick_model: Annotated[str, "Model used for analyst calls"]
     deep_model: Annotated[str, "Model used for strategist synthesis"]
+    global_snapshot: Annotated[str, "Collected regional macro and cross-asset observations"]
+    global_context: Annotated[str, "Collected global news and optional social context"]
+    global_evidence: Annotated[list[dict], "Per-source collection outcomes and provenance"]
+    sector_evidence: Annotated[str, "Raw US sector performance collected before analysis"]
+    market_scan_result: Annotated[dict, "Validated final structured result"]
     macro_tool_rounds: Annotated[int, "Macro analyst invocation count"]
     sector_tool_rounds: Annotated[int, "Sector analyst invocation count"]
 
@@ -81,8 +86,8 @@ def _tool_messages(state: MarketState, name: str) -> list[ToolMessage]:
 def capture_macro_evidence(state: MarketState) -> dict:
     """Turn optional vendor failure strings into explicit graph state."""
     macro = _tool_messages(state, "get_macro_indicators")
-    warnings = []
-    if not macro:
+    warnings = list(state.get("data_warnings", []))
+    if not macro and not state.get("global_snapshot"):
         warnings.append("MACRO_DATA_NOT_COLLECTED")
     elif any(
         marker in str(message.content)
@@ -114,11 +119,26 @@ def should_continue_sector(state: MarketState) -> str:
 def capture_screen_evidence(state: MarketState) -> dict:
     """Preserve raw screener output before the shared message-clear node runs."""
     evidence = []
+    warnings = list(state.get("data_warnings", []))
     for message in _tool_messages(state, "screen_equities"):
         content = str(message.content)
-        if "NO_DATA_AVAILABLE" not in content and "DATA_UNAVAILABLE" not in content:
+        if (
+            "## Equity screen" in content
+            and "NO_DATA_AVAILABLE" not in content and "DATA_UNAVAILABLE" not in content
+        ):
             evidence.append(content)
-    warnings = list(state.get("data_warnings", []))
+            if "Screen failed:" in content:
+                warnings.append("SCREEN_PARTIAL_FAILURE")
+        else:
+            warnings.append("SCREEN_PARTIAL_FAILURE")
+    sector_data = [state.get("sector_evidence", ""), *[
+        str(m.content) for m in _tool_messages(state, "get_sector_performance")
+    ]]
+    usable = [s for s in sector_data if "## Sector performance" in s]
+    if not usable:
+        warnings.append("SECTOR_DATA_UNAVAILABLE")
+    elif any("n/a" in s for s in usable):
+        warnings.append("SECTOR_DATA_PARTIAL")
     if state.get("scan_mode") != "historical" and not evidence:
         warnings.append("SCREEN_EVIDENCE_MISSING")
     if (
@@ -128,7 +148,7 @@ def capture_screen_evidence(state: MarketState) -> dict:
         warnings.append("SECTOR_TOOL_BUDGET_EXHAUSTED")
     return {
         "screen_evidence": "\n\n".join(evidence),
-        "data_warnings": warnings,
+        "data_warnings": list(dict.fromkeys(warnings)),
     }
 
 

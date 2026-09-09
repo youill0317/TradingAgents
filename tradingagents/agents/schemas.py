@@ -449,8 +449,9 @@ class MarketScanReport(BaseModel):
     )
     regime_evidence: str = Field(
         description=(
-            "Why that regime, anchored in specific numbers from the macro report "
-            "— policy rate, yield curve, inflation trend, VIX level, dollar. "
+            "Why that regime, anchored in available global economic and asset "
+            "evidence, including its transmission to US markets. Distinguish "
+            "reported geopolitical facts from expectations and scenarios. "
             "Three to five sentences. Name the figures, not just their direction."
         ),
     )
@@ -491,7 +492,11 @@ def render_market_scan_report(report: MarketScanReport) -> str:
     ]
 
     if not report.candidates:
-        parts.append("_No candidate met the bar this scan._")
+        parts.append(
+            "_Candidate selection was not completed; see warnings._"
+            if report.status is ScanStatus.INCOMPLETE else
+            "_No candidate met the bar this scan._"
+        )
         return "\n".join(parts)
 
     parts.extend([

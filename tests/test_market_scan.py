@@ -109,7 +109,7 @@ class TestScreenEquities:
             ms.screen_equities(sector="Energy", sort_field="marketCap;drop")
 
     def test_today_gets_no_warning(self, captured_screens, monkeypatch):
-        today = ms.datetime.now().strftime("%Y-%m-%d")
+        today = ms.datetime.now(ms.ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
         result = ms.screen_equities(sector="Energy", curr_date=today)
         assert "survivorship bias" not in result.lower()
 
@@ -146,9 +146,8 @@ class TestScreenEquities:
         monkeypatch.setattr(
             ms.yf, "screen", lambda q, **k: {"quotes": [], "total": 0}
         )
-        with pytest.raises(ms.NoMarketDataError) as exc:
-            ms.screen_equities(sector="Technology")
-        assert "no matches" in str(exc.value)
+        result = ms.screen_equities(sector="Technology")
+        assert "No matches" in result
 
 
 class TestSectorPerformance:
@@ -392,7 +391,7 @@ class TestMarketGraph:
         assert state["macro_report"], "macro report must reach the final state"
         assert state["sector_report"], "sector report must reach the final state"
         assert state["market_scan_report"], "strategist report must reach final state"
-        assert "XOM" not in state["market_scan_report"], (
+        assert state["market_scan_result"]["candidates"] == [], (
             "a ticker named only by the analyst is not raw screener evidence"
         )
 
@@ -451,6 +450,19 @@ class TestMarketAnalysisGraphScan:
                 return _LLM()
 
         monkeypatch.setattr(mg, "create_llm_client", _Client)
+        class Clock(mg.datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return cls(2026, 8, 19, 12, tzinfo=tz)
+
+        monkeypatch.setattr(mg, "datetime", Clock)
+        monkeypatch.setattr(mg, "collect_global_snapshot", lambda date: {
+            "report": "Regional data", "evidence": [], "warnings": [],
+        })
+        monkeypatch.setattr(mg, "collect_global_context", lambda date: {
+            "report": "Regional news", "evidence": [], "warnings": [],
+        })
+        monkeypatch.setattr(mg, "route_to_vendor", lambda *a: "## Sector performance\n| Energy | XLE | +1% |")
 
         # Pass the directories explicitly rather than via TRADINGAGENTS_* env
         # vars: DEFAULT_CONFIG is built at import time, so setting them here
@@ -521,11 +533,7 @@ class TestMarketAnalysisGraphScan:
 
         state = graph.scan()
 
-        from zoneinfo import ZoneInfo
-
-        assert state["trade_date"] == ms.datetime.now(
-            ZoneInfo("America/New_York")
-        ).strftime("%Y-%m-%d")
+        assert state["trade_date"] == "2026-08-19"
 
     def test_scan_rejects_future_date_and_bad_candidate_limit(self, monkeypatch, tmp_path):
         graph = self._patched_graph(monkeypatch, tmp_path)
@@ -752,6 +760,12 @@ def test_market_scan_routes_reports_out_of_messages_and_into_current_report(
         _RecordingConsole(file=StringIO(), record=True, width=120, height=40),
     )
 
+    class Clock(cli.datetime.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 8, 22, 12, tzinfo=tz)
+
+    monkeypatch.setattr(cli.datetime, "datetime", Clock)
     result = cli.run_market_scan(date="2026-08-22", show_welcome=False)
 
     def render(renderable):

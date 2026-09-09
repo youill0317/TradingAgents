@@ -117,6 +117,8 @@ def write_market_report_tree(final_state: dict, save_path) -> Path:
     sections = []
 
     parts = [
+        ("global_snapshot", "global_data.md", "Collected Global Data"),
+        ("global_context", "global_context.md", "Global News and Community Context"),
         ("macro_report", "macro.md", "I. Macro Analyst"),
         ("sector_report", "sector.md", "II. Sector Analyst"),
         ("market_scan_report", "strategist.md", "III. Market Strategist"),
@@ -158,8 +160,15 @@ def write_market_report_tree(final_state: dict, save_path) -> Path:
         json.dumps(validation, indent=2, sort_keys=True), encoding="utf-8"
     )
     evidence_records = []
+    for record in final_state.get("global_evidence", []):
+        content = record.get("content") or ""
+        evidence_records.append({
+            **record,
+            "sha256": hashlib.sha256(content.encode()).hexdigest(),
+        })
     for source, key in (
         ("fred", "macro_evidence"),
+        ("yahoo_sectors", "sector_evidence"),
         ("yahoo_screener", "screen_evidence"),
     ):
         content = final_state.get(key) or ""
@@ -173,6 +182,12 @@ def write_market_report_tree(final_state: dict, save_path) -> Path:
     (save_path / "evidence.jsonl").write_text(
         "".join(json.dumps(row, sort_keys=True) + "\n" for row in evidence_records),
         encoding="utf-8",
+    )
+    (save_path / "scan.json").write_text(
+        json.dumps(final_state.get("market_scan_result") or {
+            "status": validation["status"], "warnings": validation["warnings"],
+            "candidates": [],
+        }, indent=2, ensure_ascii=False), encoding="utf-8",
     )
     header = (
         f"# Market Scan — {trade_date}\n\n"
