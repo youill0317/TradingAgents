@@ -182,30 +182,31 @@ tradingagents market --non-interactive --output reports/latest
 
 ### Market Scan
 
-Ticker analysis answers "is this name a buy?". The US large-cap scan answers the question that comes before it — what is the market doing, and which liquid NYSE/Nasdaq names are worth analysing at all.
+The scan starts with global market conditions, then narrows to US sectors and liquid NYSE/Nasdaq candidates for further analysis.
 
 ```bash
-tradingagents market                                  # scan every sector, today
-tradingagents market --sectors Technology,Energy      # only these sectors
-tradingagents market --date 2026-08-19 --limit 5 --save
+tradingagents market                                  # current New York date
+tradingagents market --sectors Technology,Energy
+tradingagents market --limit 5 --save
 ```
 
-Three agents run in sequence:
-
-| Agent | Question | Data |
+| Stage | Coverage | Existing sources |
 | --- | --- | --- |
-| Macro Analyst | What regime are we in? | FRED (policy rate, yield curve, inflation, labour, VIX, dollar), global news, prediction markets |
-| Sector Analyst | Where is capital rotating? | Sector-ETF performance vs SPY, equity screener |
-| Market Strategist | Which names deserve a look? | The two reports above |
+| Global baseline | US, eurozone, UK, China, Japan, Korea, India and emerging-market equity proxies; FX, bonds, commodities; 1-week, 1-month and 3-month returns | Yahoo Finance |
+| Regional macro | Available growth, inflation, employment, rates and selected reserves excluding gold; explicit coverage gaps | FRED, optional `FRED_API_KEY` |
+| Global context | Regional news, war, political conflict, trade and energy; optional community and prediction-market signals | Configured news provider, Reddit, StockTwits, Polymarket |
+| US sectors | Sector ETF performance relative to benchmarks, informed by the global report | Yahoo Finance |
+| Candidates | Names supported by actual screener rows and usable sector evidence | Existing equity screener and strategist |
 
-The output is a regime call, a sector-rotation table, and a shortlist of candidates with the reasoning behind each. It needs no API key beyond your LLM provider's (`FRED_API_KEY` is optional and only enriches the macro report).
+The Macro Analyst explains global conditions and transmission to US markets before the Sector Analyst and Market Strategist narrow the search. ETF returns are proxies, not measured capital flows. Community posts are supporting signals, not verified facts. This does not provide exhaustive country-sector, reserve or international capital-flow coverage.
 
-**The shortlist is not a recommendation.** It carries no rating and makes no position call — each entry is a prompt to run `tradingagents analyze` on that ticker.
+Market scans accept only the current date in `America/New_York`; omit `--date` for normal use. Recent price history is still used to measure today's trends. Historical ticker analysis remains available separately. Market scans start fresh and do not resume old checkpoints.
 
-Two limits worth knowing:
+Every run saves reports, `global_data.md`, `global_context.md`, raw evidence and a structured `scan.json` in its run directory. Evidence records sources, retrieval times, observation dates and availability. Missing or stale data is visible: partial evidence produces `DEGRADED` results with lower conviction; missing essential reports, sector evidence or screener evidence produces `INCOMPLETE` with no candidates. The `market` command exits unsuccessfully for `INCOMPLETE` runs. A successful screen with no matches is a valid empty result.
 
-- The screener and sector data come from Yahoo's **unofficial** endpoints. They can change or rate-limit without notice; when they do, the scan fails loudly rather than returning a thinner list that looks complete.
-- The screener has **no historical mode**. Past-dated runs are explicitly marked `INCOMPLETE` and return no candidates instead of mixing today's survivors into a historical report.
+Existing provider and model settings are retained. No new data subscriptions are required; your LLM provider credentials are still necessary. FRED credentials enrich macro coverage. Public endpoints can rate-limit or deny access, and optional source failures remain visible without inventing replacement evidence.
+
+**The shortlist is not a recommendation.** Each candidate is a prompt to run `tradingagents analyze` for deeper research.
 
 ### Markets and tickers
 

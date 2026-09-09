@@ -1,4 +1,5 @@
 from .alpha_vantage_common import _make_api_request, format_datetime_for_api
+from .config import get_config
 
 
 def get_news(ticker, start_date, end_date) -> dict[str, str] | str:
@@ -36,17 +37,20 @@ def get_global_news(curr_date, look_back_days: int = 7, limit: int = 50) -> dict
     Returns:
         Dictionary containing global news sentiment data or JSON string.
     """
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
 
     # Calculate start date
     curr_dt = datetime.strptime(curr_date, "%Y-%m-%d")
+    config = get_config()
+    if config.get("market_scan_date") == curr_date:
+        curr_dt = datetime.fromisoformat(config["market_scan_as_of"]).astimezone(timezone.utc)
     start_dt = curr_dt - timedelta(days=look_back_days)
-    start_date = start_dt.strftime("%Y-%m-%d")
+
 
     params = {
         "topics": "financial_markets,economy_macro,economy_monetary",
-        "time_from": format_datetime_for_api(start_date),
-        "time_to": format_datetime_for_api(curr_date),
+        "time_from": format_datetime_for_api(start_dt),
+        "time_to": format_datetime_for_api(curr_dt),
         "limit": str(limit),
     }
 

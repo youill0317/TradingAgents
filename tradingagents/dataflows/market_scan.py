@@ -18,11 +18,13 @@ layer reports them rather than inventing data.
 import logging
 import math
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import yfinance as yf
 from yfinance import EquityQuery
 
+from .config import get_config
 from .errors import NoMarketDataError
 from .stockstats_utils import load_ohlcv, yf_retry
 
@@ -238,14 +240,18 @@ def screen_equities(
         min_price: Minimum share price, to drop sub-$5 names.
         sort_field: Screener field to rank by (e.g. ``percentchange``).
         limit: Maximum rows per sector.
-        curr_date: The analysis date. Used only to warn when it is not today.
+        curr_date: The analysis date. Must match the current New York scan date.
 
     Returns:
         A markdown report of the matches, ranked within each sector.
     """
     if curr_date:
         requested_date = datetime.strptime(curr_date, "%Y-%m-%d").date()
-        today = datetime.now().date()
+        pinned = get_config().get("market_scan_date")
+        today = (
+            datetime.strptime(pinned, "%Y-%m-%d").date() if pinned
+            else datetime.now(ZoneInfo("America/New_York")).date()
+        )
         if requested_date != today:
             raise ValueError(
                 "UNSUPPORTED_HISTORICAL_UNIVERSE: Yahoo's screener is live-only; "
@@ -281,7 +287,6 @@ def screen_equities(
 
     sections = []
     failures = []
-    total = 0
     for sec in sectors:
         query = _build_query(sec, min_market_cap, min_volume, min_price)
         try:
@@ -300,7 +305,6 @@ def screen_equities(
             sections.append(f"\n### {title}\n\n_No matches._")
             continue
 
-        total += len(quotes)
         lines = [
             f"\n### {title} ({len(quotes)} of {(result or {}).get('total', len(quotes))} matches)",
             "",
@@ -325,12 +329,10 @@ def screen_equities(
     # the normal path, not an edge case: reporting a vendor outage as "no
     # matches" would hand the analyst an empty screen it is told to treat as a
     # finding. Carry the real reason instead.
-    if total == 0 and len(sectors) == 1:
+    if failures and len(failures) == len(sectors):
         raise NoMarketDataError(
             sectors[0] or "market",
-            detail=f"screener failed: {failures[0]}"
-            if failures
-            else "screener returned no matches",
+            detail=f"screener failed: {failures[0]}",
         )
 
     return "\n".join(header + sections)

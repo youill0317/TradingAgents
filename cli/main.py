@@ -5,6 +5,7 @@ import time
 from collections import deque
 from functools import wraps
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import typer
 from rich import box
@@ -1443,11 +1444,14 @@ def run_market_scan(
     display_report: bool | None = None,
 ):
     """Run the market-wide scan and render its report."""
+    today = datetime.datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
+    if date is not None and date != today:
+        raise typer.BadParameter("Market scans support only today's New York date", param_hint="--date")
+    if not 1 <= limit <= 25:
+        raise typer.BadParameter("Must be between 1 and 25", param_hint="--limit")
+    date = today
     if show_welcome:
         _show_welcome(MARKET_WORKFLOW_STEPS)
-
-    if date is None:
-        date = datetime.datetime.now().strftime("%Y-%m-%d")
 
     # Reuse the ticker workflow's provider/model prompts so both paths configure
     # the LLM identically; only the ticker-specific questions are skipped.
@@ -1610,9 +1614,12 @@ def run_market_scan(
         scan_messages.add_message("System", wall_time_summary)
         update_scan_display(final_state, finished=True)
 
-    console.print("\n[bold cyan]Market Scan Complete![/bold cyan]\n")
+    console.print(f"\n[bold cyan]Market Scan: {final_state.get('scan_status', 'INCOMPLETE')}[/bold cyan]\n")
     console.print(f"[dim]{wall_time_summary}[/dim]")
     console.print(f"[dim]Run log:[/dim] {run_dir.resolve()}")
+    # Always persist collection/validation evidence, even when the user declines
+    # an additional export or the final shortlist is incomplete.
+    graph.save_reports(final_state, save_path=run_dir)
 
     display_report_sections(
         "Final Market Scan Report",
@@ -1649,6 +1656,7 @@ def run_market_scan(
             console.print(f"  [dim]Complete report:[/dim] {report_file.name}")
         except Exception as e:
             console.print(f"[red]Error saving report: {e}[/red]")
+            raise typer.Exit(code=1) from None
 
     if display_report is None:
         display_full = False if non_interactive else typer.prompt(
@@ -1729,7 +1737,7 @@ def _report_no_console():
 @app.command()
 def market(
     date: str = typer.Option(
-        None, "--date", help="Date to scan for (YYYY-MM-DD). Defaults to today."
+        None, "--date", help="Compatibility option: only today's New York date is accepted."
     ),
     sectors: str = typer.Option(
         None,
@@ -1777,7 +1785,7 @@ def market(
             raise typer.BadParameter(str(e), param_hint="--sectors") from None
 
     try:
-        run_market_scan(
+        result = run_market_scan(
             date=date,
             sectors=sector_list,
             limit=limit,
@@ -1786,6 +1794,8 @@ def market(
             output=output,
             display_report=display_report if non_interactive else None,
         )
+        if isinstance(result, dict) and result.get("scan_status") == "INCOMPLETE":
+            raise typer.Exit(code=1)
     except _NO_CONSOLE_ERRORS:
         _report_no_console()
         raise typer.Exit(code=1) from None

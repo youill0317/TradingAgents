@@ -120,9 +120,14 @@ DEFAULT_CONFIG = _apply_env_overrides({
     # replace to broaden geographic / sector coverage.
     "global_news_queries": [
         "Federal Reserve interest rates inflation",
-        "S&P 500 earnings GDP economic outlook",
-        "geopolitical risk trade war sanctions",
-        "ECB Bank of England BOJ central bank policy",
+        "eurozone ECB inflation economy",
+        "United Kingdom Bank of England economy",
+        "China economy trade policy",
+        "Japan Bank of Japan yen economy",
+        "South Korea economy exports",
+        "India economy inflation rates",
+        "emerging markets debt currencies economy",
+        "war geopolitical conflict sanctions tariffs",
         "oil commodities supply chain energy",
     ],
     # Data vendor configuration

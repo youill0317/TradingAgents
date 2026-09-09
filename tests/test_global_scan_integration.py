@@ -1,0 +1,143 @@
+"""Cross-stage contracts for the current global scan."""
+
+import json
+from datetime import datetime
+
+import pytest
+from langchain_core.messages import AIMessage, ToolMessage
+
+from tradingagents.dataflows.config import config_context
+from tradingagents.dataflows.market_scan import screen_equities
+from tradingagents.graph.market_setup import capture_macro_evidence, capture_screen_evidence
+from tradingagents.reporting import write_market_report_tree
+
+
+def test_partial_screens_and_sector_outage_are_not_silent():
+    state = {"data_warnings": ["GLOBAL_GAP"], "messages": [
+        ToolMessage(content="## Equity screen\n### Energy\n_No matches._", name="screen_equities", tool_call_id="1"),
+        ToolMessage(content="NO_DATA_AVAILABLE: offline", name="screen_equities", tool_call_id="2"),
+    ]}
+    result = capture_screen_evidence(state)
+    assert "GLOBAL_GAP" in result["data_warnings"]
+    assert "SCREEN_PARTIAL_FAILURE" in result["data_warnings"]
+    assert "SECTOR_DATA_UNAVAILABLE" in result["data_warnings"]
+    assert "SCREEN_EVIDENCE_MISSING" not in result["data_warnings"]
+
+
+def test_macro_capture_preserves_deterministic_global_gaps():
+    result = capture_macro_evidence({"global_snapshot": "data", "data_warnings": ["China: missing"],
+                                     "messages": [AIMessage(content="report")]})
+    assert result["data_warnings"] == ["China: missing"]
+
+
+def test_screen_uses_pinned_run_date_across_host_and_midnight(monkeypatch):
+    import tradingagents.dataflows.market_scan as market
+
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 9, 5, 9, tzinfo=tz)
+
+    monkeypatch.setattr(market, "datetime", Clock)
+    monkeypatch.setattr(market.yf, "screen", lambda *a, **k: {"quotes": [], "total": 0})
+    with config_context({"market_scan_date": "2026-09-04"}):
+        assert "No matches" in screen_equities(sector="Energy", curr_date="2026-09-04")
+
+
+def test_report_preserves_global_data_and_validated_json(tmp_path):
+    state = {"trade_date": "2026-09-04", "global_snapshot": "Japan data",
+             "global_context": "War: summary only", "macro_report": "Global interpretation",
+             "sector_report": "US sectors", "market_scan_report": "No candidates",
+             "scan_status": "DEGRADED", "scan_warnings": ["missing"],
+             "global_evidence": [{"source": "fred", "target": "Japan", "status": "failed",
+                                  "content": "unavailable", "retrieved_at": "2026-09-04T12:00:00Z"}],
+             "market_scan_result": {"status": "DEGRADED", "warnings": ["missing"], "candidates": []}}
+    report = write_market_report_tree(state, tmp_path)
+    assert "Global interpretation" in report.read_text(encoding="utf-8")
+    assert (tmp_path / "global_data.md").read_text() == "Japan data"
+    assert json.loads((tmp_path / "scan.json").read_text())["status"] == "DEGRADED"
+    evidence = json.loads((tmp_path / "evidence.jsonl").read_text().splitlines()[0])
+    assert evidence["status"] == "failed" and evidence["sha256"]
+
+
+@pytest.mark.parametrize("date", ["2000-01-01", "2999-01-01"])
+def test_cli_rejects_noncurrent_date_before_initializing_models(monkeypatch, date):
+    import cli.main as cli
+
+    monkeypatch.setattr(cli, "MarketAnalysisGraph", lambda **k: pytest.fail("must reject before model setup"))
+    with pytest.raises(cli.typer.BadParameter):
+        cli.run_market_scan(date=date, non_interactive=True)
+
+
+def test_cli_incomplete_scan_has_failure_exit(monkeypatch):
+    from typer.testing import CliRunner
+
+    import cli.main as cli
+
+    monkeypatch.setattr(cli, "run_market_scan", lambda **k: {"scan_status": "INCOMPLETE"})
+    result = CliRunner().invoke(cli.app, ["market", "--non-interactive"])
+    assert result.exit_code == 1
+
+
+def test_global_collection_reaches_real_graph_and_grounded_candidate(monkeypatch, tmp_path):
+    from langchain_core.runnables import RunnableLambda
+
+    import tradingagents.graph.market_graph as mg
+    from tradingagents.agents.schemas import MarketScanReport
+    from tradingagents.default_config import DEFAULT_CONFIG
+
+    prompts = []
+
+    class Model:
+        sector_calls = 0
+
+        def bind_tools(self, tools):
+            def answer(prompt):
+                prompts.append(str(prompt))
+                if any(t.name == "screen_equities" for t in tools):
+                    self.sector_calls += 1
+                    if self.sector_calls == 1:
+                        return AIMessage(content="", tool_calls=[{
+                            "name": "screen_equities", "args": {"sector": "Energy"}, "id": "screen",
+                        }])
+                    return AIMessage(content="US Energy benefits from the global scenario")
+                return AIMessage(content="Japan and oil: a global scenario with uncertainty")
+            return RunnableLambda(answer)
+
+        def with_structured_output(self, schema):
+            def final(prompt):
+                prompts.append(str(prompt))
+                return MarketScanReport(regime="Rotation", regime_evidence="Japan and oil",
+                                        sector_view="Energy", candidates=[{
+                                            "ticker": "XOM", "sector": "Energy", "conviction": "High",
+                                            "thesis": "Global oil scenario transmits to US energy",
+                                        }])
+            return RunnableLambda(final)
+
+    class Client:
+        def get_llm(self):
+            return Model()
+
+    calls = []
+    monkeypatch.setattr(mg, "create_llm_client", lambda **k: Client())
+    monkeypatch.setattr(mg, "collect_global_snapshot", lambda date: calls.append("snapshot") or {
+        "report": "JAPAN_BASELINE", "evidence": [], "warnings": [],
+    })
+    monkeypatch.setattr(mg, "collect_global_context", lambda date: calls.append("context") or {
+        "report": "WAR_SUMMARY_ONLY", "evidence": [], "warnings": [],
+    })
+    monkeypatch.setattr(mg, "route_to_vendor", lambda *a: "## Sector performance\n### Sectors (best to worst)\n| 1 | Energy | XLE | +3% | +1% |")
+    import tradingagents.dataflows.market_scan as market
+    monkeypatch.setattr(market.yf, "screen", lambda *a, **k: {"quotes": [{"symbol": "XOM"}], "total": 1})
+    config = {**DEFAULT_CONFIG, "data_cache_dir": str(tmp_path / "cache"),
+              "results_dir": str(tmp_path / "results"), "checkpoint_enabled": True}
+    graph = mg.MarketAnalysisGraph(config=config)
+    state = graph.scan(sectors=["Energy"])
+    assert calls == ["snapshot", "context"]
+    assert "JAPAN_BASELINE" in prompts[0] and "WAR_SUMMARY_ONLY" in prompts[0]
+    assert "Japan and oil" in prompts[1]
+    assert state["scan_status"] == "COMPLETE"
+    assert state["market_scan_result"]["candidates"][0]["ticker"] == "XOM"
+    assert not list(tmp_path.rglob("*.db")), "live scans must not resume old checkpoints"
+    graph.save_reports(state, tmp_path / "export")
+    assert json.loads((tmp_path / "export" / "scan.json").read_text())["candidates"]

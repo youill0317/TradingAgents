@@ -8,7 +8,6 @@ to the decision log — a shortlist is not a decision.
 
 import hashlib
 import json
-import logging
 import os
 import subprocess
 from collections.abc import Callable
@@ -32,15 +31,16 @@ from tradingagents.agents.utils.market_scan_tools import (
     screen_equities,
 )
 from tradingagents.dataflows.config import config_context, set_config
+from tradingagents.dataflows.global_context import collect_global_context
+from tradingagents.dataflows.global_market import collect_global_snapshot
+from tradingagents.dataflows.interface import route_to_vendor
+from tradingagents.dataflows.market_scan import resolve_sectors
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.llm_clients import create_llm_client
 from tradingagents.reporting import write_market_report_tree
 
-from .checkpointer import checkpoint_step, get_checkpointer, thread_id
 from .market_setup import MarketGraphSetup
 from .trading_graph import build_provider_kwargs
-
-logger = logging.getLogger(__name__)
 
 
 class MarketAnalysisGraph:
@@ -92,7 +92,6 @@ class MarketAnalysisGraph:
         )
         self.workflow = self.graph_setup.setup_graph()
         self.graph = self.workflow.compile()
-        self._checkpointer_ctx = None
 
         self.curr_state = None
 
@@ -137,16 +136,16 @@ class MarketAnalysisGraph:
         Returns:
             The final graph state, including ``market_scan_report``.
         """
-        if trade_date is None:
-            trade_date = datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
-        parsed_date = datetime.strptime(trade_date, "%Y-%m-%d").date()
         market_today = datetime.now(ZoneInfo("America/New_York")).date()
-        if parsed_date > market_today:
-            raise ValueError("trade_date cannot be in the future")
+        if trade_date is None:
+            trade_date = market_today.isoformat()
+        parsed_date = datetime.strptime(trade_date, "%Y-%m-%d").date()
+        if parsed_date != market_today:
+            raise ValueError("Market scans support only today's New York date; past/future dates are unsupported")
         if not 1 <= int(candidate_limit) <= 25:
             raise ValueError("candidate_limit must be between 1 and 25")
 
-        scan_mode = ScanMode.LIVE if parsed_date == market_today else ScanMode.HISTORICAL
+        scan_mode = ScanMode.LIVE
         as_of_utc = datetime.now(timezone.utc).isoformat()
         run_id = uuid4().hex
         config_hash = hashlib.sha256(
@@ -165,7 +164,7 @@ class MarketAnalysisGraph:
             "messages": [("human", f"Scan the market as of {trade_date}.")],
             "trade_date": str(trade_date),
             "as_of_utc": as_of_utc,
-            "effective_market_session": str(trade_date),
+            "effective_market_session": None,
             "scan_mode": scan_mode.value,
             "run_id": run_id,
             "config_hash": config_hash,
@@ -174,7 +173,7 @@ class MarketAnalysisGraph:
             "deep_model": self.config.get("deep_think_llm"),
             "macro_tool_rounds": 0,
             "sector_tool_rounds": 0,
-            "requested_sectors": list(sectors or []),
+            "requested_sectors": resolve_sectors(sectors) if sectors else [],
             "candidate_limit": int(candidate_limit),
             "macro_report": "",
             "sector_report": "",
@@ -184,50 +183,46 @@ class MarketAnalysisGraph:
             "market_scan_report": "",
             "scan_status": "",
             "scan_warnings": [],
+            "global_snapshot": "",
+            "global_context": "",
+            "global_evidence": [],
+            "sector_evidence": "",
         }
 
         graph_config = {"recursion_limit": self.config.get("max_recur_limit", 100)}
         if self.callbacks:
             graph_config["callbacks"] = self.callbacks
 
-        if self.config.get("checkpoint_enabled"):
-            signature = hashlib.sha256(json.dumps({
-                "sectors": initial_state["requested_sectors"],
-                "limit": initial_state["candidate_limit"],
-                "mode": scan_mode.value,
-            }, sort_keys=True).encode()).hexdigest()[:12]
-            self._checkpointer_ctx = get_checkpointer(
-                self.config["data_cache_dir"], "MARKET"
+        # A live scan always collects fresh inputs, never an old checkpoint.
+        with config_context({**self.config, "market_scan_date": str(trade_date),
+                             "market_scan_as_of": as_of_utc}):
+            snapshot = collect_global_snapshot(str(trade_date))
+            context = collect_global_context(str(trade_date))
+            initial_state.update(
+                global_snapshot=snapshot["report"],
+                global_context=context["report"],
+                global_evidence=[*snapshot["evidence"], *context["evidence"]],
+                data_warnings=[*snapshot["warnings"], *context["warnings"]],
+                effective_market_session=snapshot.get("effective_market_session"),
             )
-            saver = self._checkpointer_ctx.__enter__()
-            self.graph = self.workflow.compile(checkpointer=saver)
-            graph_config.setdefault("configurable", {})["thread_id"] = thread_id(
-                "MARKET", str(trade_date), signature
-            )
-            step = checkpoint_step(
-                self.config["data_cache_dir"], "MARKET", str(trade_date), signature
-            )
-            logger.info("Market scan checkpoint step: %s", step)
-
-        try:
-            with config_context(self.config):
-                if self.debug or on_chunk is not None:
-                    final_state = None
-                    for chunk in self.graph.stream(
-                        initial_state, stream_mode="values", config=graph_config
-                    ):
-                        if self.debug and chunk.get("messages"):
-                            chunk["messages"][-1].pretty_print()
-                        if on_chunk is not None:
-                            on_chunk(chunk)
-                        final_state = chunk
-                else:
-                    final_state = self.graph.invoke(initial_state, config=graph_config)
-        finally:
-            if self._checkpointer_ctx is not None:
-                self._checkpointer_ctx.__exit__(None, None, None)
-                self._checkpointer_ctx = None
-                self.graph = self.workflow.compile()
+            try:
+                initial_state["sector_evidence"] = str(route_to_vendor(
+                    "get_sector_performance", str(trade_date)
+                ))
+            except Exception:
+                initial_state["sector_evidence"] = "DATA_UNAVAILABLE: sector collection failed"
+            if self.debug or on_chunk is not None:
+                final_state = None
+                for chunk in self.graph.stream(
+                    initial_state, stream_mode="values", config=graph_config
+                ):
+                    if self.debug and chunk.get("messages"):
+                        chunk["messages"][-1].pretty_print()
+                    if on_chunk is not None:
+                        on_chunk(chunk)
+                    final_state = chunk
+            else:
+                final_state = self.graph.invoke(initial_state, config=graph_config)
 
         self.curr_state = final_state
         return final_state
