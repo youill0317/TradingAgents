@@ -51,13 +51,21 @@ def test_registry_spec(provider, base_url, chat_class, responses):
 
 
 @pytest.mark.unit
-def test_llmgateway_client_uses_registered_config(monkeypatch):
+@pytest.mark.parametrize("model, supported", [("gpt-5.6-luna", True), ("unknown-route", False)])
+def test_llmgateway_client_uses_registered_config(monkeypatch, model, supported):
     from tradingagents.llm_clients import create_llm_client
 
     monkeypatch.setenv("LLM_GATEWAY_API_KEY", "dummy")
-    llm = create_llm_client(provider="llmgateway", model="claude-opus-5").get_llm()
+    llm = create_llm_client(provider="llmgateway", model=model).get_llm()
     assert type(llm).__name__ == "GatewayChatOpenAI"
     assert str(llm.openai_api_base) == "https://api.llmgateway.io/v1"
+    schema = {"title": "Answer", "type": "object", "properties": {"answer": {"type": "string"}}}
+    if supported:
+        assert llm.with_structured_output(schema) is not None
+    else:
+        with pytest.raises(NotImplementedError, match="unknown"):
+            llm.with_structured_output(schema)
+
 
 
 @pytest.mark.unit
