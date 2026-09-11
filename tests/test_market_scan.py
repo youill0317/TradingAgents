@@ -431,6 +431,45 @@ class TestMarketAnalysisGraphScan:
         assert state["requested_sectors"] == ["Energy"]
         assert state["candidate_limit"] == 3
 
+    def test_scan_calls_progress_callback_for_every_chunk(self, monkeypatch, tmp_path):
+        graph = self._patched_graph(monkeypatch, tmp_path)
+        chunks = [
+            {
+                "macro_report": "macro",
+                "sector_report": "",
+                "market_scan_report": "",
+            },
+            {
+                "macro_report": "macro",
+                "sector_report": "sector",
+                "market_scan_report": "",
+            },
+            {
+                "macro_report": "macro",
+                "sector_report": "sector",
+                "market_scan_report": "strategy",
+            },
+        ]
+
+        class _StreamOnlyGraph:
+            def stream(self, *args, **kwargs):
+                yield from chunks
+
+            def invoke(self, *args, **kwargs):
+                raise AssertionError("a progress callback must use graph streaming")
+
+        graph.graph = _StreamOnlyGraph()
+        seen = []
+
+        state = graph.scan(trade_date="2026-08-19", on_chunk=seen.append)
+
+        assert seen == chunks
+        assert state == chunks[-1]
+        assert all(
+            state[key]
+            for key in ("macro_report", "sector_report", "market_scan_report")
+        )
+
     def test_scan_defaults_to_today(self, monkeypatch, tmp_path):
         graph = self._patched_graph(monkeypatch, tmp_path)
 
@@ -453,3 +492,322 @@ class TestMarketAnalysisGraphScan:
         assert complete.exists()
         written = {f.name for f in (tmp_path / "out").iterdir()}
         assert {"complete_report.md", "macro.md", "sector.md", "strategist.md"} <= written
+
+
+def test_market_scan_message_panel_survives_graph_message_clears():
+    from langchain_core.messages import AIMessage, HumanMessage
+    from rich.console import Console
+
+    import cli.main as cli
+
+    macro = AIMessage(
+        id="macro-message",
+        content="Checking inflation and rates.",
+        tool_calls=[
+            {
+                "name": "get_fred_indicators",
+                "args": {"series": "FEDFUNDS"},
+                "id": "macro-call",
+                "type": "tool_call",
+            }
+        ],
+    )
+    placeholder = HumanMessage(id="macro-cleared", content="Proceed to sector analysis.")
+    sector = AIMessage(
+        id="sector-message",
+        content="Screening the Energy sector.",
+        tool_calls=[
+            {
+                "name": "screen_equities",
+                "args": {"sector": "Energy"},
+                "id": "sector-call",
+                "type": "tool_call",
+            }
+        ],
+    )
+    chunks = (
+        {"messages": [macro]},
+        {"messages": [macro]},  # values mode repeats the full current state
+        {"messages": [placeholder]},  # Msg Clear Macro removed the old history
+        {"messages": [placeholder, sector]},
+    )
+
+    buffer = cli.MessageBuffer()
+    for chunk in chunks:
+        cli.accumulate_stream_messages(buffer, chunk)
+
+    rendered = Console(record=True, width=160)
+    rendered.print(cli.create_messages_panel(buffer))
+    output = rendered.export_text()
+
+    assert output.count("get_fred_indicators") == 1
+    assert output.count("screen_equities") == 1
+    assert "Checking inflation and rates." in output
+    assert "Screening the Energy sector." in output
+
+
+def test_messages_panel_agent_column_is_market_only():
+    from io import StringIO
+
+    from rich.console import Console
+
+    import cli.main as cli
+
+    buffer = cli.MessageBuffer()
+    buffer.add_tool_call(
+        "screen_equities", {"sector": "Energy"}, agent="Sector Analyst"
+    )
+
+    def render(show_agent):
+        console = Console(file=StringIO(), record=True, width=120)
+        console.print(cli.create_messages_panel(buffer, show_agent=show_agent))
+        return console.export_text()
+
+    market_panel = render(True)
+    ticker_panel = render(False)
+
+    assert "Agent" in market_panel
+    assert "Sector Analyst" in market_panel
+    assert "Agent" not in ticker_panel
+    assert "Sector Analyst" not in ticker_panel
+    assert "screen_equities" in market_panel
+    assert "screen_equities" in ticker_panel
+
+
+def test_market_scan_wall_time_summary_reports_pending_before_any_stage_lands():
+    import cli.main as cli
+
+    assert cli.format_scan_wall_time({}) == "Scan wall time: pending"
+    assert cli.format_scan_wall_time({"Macro Analyst": 1.5, "Market Strategist": 2.0}) == (
+        "Scan wall time: Macro 1.50s | Market Strategist 2.00s"
+    )
+
+
+@pytest.mark.parametrize("display_full", [True, False], ids=["full", "final-only"])
+def test_market_scan_routes_reports_out_of_messages_and_into_current_report(
+    monkeypatch, tmp_path, display_full
+):
+    from io import StringIO
+    from pathlib import Path
+
+    from langchain_core.messages import AIMessage
+    from rich.console import Console
+    from rich.markdown import Markdown
+    from rich.panel import Panel
+    from rich.rule import Rule
+
+    import cli.main as cli
+
+    macro_report = "# Macro Report\nMACRO_REPORT_BODY"
+    sector_report = "# Sector Report\nSECTOR_REPORT_BODY"
+    market_report = "# Market Report\nMARKET_REPORT_BODY"
+    chunks = (
+        {
+            "messages": [AIMessage(id="macro-report", content=macro_report)],
+            "macro_report": macro_report,
+            "sector_report": "",
+            "market_scan_report": "",
+        },
+        {
+            "messages": [
+                AIMessage(
+                    id="sector-tool",
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "screen_equities",
+                            "args": {"sector": "Energy"},
+                            "id": "sector-call",
+                            "type": "tool_call",
+                        }
+                    ],
+                )
+            ],
+            "macro_report": macro_report,
+            "sector_report": "",
+            "market_scan_report": "",
+        },
+        {
+            "messages": [AIMessage(id="sector-report", content=sector_report)],
+            "macro_report": macro_report,
+            "sector_report": sector_report,
+            "market_scan_report": "",
+        },
+        {
+            "messages": [AIMessage(id="market-report", content=market_report)],
+            "macro_report": macro_report,
+            "sector_report": sector_report,
+            "market_scan_report": market_report,
+        },
+    )
+    captured = {"prompts": []}
+
+    class _RecordingConsole(Console):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.renderables = []
+
+        def print(self, *objects, **kwargs):
+            self.renderables.extend(objects)
+            return super().print(*objects, **kwargs)
+
+    class _Graph:
+        def __init__(self, *args, **kwargs):
+            self.config = kwargs.get("config") or {"results_dir": str(tmp_path)}
+
+        def scan(self, **kwargs):
+            for chunk in chunks:
+                kwargs["on_chunk"](chunk)
+            return chunks[-1]
+
+        def save_reports(self, final_state, save_path=None):
+            captured["saved_state"] = final_state
+            captured["save_path"] = save_path
+            return Path(save_path) / "complete_report.md"
+
+    class _Live:
+        def __init__(self, renderable, **kwargs):
+            captured["layout"] = renderable
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    monkeypatch.setattr(cli, "MarketAnalysisGraph", _Graph)
+    monkeypatch.setattr(cli, "Live", _Live)
+    monkeypatch.setattr(cli, "get_market_selections", lambda: {})
+    monkeypatch.setattr(
+        cli, "_build_market_config", lambda selections: {"results_dir": str(tmp_path)}
+    )
+    # Accept every default, the way a user pressing Enter through the prompts would.
+    def accept_default(text, default=None):
+        captured["prompts"].append(text)
+        if "Display full report" in text:
+            return "Y" if display_full else "N"
+        return default
+
+    monkeypatch.setattr(cli.typer, "prompt", accept_default)
+    monkeypatch.setattr(
+        cli,
+        "console",
+        _RecordingConsole(file=StringIO(), record=True, width=120, height=40),
+    )
+
+    result = cli.run_market_scan(date="2026-08-22", show_welcome=False)
+
+    def render(renderable):
+        console = Console(file=StringIO(), record=True, width=120, height=40)
+        console.print(renderable)
+        return console.export_text()
+
+    layout = captured["layout"]
+    messages = render(layout["messages"].renderable)
+    analysis = render(layout["analysis"].renderable)
+    full_display = render(layout)
+
+    assert result == chunks[-1]
+    assert "MARKET_REPORT_BODY" in analysis
+    assert "REPORT_BODY" not in messages
+    assert "screen_equities" in messages
+    assert "Agent" in messages
+    assert "Sector Analyst" in messages
+    assert "Market Strategist" in full_display
+    assert "completed" in full_display
+    assert "Market Strate…" not in full_display
+    assert "complet…" not in full_display
+
+    # The ticker workflow's footer, section heading, run banner and completion
+    # line all have to show up here too, or the two screens stop matching.
+    footer = render(layout["footer"].renderable)
+    assert "Agents: 3/3" in footer
+    assert "Reports: 3/3" in footer
+    footer_fields = ("Agents:", "LLM:", "Tools:", "Tokens:", "Reports:", "⏱")
+    assert [footer.index(field) for field in footer_fields] == sorted(
+        footer.index(field) for field in footer_fields
+    )
+    assert analysis.index("Market Strategist") < analysis.index("MARKET_REPORT_BODY")
+    assert "Scan date: 2026-08-22" in messages
+    assert "Sectors: analyst's choice" in messages
+    assert "Candidate limit: 10" in messages
+    assert "Completed market scan for 2026-08-22" in messages
+    # Nothing is still running once the scan returned, so no spinner row.
+    assert "in_progress" not in full_display
+
+    # The live trail under results_dir, so a crash mid-scan still leaves reports.
+    run_dir = next((tmp_path / "market_scans").iterdir())
+    log_text = (run_dir / "message_tool.log").read_text(encoding="utf-8")
+    assert "[Tool Call] screen_equities(sector=Energy)" in log_text
+    assert "[System] Scan date: 2026-08-22" in log_text
+    assert "MACRO_REPORT_BODY" in (run_dir / "macro.md").read_text(encoding="utf-8")
+    assert "SECTOR_REPORT_BODY" in (run_dir / "sector.md").read_text(encoding="utf-8")
+    assert "MARKET_REPORT_BODY" in (run_dir / "strategist.md").read_text(encoding="utf-8")
+
+    # Per-stage wall time and the ticker-matching save/display prompt order.
+    assert "Scan wall time: Macro " in messages
+    assert captured["saved_state"] == chunks[-1]
+    assert Path(captured["save_path"]).name.startswith("market_scan_")
+    printed = cli.console.export_text()
+    assert "Scan wall time:" in printed
+    assert "MARKET_REPORT_BODY" in printed
+    assert "Final Market Scan Report" in printed
+    assert "III. Market Strategist" in printed
+    assert printed.index("Final Market Scan Report") < printed.index("Report saved to:")
+    assert [prompt.strip() for prompt in captured["prompts"]] == [
+        "Save report?",
+        "Save path (press Enter for default)",
+        "Display full report on screen?",
+    ]
+
+    rules = [item for item in cli.console.renderables if isinstance(item, Rule)]
+    assert rules[0].title == "Final Market Scan Report"
+    assert rules[0].style == "bold green"
+
+    if display_full:
+        assert "MACRO_REPORT_BODY" in printed
+        assert "SECTOR_REPORT_BODY" in printed
+        assert "Complete Market Scan Report" in printed
+        assert printed.index("Report saved to:") < printed.index(
+            "Complete Market Scan Report"
+        )
+        assert [item.title for item in rules] == [
+            "Final Market Scan Report",
+            "Complete Market Scan Report",
+        ]
+    else:
+        assert "MACRO_REPORT_BODY" not in printed
+        assert "SECTOR_REPORT_BODY" not in printed
+        assert "Complete Market Scan Report" not in printed
+        assert [item.title for item in rules] == ["Final Market Scan Report"]
+
+    section_panels = [
+        item
+        for item in cli.console.renderables
+        if isinstance(item, Panel)
+        and isinstance(item.renderable, str)
+        and item.renderable.startswith("[bold]")
+    ]
+    expected_section_colors = ["green", "cyan", "magenta", "green"]
+    assert [item.border_style for item in section_panels] == expected_section_colors[
+        : 4 if display_full else 1
+    ]
+
+    report_panels = [
+        item
+        for item in cli.console.renderables
+        if isinstance(item, Panel)
+        and item.title in ("Macro Analyst", "Sector Analyst", "Market Strategist")
+    ]
+    expected_agents = [
+        "Market Strategist",
+        "Macro Analyst",
+        "Sector Analyst",
+        "Market Strategist",
+    ]
+    assert [item.title for item in report_panels] == expected_agents[
+        : 4 if display_full else 1
+    ]
+    assert all(isinstance(item.renderable, Markdown) for item in report_panels)
+    assert all(item.border_style == "blue" for item in report_panels)
+    assert all(item.padding == (1, 2) for item in report_panels)

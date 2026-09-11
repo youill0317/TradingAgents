@@ -109,6 +109,8 @@ class MessageBuffer:
     def __init__(self, max_length=100):
         self.messages = deque(maxlen=max_length)
         self.tool_calls = deque(maxlen=max_length)
+        self.message_agents = deque(maxlen=max_length)
+        self.tool_call_agents = deque(maxlen=max_length)
         self.current_report = None
         self.final_report = None  # Store the complete final report
         self.agent_status = {}
@@ -150,6 +152,8 @@ class MessageBuffer:
         self.current_agent = None
         self.messages.clear()
         self.tool_calls.clear()
+        self.message_agents.clear()
+        self.tool_call_agents.clear()
         self._processed_message_ids.clear()
 
     def get_completed_reports_count(self):
@@ -173,13 +177,15 @@ class MessageBuffer:
                 count += 1
         return count
 
-    def add_message(self, message_type, content):
+    def add_message(self, message_type, content, agent=None):
         timestamp = datetime.datetime.now().strftime("%H:%M:%S")
         self.messages.append((timestamp, message_type, content))
+        self.message_agents.append(agent)
 
-    def add_tool_call(self, tool_name, args):
+    def add_tool_call(self, tool_name, args, agent=None):
         timestamp = datetime.datetime.now().strftime("%H:%M:%S")
         self.tool_calls.append((timestamp, tool_name, args))
+        self.tool_call_agents.append(agent)
 
     def update_agent_status(self, agent, status):
         if agent in self.agent_status:
@@ -288,6 +294,91 @@ def format_tokens(n):
     return str(n)
 
 
+def create_stats_footer(stats_handler=None, start_time=None, prefix=(), suffix=()):
+    """Build the run-stats footer panel shared by both workflows.
+
+    ``prefix`` and ``suffix`` exist to preserve the ticker footer's field order
+    exactly (Agents, then the shared LLM/tool/token counts, then Reports, then
+    elapsed) — they are not a general extension point. Merging them into one
+    list would silently reorder that footer, so keep the two slots distinct.
+    """
+    stats_parts = list(prefix)
+
+    if stats_handler:
+        stats = stats_handler.get_stats()
+        stats_parts.append(f"LLM: {stats['llm_calls']}")
+        stats_parts.append(f"Tools: {stats['tool_calls']}")
+
+        if stats["tokens_in"] > 0 or stats["tokens_out"] > 0:
+            tokens_str = (
+                f"Tokens: {format_tokens(stats['tokens_in'])}\u2191 "
+                f"{format_tokens(stats['tokens_out'])}\u2193"
+            )
+        else:
+            tokens_str = "Tokens: --"
+        stats_parts.append(tokens_str)
+
+    stats_parts.extend(suffix)
+
+    if start_time:
+        elapsed = time.time() - start_time
+        elapsed_str = f"\u23f1 {int(elapsed // 60):02d}:{int(elapsed % 60):02d}"
+        stats_parts.append(elapsed_str)
+
+    stats_table = Table(show_header=False, box=None, padding=(0, 2), expand=True)
+    stats_table.add_column("Stats", justify="center")
+    stats_table.add_row(" | ".join(stats_parts))
+    return Panel(stats_table, border_style="grey50")
+
+
+def create_messages_panel(buffer, show_agent=False):
+    """Build the shared panel, with sequential ownership only when requested."""
+    messages_table = Table(
+        show_header=True,
+        header_style="bold magenta",
+        show_footer=False,
+        expand=True,
+        box=box.MINIMAL,
+        show_lines=True,
+        padding=(0, 1),
+    )
+    messages_table.add_column("Time", style="cyan", width=8, justify="center")
+    if show_agent:
+        messages_table.add_column("Agent", style="green", width=18, justify="center")
+    messages_table.add_column("Type", style="green", width=10, justify="center")
+    messages_table.add_column("Content", style="white", no_wrap=False, ratio=1)
+
+    all_messages = []
+    for index, (timestamp, tool_name, args) in enumerate(buffer.tool_calls):
+        formatted_args = format_tool_args(args)
+        agent = buffer.tool_call_agents[index] if show_agent else None
+        all_messages.append(
+            (timestamp, agent, "Tool", f"{tool_name}: {formatted_args}")
+        )
+
+    for index, (timestamp, msg_type, content) in enumerate(buffer.messages):
+        content_str = str(content) if content else ""
+        if len(content_str) > 200:
+            content_str = content_str[:197] + "..."
+        agent = buffer.message_agents[index] if show_agent else None
+        all_messages.append((timestamp, agent, msg_type, content_str))
+
+    all_messages.sort(key=lambda item: item[0], reverse=True)
+    for timestamp, agent, msg_type, content in all_messages[:12]:
+        wrapped_content = Text(content, overflow="fold")
+        if show_agent:
+            messages_table.add_row(timestamp, agent or "", msg_type, wrapped_content)
+        else:
+            messages_table.add_row(timestamp, msg_type, wrapped_content)
+
+    return Panel(
+        messages_table,
+        title="Messages & Tools",
+        border_style="blue",
+        padding=(1, 2),
+    )
+
+
 def update_display(layout, spinner_text=None, stats_handler=None, start_time=None):
     # Header with welcome message
     layout["header"].update(
@@ -378,60 +469,7 @@ def update_display(layout, spinner_text=None, stats_handler=None, start_time=Non
         Panel(progress_table, title="Progress", border_style="cyan", padding=(1, 2))
     )
 
-    # Messages panel showing recent messages and tool calls
-    messages_table = Table(
-        show_header=True,
-        header_style="bold magenta",
-        show_footer=False,
-        expand=True,  # Make table expand to fill available space
-        box=box.MINIMAL,  # Use minimal box style for a lighter look
-        show_lines=True,  # Keep horizontal lines
-        padding=(0, 1),  # Add some padding between columns
-    )
-    messages_table.add_column("Time", style="cyan", width=8, justify="center")
-    messages_table.add_column("Type", style="green", width=10, justify="center")
-    messages_table.add_column(
-        "Content", style="white", no_wrap=False, ratio=1
-    )  # Make content column expand
-
-    # Combine tool calls and messages
-    all_messages = []
-
-    # Add tool calls
-    for timestamp, tool_name, args in message_buffer.tool_calls:
-        formatted_args = format_tool_args(args)
-        all_messages.append((timestamp, "Tool", f"{tool_name}: {formatted_args}"))
-
-    # Add regular messages
-    for timestamp, msg_type, content in message_buffer.messages:
-        content_str = str(content) if content else ""
-        if len(content_str) > 200:
-            content_str = content_str[:197] + "..."
-        all_messages.append((timestamp, msg_type, content_str))
-
-    # Sort by timestamp descending (newest first)
-    all_messages.sort(key=lambda x: x[0], reverse=True)
-
-    # Calculate how many messages we can show based on available space
-    max_messages = 12
-
-    # Get the first N messages (newest ones)
-    recent_messages = all_messages[:max_messages]
-
-    # Add messages to table (already in newest-first order)
-    for timestamp, msg_type, content in recent_messages:
-        # Format content with word wrapping
-        wrapped_content = Text(content, overflow="fold")
-        messages_table.add_row(timestamp, msg_type, wrapped_content)
-
-    layout["messages"].update(
-        Panel(
-            messages_table,
-            title="Messages & Tools",
-            border_style="blue",
-            padding=(1, 2),
-        )
-    )
+    layout["messages"].update(create_messages_panel(message_buffer))
 
     # Analysis panel showing current report
     if message_buffer.current_report:
@@ -464,35 +502,14 @@ def update_display(layout, spinner_text=None, stats_handler=None, start_time=Non
     reports_completed = message_buffer.get_completed_reports_count()
     reports_total = len(message_buffer.report_sections)
 
-    # Build stats parts
-    stats_parts = [f"Agents: {agents_completed}/{agents_total}"]
-
-    # LLM and tool stats from callback handler
-    if stats_handler:
-        stats = stats_handler.get_stats()
-        stats_parts.append(f"LLM: {stats['llm_calls']}")
-        stats_parts.append(f"Tools: {stats['tool_calls']}")
-
-        # Token display with graceful fallback
-        if stats["tokens_in"] > 0 or stats["tokens_out"] > 0:
-            tokens_str = f"Tokens: {format_tokens(stats['tokens_in'])}\u2191 {format_tokens(stats['tokens_out'])}\u2193"
-        else:
-            tokens_str = "Tokens: --"
-        stats_parts.append(tokens_str)
-
-    stats_parts.append(f"Reports: {reports_completed}/{reports_total}")
-
-    # Elapsed time
-    if start_time:
-        elapsed = time.time() - start_time
-        elapsed_str = f"\u23f1 {int(elapsed // 60):02d}:{int(elapsed % 60):02d}"
-        stats_parts.append(elapsed_str)
-
-    stats_table = Table(show_header=False, box=None, padding=(0, 2), expand=True)
-    stats_table.add_column("Stats", justify="center")
-    stats_table.add_row(" | ".join(stats_parts))
-
-    layout["footer"].update(Panel(stats_table, border_style="grey50"))
+    layout["footer"].update(
+        create_stats_footer(
+            stats_handler,
+            start_time,
+            prefix=(f"Agents: {agents_completed}/{agents_total}",),
+            suffix=(f"Reports: {reports_completed}/{reports_total}",),
+        )
+    )
 
 
 def create_question_box(title, prompt, default=None):
@@ -561,6 +578,28 @@ TICKER_WORKFLOW_STEPS = (
     "IV. Risk Management → V. Portfolio Management"
 )
 MARKET_WORKFLOW_STEPS = "I. Macro Analyst → II. Sector Analyst → III. Market Strategist"
+
+# Filenames must match write_market_report_tree's, so the live copy written
+# during the run and the final one land on the same file rather than two.
+SCAN_REPORT_FILES = {
+    "macro_report": "macro.md",
+    "sector_report": "sector.md",
+    "market_scan_report": "strategist.md",
+}
+
+
+def format_scan_wall_time(agent_times):
+    """The scan's counterpart to AnalystWallTimeTracker.format_summary().
+
+    Not that tracker: it is keyed on the four ticker analysts, and the scan's
+    three stages are not among them.
+    """
+    if not agent_times:
+        return "Scan wall time: pending"
+    return "Scan wall time: " + " | ".join(
+        f"{agent.removesuffix(' Analyst')} {seconds:.2f}s"
+        for agent, seconds in agent_times.items()
+    )
 
 
 def select_output_language_step(step: str) -> str:
@@ -810,6 +849,26 @@ def save_report_to_disk(final_state, ticker: str, save_path: Path):
     return write_report_tree(final_state, ticker, save_path)
 
 
+def display_report_sections(title, sections):
+    """Display one or more report sections without Live-panel truncation."""
+    sections = [section for section in sections if section[2]]
+    if not sections:
+        return
+
+    console.print()
+    console.print(Rule(title, style="bold green"))
+    for heading, agent, content, color in sections:
+        console.print(Panel(f"[bold]{heading}[/bold]", border_style=color))
+        console.print(
+            Panel(
+                Markdown(content),
+                title=agent,
+                border_style="blue",
+                padding=(1, 2),
+            )
+        )
+
+
 def display_complete_report(final_state):
     """Display the complete analysis report sequentially (avoids truncation)."""
     console.print()
@@ -1009,6 +1068,59 @@ def classify_message_type(message) -> tuple[str, str | None]:
     return ("System", content)
 
 
+def accumulate_stream_messages(buffer, chunk, agent=None, excluded_contents=()):
+    """Keep unseen streamed messages even when a graph later clears its state."""
+    excluded = {str(content).strip() for content in excluded_contents if content}
+    for message in chunk.get("messages", []):
+        msg_id = getattr(message, "id", None)
+        if msg_id is not None:
+            if msg_id in buffer._processed_message_ids:
+                continue
+            buffer._processed_message_ids.add(msg_id)
+
+        msg_type, content = classify_message_type(message)
+        if content and content.strip() and content not in excluded:
+            buffer.add_message(msg_type, content, agent=agent)
+
+        if hasattr(message, "tool_calls") and message.tool_calls:
+            for tool_call in message.tool_calls:
+                if isinstance(tool_call, dict):
+                    buffer.add_tool_call(
+                        tool_call["name"], tool_call["args"], agent=agent
+                    )
+                else:
+                    buffer.add_tool_call(tool_call.name, tool_call.args, agent=agent)
+
+
+def log_buffer_to_file(buffer, log_file):
+    """Append every message and tool call to ``log_file`` as it lands.
+
+    Shared by both workflows so a run that dies mid-flight still leaves the
+    same trail on disk. Wraps the buffer's own methods rather than logging at
+    the call sites, which are spread across the stream loop.
+    """
+    add_message, add_tool_call = buffer.add_message, buffer.add_tool_call
+
+    @wraps(add_message)
+    def logged_add_message(*args, **kwargs):
+        add_message(*args, **kwargs)
+        timestamp, message_type, content = buffer.messages[-1]
+        line = str(content).replace("\n", " ")
+        with open(log_file, "a", encoding="utf-8") as f:
+            f.write(f"{timestamp} [{message_type}] {line}\n")
+
+    @wraps(add_tool_call)
+    def logged_add_tool_call(*args, **kwargs):
+        add_tool_call(*args, **kwargs)
+        timestamp, tool_name, tool_args = buffer.tool_calls[-1]
+        args_str = ", ".join(f"{k}={v}" for k, v in tool_args.items())
+        with open(log_file, "a", encoding="utf-8") as f:
+            f.write(f"{timestamp} [Tool Call] {tool_name}({args_str})\n")
+
+    buffer.add_message = logged_add_message
+    buffer.add_tool_call = logged_add_tool_call
+
+
 def format_tool_args(args, max_length=80) -> str:
     """Format tool arguments for terminal display."""
     result = str(args)
@@ -1105,27 +1217,7 @@ def run_analysis(checkpoint: bool | None = None, show_welcome: bool = True):
     log_file = results_dir / "message_tool.log"
     log_file.touch(exist_ok=True)
 
-    def save_message_decorator(obj, func_name):
-        func = getattr(obj, func_name)
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            func(*args, **kwargs)
-            timestamp, message_type, content = obj.messages[-1]
-            content = content.replace("\n", " ")  # Replace newlines with spaces
-            with open(log_file, "a", encoding="utf-8") as f:
-                f.write(f"{timestamp} [{message_type}] {content}\n")
-        return wrapper
-
-    def save_tool_call_decorator(obj, func_name):
-        func = getattr(obj, func_name)
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            func(*args, **kwargs)
-            timestamp, tool_name, args = obj.tool_calls[-1]
-            args_str = ", ".join(f"{k}={v}" for k, v in args.items())
-            with open(log_file, "a", encoding="utf-8") as f:
-                f.write(f"{timestamp} [Tool Call] {tool_name}({args_str})\n")
-        return wrapper
+    log_buffer_to_file(message_buffer, log_file)
 
     def save_report_section_decorator(obj, func_name):
         func = getattr(obj, func_name)
@@ -1141,8 +1233,6 @@ def run_analysis(checkpoint: bool | None = None, show_welcome: bool = True):
                         f.write(text)
         return wrapper
 
-    message_buffer.add_message = save_message_decorator(message_buffer, "add_message")
-    message_buffer.add_tool_call = save_tool_call_decorator(message_buffer, "add_tool_call")
     message_buffer.update_report_section = save_report_section_decorator(message_buffer, "update_report_section")
 
     # Now start the display layout
@@ -1197,24 +1287,7 @@ def run_analysis(checkpoint: bool | None = None, show_welcome: bool = True):
         # Stream the analysis
         trace = []
         for chunk in graph.graph.stream(init_agent_state, **args):
-            # Process all messages in chunk, deduplicating by message ID
-            for message in chunk.get("messages", []):
-                msg_id = getattr(message, "id", None)
-                if msg_id is not None:
-                    if msg_id in message_buffer._processed_message_ids:
-                        continue
-                    message_buffer._processed_message_ids.add(msg_id)
-
-                msg_type, content = classify_message_type(message)
-                if content and content.strip():
-                    message_buffer.add_message(msg_type, content)
-
-                if hasattr(message, "tool_calls") and message.tool_calls:
-                    for tool_call in message.tool_calls:
-                        if isinstance(tool_call, dict):
-                            message_buffer.add_tool_call(tool_call["name"], tool_call["args"])
-                        else:
-                            message_buffer.add_tool_call(tool_call.name, tool_call.args)
+            accumulate_stream_messages(message_buffer, chunk)
 
             # Update analyst statuses based on report state (runs on every chunk)
             update_analyst_statuses(
@@ -1324,6 +1397,18 @@ def run_analysis(checkpoint: bool | None = None, show_welcome: bool = True):
     console.print("\n[bold cyan]Analysis Complete![/bold cyan]\n")
     console.print(f"[dim]{analyst_wall_time_tracker.format_summary()}[/dim]")
 
+    display_report_sections(
+        "Final Analysis Report",
+        (
+            (
+                "V. Portfolio Manager Decision",
+                "Portfolio Manager",
+                final_state.get("final_trade_decision"),
+                "green",
+            ),
+        ),
+    )
+
     # Prompt to save report
     save_choice = typer.prompt("Save report?", default="Y").strip().upper()
     if save_choice in ("Y", "YES", ""):
@@ -1375,31 +1460,212 @@ def run_market_scan(
         "This makes several LLM calls and can take a few minutes.[/dim]\n"
     )
 
-    with console.status("[bold green]Running market scan...", spinner="dots"):
-        final_state = graph.scan(
-            trade_date=date, sectors=sectors, candidate_limit=limit
+    agents = (
+        ("Macro Analyst", "macro_report"),
+        ("Sector Analyst", "sector_report"),
+        ("Market Strategist", "market_scan_report"),
+    )
+    scan_messages = MessageBuffer()
+    start_time = time.time()
+    layout = create_layout()
+    row_agent = agents[0][0]
+    agent_times = {}
+    last_mark = start_time
+
+    # Mirror the ticker workflow's live trail under results_dir: a run that dies
+    # in the Strategist still leaves the macro and sector reports behind.
+    run_dir = (
+        Path(graph.config["results_dir"])
+        / "market_scans"
+        / datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    )
+    run_dir.mkdir(parents=True, exist_ok=True)
+    log_file = run_dir / "message_tool.log"
+    log_file.touch(exist_ok=True)
+    log_buffer_to_file(scan_messages, log_file)
+
+    scan_messages.add_message("System", f"Scan date: {date}")
+    scan_messages.add_message(
+        "System",
+        f"Sectors: {', '.join(sectors)}" if sectors else "Sectors: analyst's choice",
+    )
+    scan_messages.add_message("System", f"Candidate limit: {limit}")
+
+    def active_agent(state):
+        return next((agent for agent, key in agents if not state.get(key)), None)
+
+    def update_scan_display(state, finished=False):
+        layout["header"].update(
+            Panel(
+                "[bold green]Welcome to TradingAgents CLI[/bold green]\n"
+                "[dim]© [Tauric Research](https://github.com/TauricResearch)[/dim]",
+                title="Welcome to TradingAgents",
+                border_style="green",
+                padding=(1, 2),
+                expand=True,
+            )
         )
 
+        progress_table = Table(
+            show_header=True,
+            header_style="bold magenta",
+            show_footer=False,
+            box=box.SIMPLE_HEAD,
+            title=None,
+            padding=(0, 2),
+            expand=True,
+        )
+        progress_table.add_column(
+            "Agent", style="green", justify="center", width=18
+        )
+        progress_table.add_column(
+            "Status", style="yellow", justify="center", width=14
+        )
+
+        current_agent = None if finished else active_agent(state)
+        for agent, key in agents:
+            if state.get(key):
+                status_cell = "[green]completed[/green]"
+            elif agent == current_agent:
+                status_cell = Spinner(
+                    "dots", text="[blue]in_progress[/blue]", style="bold cyan"
+                )
+            else:
+                status_cell = "[yellow]pending[/yellow]"
+            progress_table.add_row(agent, status_cell)
+
+        layout["progress"].update(
+            Panel(
+                progress_table,
+                title="Progress",
+                border_style="cyan",
+                padding=(1, 2),
+            )
+        )
+        layout["messages"].update(
+            create_messages_panel(scan_messages, show_agent=True)
+        )
+
+        if scan_messages.current_report:
+            report = Markdown(scan_messages.current_report)
+        else:
+            report = "[italic]Waiting for analysis report...[/italic]"
+        layout["analysis"].update(
+            Panel(
+                report,
+                title="Current Report",
+                border_style="green",
+                padding=(1, 2),
+            )
+        )
+        agents_completed = sum(1 for _, key in agents if state.get(key))
+        layout["footer"].update(
+            create_stats_footer(
+                stats_handler,
+                start_time,
+                prefix=(f"Agents: {agents_completed}/{len(agents)}",),
+                suffix=(f"Reports: {agents_completed}/{len(agents)}",),
+            )
+        )
+
+    update_scan_display({})
+    with Live(layout, console=console, refresh_per_second=4):
+        def on_chunk(chunk):
+            nonlocal row_agent, last_mark
+            for agent, key in agents:
+                if chunk.get(key) and agent not in agent_times:
+                    now = time.time()
+                    agent_times[agent] = now - last_mark
+                    last_mark = now
+                    (run_dir / SCAN_REPORT_FILES[key]).write_text(
+                        chunk[key], encoding="utf-8"
+                    )
+            reports = [(agent, chunk[key]) for agent, key in agents if chunk.get(key)]
+            if reports:
+                agent, content = reports[-1]
+                scan_messages.current_report = f"### {agent}\n{content}"
+            accumulate_stream_messages(
+                scan_messages,
+                chunk,
+                agent=row_agent,
+                excluded_contents=[content for _, content in reports],
+            )
+            row_agent = active_agent(chunk) or row_agent
+            update_scan_display(chunk)
+
+        final_state = graph.scan(
+            trade_date=date,
+            sectors=sectors,
+            candidate_limit=limit,
+            on_chunk=on_chunk,
+        )
+        wall_time_summary = format_scan_wall_time(agent_times)
+        scan_messages.add_message("System", f"Completed market scan for {date}")
+        scan_messages.add_message("System", wall_time_summary)
+        update_scan_display(final_state, finished=True)
+
     console.print("\n[bold cyan]Market Scan Complete![/bold cyan]\n")
+    console.print(f"[dim]{wall_time_summary}[/dim]")
+    console.print(f"[dim]Run log:[/dim] {run_dir.resolve()}")
 
-    for title, key in (
-        ("I. Macro Analyst", "macro_report"),
-        ("II. Sector Analyst", "sector_report"),
-        ("III. Market Strategist", "market_scan_report"),
-    ):
-        content = final_state.get(key)
-        if not content:
-            continue
-        console.print(Rule(title, style="cyan"))
-        console.print(Markdown(content))
-        console.print()
+    display_report_sections(
+        "Final Market Scan Report",
+        (
+            (
+                "III. Market Strategist",
+                "Market Strategist",
+                final_state.get("market_scan_report"),
+                "green",
+            ),
+        ),
+    )
 
-    if save:
+    # --save keeps its old meaning (save without asking); without it the scan
+    # asks the same save questions the ticker workflow asks.
+    if save or typer.prompt("Save report?", default="Y").strip().upper() in ("Y", "YES", ""):
+        stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        default_path = Path.cwd() / "reports" / f"market_scan_{stamp}"
+        save_path = Path(
+            str(default_path)
+            if save
+            else typer.prompt(
+                "Save path (press Enter for default)", default=str(default_path)
+            ).strip()
+        )
         try:
-            report_file = graph.save_reports(final_state)
-            console.print(f"[green]✓ Report saved to:[/green] {report_file.parent.resolve()}")
+            report_file = graph.save_reports(final_state, save_path=save_path)
+            console.print(f"\n[green]✓ Report saved to:[/green] {save_path.resolve()}")
+            console.print(f"  [dim]Complete report:[/dim] {report_file.name}")
         except Exception as e:
             console.print(f"[red]Error saving report: {e}[/red]")
+
+    display_choice = typer.prompt(
+        "\nDisplay full report on screen?", default="Y"
+    ).strip().upper()
+    if display_choice in ("Y", "YES", ""):
+        display_report_sections(
+            "Complete Market Scan Report",
+            (
+                (
+                    "I. Macro Analyst",
+                    "Macro Analyst",
+                    final_state.get("macro_report"),
+                    "cyan",
+                ),
+                (
+                    "II. Sector Analyst",
+                    "Sector Analyst",
+                    final_state.get("sector_report"),
+                    "magenta",
+                ),
+                (
+                    "III. Market Strategist",
+                    "Market Strategist",
+                    final_state.get("market_scan_report"),
+                    "green",
+                ),
+            ),
+        )
 
     console.print(
         Panel(
@@ -1461,7 +1727,10 @@ def market(
         10, "--limit", help="Maximum number of shortlist candidates."
     ),
     save: bool = typer.Option(
-        False, "--save", help="Write the scan's markdown report tree to disk."
+        False,
+        "--save",
+        help="Save the report without asking (skips the save prompt). Reports "
+        "are written under results_dir as the scan runs either way.",
     ),
 ):
     """Survey the whole market: regime, sector rotation, and a candidate shortlist."""
