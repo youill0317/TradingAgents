@@ -131,6 +131,17 @@ class TestDefault:
         caps = get_capabilities("totally-made-up-model-id")
         assert caps.supports_tool_choice is True
 
+    def test_unknown_gateway_model_is_conservative(self):
+        caps = get_capabilities(
+            "totally-made-up-model-id", conservative_unknown=True
+        )
+        assert caps.supports_tool_choice is False
+        assert caps.preferred_structured_method == "none"
+
+    def test_known_gateway_model_keeps_verified_capabilities(self):
+        caps = get_capabilities("gpt-5.6-luna", conservative_unknown=True)
+        assert caps.supports_tool_choice is True
+
     def test_exact_match_precedes_pattern(self):
         """deepseek-chat must NOT match the v\\d regex."""
         caps = get_capabilities("deepseek-chat")
