@@ -177,7 +177,7 @@ def select_workflow() -> str:
             "analyze",
         ),
         (
-            "US Large-Cap Scan - Scan liquid NYSE/Nasdaq equities "
+            "Market Analysis  - Scan liquid NYSE/Nasdaq equities "
             "(regime, sector rotation, candidate shortlist)",
             "market",
         ),
