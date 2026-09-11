@@ -183,3 +183,21 @@ def test_candidate_conviction_only_changes_for_its_missing_benchmark(monkeypatch
                     screen_evidence=SCREEN + "\n### Technology\n| MSFT | Microsoft |")
     assert [(c["ticker"], c["conviction"]) for c in result["market_scan_result"]["candidates"]] == [
         ("XOM", "Low"), ("MSFT", "High")]
+
+
+def test_new_market_scan_cannot_silently_omit_market_assessment(monkeypatch):
+    result, _ = run(monkeypatch, market_diagnostics_data={"status": "success"})
+    assert result["scan_status"] == "DEGRADED"
+    assert "MARKET_ASSESSMENT_MISSING:market_outlook" in result["scan_warnings"]
+    assert "MARKET_SCENARIOS_INCOMPLETE" in result["scan_warnings"]
+
+
+def test_market_assessment_survives_empty_shortlist(monkeypatch):
+    result, _ = run(monkeypatch, report((), market_outlook="Range with downside risk",
+        participation_assessment="Narrow participation", rotation_assessment="Defensives improving",
+        catalyst_assessment="CPI expected tomorrow", scenarios=["Base: flat", "Upside: broadening", "Downside: breakdown"]),
+        market_diagnostics_data={"status": "success"})
+    assert result["scan_status"] == "COMPLETE"
+    assert "Narrow participation" in result["market_scan_report"]
+    assert "Downside: breakdown" in result["market_scan_report"]
+    assert result["market_scan_result"]["candidates"] == []

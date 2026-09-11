@@ -112,7 +112,9 @@ def test_global_collection_reaches_real_graph_and_grounded_candidate(
             def final(prompt):
                 prompts.append(str(prompt))
                 return MarketScanReport(regime="Rotation", regime_evidence="Japan and oil",
-                                        sector_view="Energy", candidates=[{
+                                        sector_view="Energy", market_outlook="Conditional market outlook",
+                                        participation_assessment="ETF participation", rotation_assessment="Leadership reversal",
+                                        catalyst_assessment="Upcoming CPI", scenarios=["Base: stable", "Upside: breadth expands", "Downside: breadth contracts"], candidates=[{
                                             "ticker": "XOM", "sector": "Energy", "conviction": "High",
                                             "thesis": "Global oil scenario transmits to US energy",
                                         }])
@@ -136,7 +138,13 @@ def test_global_collection_reaches_real_graph_and_grounded_candidate(
             {"source": "get_global_news", "status": "success", "content": "War summary"},
         ], "warnings": [],
     })
-    monkeypatch.setattr(mg, "route_to_vendor", lambda *a: "## Sector performance\n### Sectors (best to worst)\n| 1 | Energy | XLE | +3% | +1% |")
+    monkeypatch.setattr(mg, "collect_market_diagnostics", lambda date: calls.append("diagnostics") or {
+        "report": "PARTICIPATION_ROTATION", "data": {"status": "success"}, "evidence": [], "warnings": [],
+        "sector_report": "## Sector performance\n### Sectors (best to worst)\n| 1 | Energy | XLE | +3% | +1% |",
+    })
+    monkeypatch.setattr(mg, "collect_market_events", lambda date: calls.append("events") or {
+        "report": "DATED_CATALYSTS", "data": {"events": []}, "evidence": [], "warnings": [],
+    })
     import tradingagents.dataflows.market_scan as market
     monkeypatch.setattr(market.yf, "screen", lambda *a, **k: {"quotes": [{"symbol": "XOM"}], "total": 1})
     config = {**DEFAULT_CONFIG, "data_cache_dir": str(tmp_path / "cache"),
@@ -155,7 +163,8 @@ def test_global_collection_reaches_real_graph_and_grounded_candidate(
     assert state["requested_sectors"] == ["Energy"] and state["candidate_limit"] == 3
     assert "company_of_interest" not in state
     assert state["trade_date"] == datetime.fromisoformat(state["as_of_utc"]).astimezone(mg.ZoneInfo("America/New_York")).date().isoformat()
-    assert calls == ["snapshot", "context"]
+    assert calls == ["snapshot", "context", "diagnostics", "events"]
+    assert all("PARTICIPATION_ROTATION" in p and "DATED_CATALYSTS" in p for p in prompts)
     assert "JAPAN_BASELINE" in prompts[0] and "WAR_SUMMARY_ONLY" in prompts[0]
     assert "Japan and oil" in prompts[1]
     assert "Japan and oil" in prompts[-1] and "US Energy benefits" in prompts[-1]
@@ -164,6 +173,10 @@ def test_global_collection_reaches_real_graph_and_grounded_candidate(
     assert not list(tmp_path.rglob("*.db")), "live scans must not resume old checkpoints"
     graph.save_reports(state, tmp_path / "export")
     assert json.loads((tmp_path / "export" / "scan.json").read_text())["candidates"]
+    assert json.loads((tmp_path / "export" / "market_diagnostics.json").read_text())["status"] == "success"
+    assert json.loads((tmp_path / "export" / "event_calendar.json").read_text())["events"] == []
+    report = (tmp_path / "export" / "complete_report.md").read_text()
+    assert "Conditional market outlook" in report and "Downside: breadth contracts" in report
     assert {"complete_report.md", "macro.md", "sector.md", "strategist.md"} <= {p.name for p in (tmp_path / "export").iterdir()}
 
 

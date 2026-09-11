@@ -458,9 +458,9 @@ class MarketCandidate(BaseModel):
 class MarketScanReport(BaseModel):
     """Structured output produced by the Market Strategist.
 
-    Unlike the per-ticker agents, this one answers "what should we look at?"
-    rather than "should we buy this?".  It deliberately carries no rating: a
-    shortlist entry is a prompt for further analysis, not a position call.
+    Describes market conditions, participation, rotation and conditional
+    scenarios independently of the optional ticker shortlist. A shortlist
+    entry is a prompt for further analysis, not a position call.
     """
 
     status: ScanStatus = Field(
@@ -471,6 +471,12 @@ class MarketScanReport(BaseModel):
         default_factory=list,
         description="Machine-readable reasons for degraded or incomplete output.",
     )
+    market_outlook: str = Field(default="", description="Independent 1–4 week market outlook: regime, contradictions, risk appetite and conditions for reassessment.")
+    participation_assessment: str = Field(default="", description="Breadth of sector/ETF participation, equal-weight vs cap-weight and small vs large caps; cite dates and coverage, not invented stock breadth.")
+    rotation_assessment: str = Field(default="", description="Multi-horizon sector leadership, reversals and like-for-like rank or weekly relative changes, grounded in the diagnostics.")
+    catalyst_assessment: str = Field(default="", description="Dated upcoming events, available consensus and recent numeric surprises; identify missing coverage and separate data surprises from market direction.")
+    scenarios: list[str] = Field(default_factory=list, description="Base, upside and downside scenarios for the next 1–4 weeks; each states observable confirmation/invalidation conditions and affected sectors, without invented probabilities.")
+
     regime: MarketRegime = Field(
         description="The single regime label that best fits the current market.",
     )
@@ -514,9 +520,20 @@ def render_market_scan_report(report: MarketScanReport) -> str:
         "",
         report.sector_view,
         "",
-        "## Candidates",
-        "",
     ]
+
+    # Market assessment remains useful even when no stock candidates qualify.
+    for title, text in (
+        ("Market Outlook (1–4 weeks)", report.market_outlook),
+        ("Participation and Concentration", report.participation_assessment),
+        ("Rotation and Transitions", report.rotation_assessment),
+        ("Catalysts and Expectations", report.catalyst_assessment),
+    ):
+        if text:
+            parts.extend([f"## {title}", "", text, ""])
+    if report.scenarios:
+        parts.extend(["## Conditional Scenarios", "", *[f"- {s}" for s in report.scenarios], ""])
+    parts.extend(["## Candidates", ""])
 
     if not report.candidates:
         parts.append(

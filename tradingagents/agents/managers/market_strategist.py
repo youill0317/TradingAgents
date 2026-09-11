@@ -1,8 +1,7 @@
-"""Market Strategist: turns the macro and sector reports into a shortlist.
+"""Synthesize a standalone market outlook and a grounded research shortlist.
 
-The counterpart to the Portfolio Manager, but for the scan workflow. It makes
-no position call — the output is a list of names worth analysing, each with the
-reason it earned a place.
+Market participation, transitions and catalysts inform conditional scenarios;
+individual position decisions remain in the separate ticker workflow.
 """
 
 from __future__ import annotations
@@ -154,7 +153,9 @@ def create_market_strategist(llm):
         if not sector_report.strip():
             data_warnings.append("SECTOR_REPORT_MISSING")
 
-        prompt = f"""As the Market Strategist, synthesise the macro and sector work below into a single regime call and a shortlist of names worth analysing in depth.
+        prompt = f"""As the Market Strategist, produce a standalone market assessment first and a secondary shortlist for deeper ticker analysis. Complete market_outlook, participation_assessment, rotation_assessment, catalyst_assessment and scenarios even when no candidates qualify.
+
+Use a 1–4 week outlook. Distinguish observations from interpretation and conditional forecasts. Address contradictions between index performance, participation, credit proxies and sector leadership. Do not infer measured capital flows from price returns or treat sector ETF counts as stock breadth. Cite actual dates and figures from the supplied diagnostics. Compare the same windows when discussing acceleration. Give base/upside/downside scenarios with observable confirmation and invalidation conditions, without made-up probabilities. For catalysts cite the calendar event, date, available expectation, transmission and affected sectors; unavailable calendars or consensus must be explicit. Current consensus snapshots are not evidence of what was known before a past release.
 
 You are not deciding whether to buy anything. Your shortlist is the input to a separate, deeper per-ticker analysis, so the bar is "this deserves a closer look", not "this is a position".
 
@@ -182,6 +183,12 @@ Connect global conditions and geopolitical transmission channels to US sectors a
 
 ---
 
+**Computed market participation and transitions:**
+{state.get("market_diagnostics", "Unavailable")}
+
+**Economic events and expectations:**
+{state.get("event_calendar", "Unavailable")}
+
 **Collected sector performance (including successful retries):**
 {state.get("sector_evidence", "")}
 
@@ -200,6 +207,12 @@ Connect global conditions and geopolitical transmission channels to US sectors a
                 report, screen_evidence, limit, state.get("requested_sectors"),
                 state.get("sector_evidence"),
             )
+            if "market_diagnostics_data" in state or "event_calendar_data" in state:
+                for field in ("market_outlook", "participation_assessment", "rotation_assessment", "catalyst_assessment"):
+                    if not getattr(report, field).strip():
+                        data_warnings.append(f"MARKET_ASSESSMENT_MISSING:{field}")
+                if len([s for s in report.scenarios if s.strip()]) < 3:
+                    data_warnings.append("MARKET_SCENARIOS_INCOMPLETE")
             warnings = list(dict.fromkeys([*data_warnings, *report.warnings]))
             required_failures = {
                 "SCREEN_EVIDENCE_MISSING", "SECTOR_DATA_UNAVAILABLE",

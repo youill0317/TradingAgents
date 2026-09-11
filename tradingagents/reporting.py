@@ -119,6 +119,8 @@ def write_market_report_tree(final_state: dict, save_path) -> Path:
     parts = [
         ("global_snapshot", "global_data.md", "Collected Global Data"),
         ("global_context", "global_context.md", "Global News and Community Context"),
+        ("market_diagnostics", "market_diagnostics.md", "Market Participation and Transitions"),
+        ("event_calendar", "event_calendar.md", "Economic Catalysts"),
         ("macro_report", "macro.md", "I. Macro Analyst"),
         ("sector_report", "sector.md", "II. Sector Analyst"),
         ("market_scan_report", "strategist.md", "III. Market Strategist"),
@@ -183,6 +185,12 @@ def write_market_report_tree(final_state: dict, save_path) -> Path:
         "".join(json.dumps(row, sort_keys=True) + "\n" for row in evidence_records),
         encoding="utf-8",
     )
+    for key, filename in (("market_diagnostics_data", "market_diagnostics.json"),
+                          ("event_calendar_data", "event_calendar.json")):
+        if key in final_state:
+            (save_path / filename).write_text(
+                json.dumps(final_state[key], indent=2, ensure_ascii=False, allow_nan=False), encoding="utf-8"
+            )
     (save_path / "scan.json").write_text(
         json.dumps(final_state.get("market_scan_result") or {
             "status": validation["status"], "warnings": validation["warnings"],

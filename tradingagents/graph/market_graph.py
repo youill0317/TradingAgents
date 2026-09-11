@@ -33,7 +33,8 @@ from tradingagents.agents.utils.market_scan_tools import (
 from tradingagents.dataflows.config import config_context, set_config
 from tradingagents.dataflows.global_context import collect_global_context
 from tradingagents.dataflows.global_market import collect_global_snapshot
-from tradingagents.dataflows.interface import route_to_vendor
+from tradingagents.dataflows.market_diagnostics import collect_market_diagnostics
+from tradingagents.dataflows.market_events import collect_market_events
 from tradingagents.dataflows.market_scan import resolve_sectors
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.llm_clients import create_llm_client
@@ -205,12 +206,17 @@ class MarketAnalysisGraph:
                 data_warnings=[*snapshot["warnings"], *context["warnings"]],
                 effective_market_session=snapshot.get("effective_market_session"),
             )
-            try:
-                initial_state["sector_evidence"] = str(route_to_vendor(
-                    "get_sector_performance", str(trade_date)
-                ))
-            except Exception:
-                initial_state["sector_evidence"] = "DATA_UNAVAILABLE: sector collection failed"
+            diagnostics = collect_market_diagnostics(str(trade_date))
+            events = collect_market_events(str(trade_date))
+            initial_state.update(
+                market_diagnostics=diagnostics["report"],
+                market_diagnostics_data=diagnostics["data"],
+                event_calendar=events["report"],
+                event_calendar_data=events["data"],
+                sector_evidence=diagnostics["sector_report"],
+                global_evidence=[*initial_state["global_evidence"], *diagnostics["evidence"], *events["evidence"]],
+                data_warnings=[*initial_state["data_warnings"], *diagnostics["warnings"], *events["warnings"]],
+            )
             if self.debug or on_chunk is not None:
                 final_state = None
                 for chunk in self.graph.stream(

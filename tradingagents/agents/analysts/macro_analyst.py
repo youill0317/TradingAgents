@@ -59,6 +59,14 @@ def create_macro_analyst(llm):
             + "\n--- COLLECTED GLOBAL SNAPSHOT ---\n" + state.get("global_snapshot", "")
             + "\n--- COLLECTED NEWS AND COMMUNITY CONTEXT ---\n" + state.get("global_context", "")
             + "\n--- COLLECTION WARNINGS ---\n" + str(state.get("data_warnings", []))
+            + "\n--- COMPUTED MARKET INTERNALS ---\n" + state.get("market_diagnostics", "")
+            + "\n--- ECONOMIC CALENDAR ---\n" + state.get("event_calendar", "")
+            + "\nAssess whether price trends are broadening or narrowing using the observed sector and ETF proxies; "
+            "do not describe these as stock-level breadth. Distinguish established trends from short-term reversals. "
+            "Use the calendar to identify upcoming dated catalysts, consensus where present, and recent actual-minus-consensus "
+            "surprises. Never invent dates or expectations for unavailable fields. A positive surprise is not automatically bullish. "
+            "Give a 1–4 week base case, upside and downside alternatives, observed confirmation signals, and explicit invalidation "
+            "conditions tied to available metrics. Report contradictions (e.g. rising index but narrowing participation) explicitly."
             + get_language_instruction()
         )
 
