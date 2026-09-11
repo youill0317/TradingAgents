@@ -13,36 +13,20 @@ _CUSTOM_ONLY: dict[str, list[ModelOption]] = {
 }
 
 
-# LLM Gateway shortlist. The gateway fronts many vendors, but DevPass — the
-# flat-rate plan — rejects a vendor-prefixed ID with 403, so only bare IDs are
-# offered. Same list for both modes: the gateway prices by plan, not by call,
-# so there is no cheap/expensive split to steer quick vs deep picks.
-# A shortlist, not a limit — llmgateway stays in validators._ANY_MODEL_PROVIDERS,
-# and "Custom model ID" reaches everything else the account can route to.
-_LLM_GATEWAY_OPTIONS: list[ModelOption] = [
-    ("GPT-5.6 Luna", "gpt-5.6-luna"),
-    ("Custom model ID", "custom"),
-]
-_LLM_GATEWAY_MODELS: dict[str, list[ModelOption]] = {
-    "quick": _LLM_GATEWAY_OPTIONS,
-    "deep": _LLM_GATEWAY_OPTIONS,
-}
-
-
 # Shared model list for GLM via Z.AI (international) and BigModel (China).
 # Source: docs.z.ai (GLM Coding Plan supported models + LLM guides).
 # All GLM 4.7+ entries support thinking mode via thinking={"type":"enabled"}.
 _GLM_MODELS: dict[str, list[ModelOption]] = {
     "quick": [
+        ("GLM-5.3-Flash - Fast, cost-efficient, 1M ctx", "glm-5.3-flash"),
         ("GLM-5-Turbo - Fast, switchable thinking modes", "glm-5-turbo"),
-        ("GLM-4.7 - Previous-gen flagship", "glm-4.7"),
         ("GLM-4.5-Air - Lightweight, cost-efficient", "glm-4.5-air"),
         ("Custom model ID", "custom"),
     ],
     "deep": [
-        ("GLM-5.2 - Latest flagship, 1M ctx", "glm-5.2"),
+        ("GLM-5.3 - Latest flagship, 1M ctx", "glm-5.3"),
+        ("GLM-5.2 - 744B, 1M ctx", "glm-5.2"),
         ("GLM-5.1 - 745B, 200K ctx", "glm-5.1"),
-        ("GLM-5 - Flagship, 204K ctx", "glm-5"),
         ("GLM-4.7 - Previous-gen flagship", "glm-4.7"),
         ("Custom model ID", "custom"),
     ],
@@ -77,6 +61,23 @@ _QWEN_MODELS: dict[str, list[ModelOption]] = {
 # Shared model list for MiniMax's global and CN endpoints (same IDs).
 # Full official lineup per platform.minimax.io/docs/api-reference/text-openai-api.
 # M3 carries a 1M-token context window; the M2.x line is 204,800 tokens.
+# Kimi (Moonshot). Source: platform.kimi.ai/docs/models. "Custom model ID" stays
+# available for models newer than this list. The k2.7-code variants are omitted:
+# they are coding specialists, not analysis models.
+_KIMI_MODELS: dict[str, list[ModelOption]] = {
+    "quick": [
+        ("Kimi K2.6 - 256K ctx, thinking modes, agent tasks", "kimi-k2.6"),
+        ("Kimi K3 - Flagship, 1M ctx", "kimi-k3"),
+        ("Custom model ID", "custom"),
+    ],
+    "deep": [
+        ("Kimi K3 - Flagship, 1M ctx, native visual understanding", "kimi-k3"),
+        ("Kimi K2.6 - 256K ctx, thinking modes, agent tasks", "kimi-k2.6"),
+        ("Custom model ID", "custom"),
+    ],
+}
+
+
 _MINIMAX_MODELS: dict[str, list[ModelOption]] = {
     "quick": [
         ("MiniMax-M3 - Latest, 1M ctx, native multimodal", "MiniMax-M3"),
@@ -97,15 +98,15 @@ _MINIMAX_MODELS: dict[str, list[ModelOption]] = {
 MODEL_OPTIONS: ProviderModeOptions = {
     "openai": {
         "quick": [
+            ("GPT-5.6 Luna - Fast, cost-efficient frontier", "gpt-5.6-luna"),
+            ("GPT-5.6 Terra - Balances intelligence and cost", "gpt-5.6-terra"),
             ("GPT-5.4 Mini - Fast, strong coding and tool use", "gpt-5.4-mini"),
-            ("GPT-5.4 Nano - Cheapest, high-volume tasks", "gpt-5.4-nano"),
-            ("GPT-5.5 - Latest frontier, 1M context", "gpt-5.5"),
         ],
         "deep": [
-            ("GPT-5.5 - Latest frontier, 1M context", "gpt-5.5"),
-            ("GPT-5.4 - Previous-gen frontier, 1M context, cost-effective", "gpt-5.4"),
-            ("GPT-5.2 - Strong reasoning, cost-effective", "gpt-5.2"),
-            ("GPT-5.5 Pro - Most capable, expensive ($30/$180 per 1M tokens)", "gpt-5.5-pro"),
+            ("GPT-5.6 - Latest frontier reasoning (Sol)", "gpt-5.6"),
+            ("GPT-5.6 Terra - Balances intelligence and cost", "gpt-5.6-terra"),
+            ("GPT-5.5 - Previous-gen frontier, 1M context", "gpt-5.5"),
+            ("GPT-5.4 - Cost-effective, 1M context", "gpt-5.4"),
         ],
     },
     "anthropic": {
@@ -167,6 +168,7 @@ MODEL_OPTIONS: ProviderModeOptions = {
     "glm-cn": _GLM_MODELS,
     # MiniMax: same model IDs across global (.io) and China (.com) regions,
     # so the two provider keys share one model list.
+    "kimi": _KIMI_MODELS,
     "minimax": _MINIMAX_MODELS,
     "minimax-cn": _MINIMAX_MODELS,
     # OpenRouter: fetched dynamically. Azure: any deployed model name.
@@ -194,13 +196,12 @@ MODEL_OPTIONS: ProviderModeOptions = {
     # Generic OpenAI-compatible endpoint: the model is whatever the user's
     # server serves, so only "Custom model ID" is offered.
     "openai_compatible": _CUSTOM_ONLY,
-    "llmgateway": _LLM_GATEWAY_MODELS,
+    "llmgateway": _CUSTOM_ONLY,
     # Hosted OpenAI-compatible providers that serve many (and frequently
     # changing) models — offer "Custom model ID" rather than a list that goes
     # stale. The endpoint + key are wired by the provider; the user picks the
     # model their account has access to.
     "mistral": _CUSTOM_ONLY,
-    "kimi": _CUSTOM_ONLY,
     "groq": _CUSTOM_ONLY,
     "nvidia": _CUSTOM_ONLY,
     # Bedrock model IDs / cross-region inference profile IDs are user-specified.

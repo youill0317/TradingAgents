@@ -51,8 +51,8 @@ def test_registry_spec(provider, base_url, chat_class, responses):
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("model, supported", [("gpt-5.6-luna", True), ("unknown-route", False)])
-def test_llmgateway_client_uses_registered_config(monkeypatch, model, supported):
+@pytest.mark.parametrize("model", ["claude-opus-5", "gpt-5.5", "gemini-2.5-pro", "custom-route"])
+def test_llmgateway_client_uses_registered_config(monkeypatch, model):
     from tradingagents.llm_clients import create_llm_client
 
     monkeypatch.setenv("LLM_GATEWAY_API_KEY", "dummy")
@@ -60,12 +60,7 @@ def test_llmgateway_client_uses_registered_config(monkeypatch, model, supported)
     assert type(llm).__name__ == "GatewayChatOpenAI"
     assert str(llm.openai_api_base) == "https://api.llmgateway.io/v1"
     schema = {"title": "Answer", "type": "object", "properties": {"answer": {"type": "string"}}}
-    if supported:
-        assert llm.with_structured_output(schema) is not None
-    else:
-        with pytest.raises(NotImplementedError, match="unknown"):
-            llm.with_structured_output(schema)
-
+    assert llm.with_structured_output(schema) is not None
 
 
 @pytest.mark.unit
@@ -77,3 +72,38 @@ def test_key_optionality():
     assert OPENAI_COMPATIBLE_PROVIDERS["xai"].key_optional is False
     # OLLAMA_BASE_URL is the only base-URL env override.
     assert OPENAI_COMPATIBLE_PROVIDERS["ollama"].base_url_env == "OLLAMA_BASE_URL"
+
+
+@pytest.mark.parametrize("arguments,valid", [('{"answer": 3}', True), ('{"answer": "not-an-integer"}', False)])
+def test_gateway_wire_request_and_schema_validation(monkeypatch, arguments, valid):
+    from pydantic import BaseModel
+
+    from tradingagents.llm_clients import create_llm_client
+
+    class Answer(BaseModel):
+        answer: int
+
+    monkeypatch.setenv("LLM_GATEWAY_API_KEY", "dummy")
+    llm = create_llm_client(provider="llmgateway", model="custom-route").get_llm()
+    from types import SimpleNamespace
+
+    captured = []
+    def create(**kwargs):
+        captured.append(kwargs)
+        payload = {"id": "test", "object": "chat.completion", "created": 0, "model": "custom-route",
+                "choices": [{"index": 0, "finish_reason": "tool_calls", "message": {
+                    "role": "assistant", "content": None, "tool_calls": [{"id": "one", "type": "function",
+                    "function": {"name": "Answer", "arguments": arguments}}]}}]}
+        return SimpleNamespace(parse=lambda: payload)
+    monkeypatch.setattr(llm.client.with_raw_response, "create", create)
+    chain = llm.with_structured_output(Answer)
+    if valid:
+        assert chain.invoke("Return answer 3").answer == 3
+    else:
+        with pytest.raises(ValueError):
+            chain.invoke("Return answer 3")
+    assert captured[0]["model"] == "custom-route"
+    assert captured[0]["tools"][0]["function"]["name"] == "Answer"
+    assert captured[0].get("tool_choice") is None
+    assert "response_format" not in captured[0]
+    assert llm.use_responses_api is False

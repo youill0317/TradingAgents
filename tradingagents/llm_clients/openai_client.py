@@ -68,17 +68,17 @@ class LocalCompatibleChatOpenAI(NormalizedChatOpenAI):
         return super().with_structured_output(schema, method=method, **kwargs)
 
 
-class GatewayChatOpenAI(NormalizedChatOpenAI):
-    """Fail closed for unknown gateway routes with unverified capabilities."""
+class GatewayChatOpenAI(LocalCompatibleChatOpenAI):
+    """Use tool-based structured output without a model-name allowlist.
 
-    def with_structured_output(self, schema, *, method=None, **kwargs):
-        caps = get_capabilities(self.model_name, conservative_unknown=True)
-        if caps.preferred_structured_method == "none":
-            raise NotImplementedError(
-                f"Structured output capability is unknown for gateway model "
-                f"{self.model_name!r}"
-            )
-        return super().with_structured_output(schema, method=method, **kwargs)
+    Gateway routes can support tools without supporting forced tool choice or
+    provider-native JSON schemas. Request the schema as a tool and validate the
+    returned arguments through LangChain; unsupported routes still fail at the
+    actual request/parse boundary rather than being declared valid locally.
+    """
+
+    use_responses_api: bool = False
+
 
 
 def _input_to_messages(input_: Any) -> list:
@@ -177,7 +177,7 @@ class MinimaxChatOpenAI(NormalizedChatOpenAI):
 
 # Kwargs forwarded from user config to ChatOpenAI
 _PASSTHROUGH_KWARGS = (
-    "timeout", "max_retries", "reasoning_effort", "temperature",
+    "timeout", "max_retries", "reasoning_effort", "temperature", "max_tokens",
     "api_key", "callbacks", "http_client", "http_async_client",
 )
 

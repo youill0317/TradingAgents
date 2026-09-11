@@ -89,17 +89,8 @@ _DEFAULT = ModelCapabilities(
     preferred_structured_method="function_calling",
 )
 
-_UNKNOWN_GATEWAY = ModelCapabilities(
-    supports_tool_choice=False,
-    supports_json_mode=False,
-    supports_json_schema=False,
-    preferred_structured_method="none",
-)
-
-
 # Exact-ID matches take precedence over pattern matches.
 _BY_ID: dict[str, ModelCapabilities] = {
-    "gpt-5.6-luna": _DEFAULT,
     "deepseek-chat": _DEEPSEEK_CHAT,
     "deepseek-reasoner": _DEEPSEEK_THINKING,
     "deepseek-v4-flash": _DEEPSEEK_THINKING,
@@ -135,16 +126,20 @@ def _bare_model_id(model_name: str) -> str:
     return model_name.rsplit("/", 1)[-1].split(":", 1)[0]
 
 
-def get_capabilities(
-    model_name: str, *, conservative_unknown: bool = False
-) -> ModelCapabilities:
+def get_capabilities(model_name: str) -> ModelCapabilities:
     """Resolve capabilities by exact ID, then pattern, then default."""
+    # OpenRouter namespaces official DeepSeek models as ``deepseek/<id>``, so
+    # strip that prefix to reuse the same quirks as the native provider — e.g.
+    # ``deepseek/deepseek-v4-flash`` must suppress tool_choice like
+    # ``deepseek-v4-flash`` does, not fall through to _DEFAULT (#1199). Only the
+    # official namespace is stripped; third-party finetunes on other publishers
+    # (e.g. ``tngtech/deepseek-...``) keep _DEFAULT, since their quirks are unknown.
+    if model_name.startswith("deepseek/"):
+        model_name = model_name.removeprefix("deepseek/")
+
     if model_name in _BY_ID:
         return _BY_ID[model_name]
-    bare_model_name = _bare_model_id(model_name)
-    if bare_model_name in _BY_ID:
-        return _BY_ID[bare_model_name]
     for pattern, caps in _BY_PATTERN:
-        if pattern.match(bare_model_name):
+        if pattern.match(model_name):
             return caps
-    return _UNKNOWN_GATEWAY if conservative_unknown else _DEFAULT
+    return _DEFAULT

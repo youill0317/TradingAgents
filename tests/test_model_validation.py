@@ -43,14 +43,12 @@ class ModelValidationTests(unittest.TestCase):
         self.assertIn("not-a-real-openai-model", str(caught[0].message))
         self.assertIn("openai", str(caught[0].message))
 
-    def test_llmgateway_offers_defaults_and_still_accepts_any_model(self):
+    def test_llmgateway_accepts_account_specific_model_ids(self):
         from tradingagents.llm_clients.model_catalog import get_model_options
 
         for mode in ("quick", "deep"):
             values = [value for _, value in get_model_options("llmgateway", mode)]
-            self.assertIn("gpt-5.6-luna", values)
-            self.assertTrue(all("/" not in value for value in values))
-            self.assertEqual(values[-1], "custom")
+            self.assertEqual(values, ["custom"])
         self.assertTrue(validate_model("llmgateway", "some-other-model"))
 
     def test_openrouter_and_ollama_accept_custom_models_without_warning(self):
