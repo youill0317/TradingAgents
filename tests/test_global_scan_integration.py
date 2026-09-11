@@ -79,7 +79,8 @@ def test_cli_incomplete_scan_has_failure_exit(monkeypatch):
     assert result.exit_code == 1
 
 
-def test_global_collection_reaches_real_graph_and_grounded_candidate(monkeypatch, tmp_path):
+@pytest.mark.parametrize("stream", [False, True])
+def test_global_collection_reaches_real_graph_and_grounded_candidate(monkeypatch, tmp_path, stream):
     from langchain_core.runnables import RunnableLambda
 
     import tradingagents.graph.market_graph as mg
@@ -132,12 +133,34 @@ def test_global_collection_reaches_real_graph_and_grounded_candidate(monkeypatch
     config = {**DEFAULT_CONFIG, "data_cache_dir": str(tmp_path / "cache"),
               "results_dir": str(tmp_path / "results"), "checkpoint_enabled": True}
     graph = mg.MarketAnalysisGraph(config=config)
-    state = graph.scan(sectors=["Energy"])
+    chunks = []
+    state = graph.scan(sectors=["Energy"], candidate_limit=3, on_chunk=chunks.append if stream else None)
+    if stream:
+        assert chunks[-1] == state
+        assert any(c.get("macro_report") and not c.get("sector_report") for c in chunks)
+    assert state["requested_sectors"] == ["Energy"] and state["candidate_limit"] == 3
+    assert "company_of_interest" not in state
+    assert state["trade_date"] == datetime.fromisoformat(state["as_of_utc"]).astimezone(mg.ZoneInfo("America/New_York")).date().isoformat()
     assert calls == ["snapshot", "context"]
     assert "JAPAN_BASELINE" in prompts[0] and "WAR_SUMMARY_ONLY" in prompts[0]
     assert "Japan and oil" in prompts[1]
+    assert "Japan and oil" in prompts[-1] and "US Energy benefits" in prompts[-1]
     assert state["scan_status"] == "COMPLETE"
     assert state["market_scan_result"]["candidates"][0]["ticker"] == "XOM"
     assert not list(tmp_path.rglob("*.db")), "live scans must not resume old checkpoints"
     graph.save_reports(state, tmp_path / "export")
     assert json.loads((tmp_path / "export" / "scan.json").read_text())["candidates"]
+    assert {"complete_report.md", "macro.md", "sector.md", "strategist.md"} <= {p.name for p in (tmp_path / "export").iterdir()}
+
+
+@pytest.mark.parametrize("kwargs", [
+    {"trade_date": "2000-01-01"}, {"trade_date": "2999-01-01"},
+    {"trade_date": "not-a-date"}, {"candidate_limit": 0}, {"candidate_limit": 26},
+])
+def test_graph_rejects_invalid_inputs_before_collection(kwargs):
+    from tradingagents.graph.market_graph import MarketAnalysisGraph
+
+    # Invalid input must fail before accessing configuration or collecting data.
+    graph = MarketAnalysisGraph.__new__(MarketAnalysisGraph)
+    with pytest.raises(ValueError):
+        graph.scan(**kwargs)

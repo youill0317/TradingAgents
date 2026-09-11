@@ -102,3 +102,17 @@ def test_candidate_with_sector_return_survives_missing_benchmark(monkeypatch):
     ), data_warnings=["SECTOR_DATA_PARTIAL"])
     assert [c["ticker"] for c in result["market_scan_result"]["candidates"]] == ["XOM"]
     assert result["scan_status"] == "DEGRADED"
+
+
+@pytest.mark.parametrize("tickers,evidence,limit,kept,warning", [
+    ((" xom ",), SCREEN, 10, ["XOM"], None),
+    (("GDP", "VIX", "ETF"), "GDP weakened while VIX rose; the ETF lagged.", 10, [], "CANDIDATE_NOT_GROUNDED"),
+    (("XOM",), SCREEN.replace("### Energy", "### Technology"), 10, [], "CANDIDATE_NOT_GROUNDED"),
+    (("XOM", "CVX"), SCREEN + "\n| CVX | Chevron |", 1, ["XOM"], "CANDIDATE_LIMIT_EXCEEDED"),
+])
+def test_grounding_rejects_prose_wrong_sectors_and_excess_candidates(tickers, evidence, limit, kept, warning):
+    result = strategist._ground_candidates(report(tickers), evidence, limit)
+    assert [c.ticker for c in result.candidates] == kept
+    assert result.regime_evidence == "Global context"
+    if warning:
+        assert any(w.startswith(warning + ":") for w in result.warnings)

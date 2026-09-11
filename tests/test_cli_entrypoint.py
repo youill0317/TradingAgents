@@ -9,48 +9,22 @@ is what prevents it, and these tests exist to stop it being removed.
 """
 from __future__ import annotations
 
+import pytest
 from typer.testing import CliRunner
 
 import cli.main as m
 
 
-def _runner():
-    return CliRunner()
-
-
-def test_no_arguments_does_not_fail_with_missing_command(monkeypatch):
-    """The regression this whole file exists for."""
+@pytest.mark.parametrize("workflow", ["analyze", "market"])
+def test_bare_command_dispatches_selected_workflow(monkeypatch, workflow):
+    calls = []
     monkeypatch.setattr(m, "_show_welcome", lambda *a, **k: None)
-    monkeypatch.setattr(m, "select_workflow", lambda: "analyze")
-    monkeypatch.setattr(m, "run_analysis", lambda **k: None)
-
-    result = _runner().invoke(m.app, [])
-
+    monkeypatch.setattr(m, "select_workflow", lambda: calls.append("menu") or workflow)
+    monkeypatch.setattr(m, "run_analysis", lambda **k: calls.append("analyze"))
+    monkeypatch.setattr(m, "run_market_scan", lambda **k: calls.append("market"))
+    result = CliRunner().invoke(m.app, [])
     assert result.exit_code == 0, result.output
-    assert "Missing command" not in result.output
-
-
-def test_no_arguments_asks_which_workflow(monkeypatch):
-    asked = []
-    monkeypatch.setattr(m, "_show_welcome", lambda *a, **k: None)
-    monkeypatch.setattr(m, "select_workflow", lambda: asked.append(True) or "analyze")
-    monkeypatch.setattr(m, "run_analysis", lambda **k: None)
-
-    _runner().invoke(m.app, [])
-
-    assert asked, "the no-argument path must offer the workflow choice"
-
-
-def test_workflow_choice_dispatches_to_the_market_scan(monkeypatch):
-    ran = []
-    monkeypatch.setattr(m, "_show_welcome", lambda *a, **k: None)
-    monkeypatch.setattr(m, "select_workflow", lambda: "market")
-    monkeypatch.setattr(m, "run_market_scan", lambda **k: ran.append(k))
-    monkeypatch.setattr(m, "run_analysis", lambda **k: ran.append("WRONG"))
-
-    _runner().invoke(m.app, [])
-
-    assert ran and ran[0] != "WRONG"
+    assert calls == ["menu", workflow]
 
 
 def test_explicit_subcommands_skip_the_workflow_menu(monkeypatch):
@@ -60,10 +34,12 @@ def test_explicit_subcommands_skip_the_workflow_menu(monkeypatch):
 
     monkeypatch.setattr(m, "select_workflow", _should_not_run)
     monkeypatch.setattr(m, "run_analysis", lambda **k: None)
-    monkeypatch.setattr(m, "run_market_scan", lambda **k: None)
+    calls = []
+    monkeypatch.setattr(m, "run_market_scan", lambda **k: calls.append(k))
 
-    assert _runner().invoke(m.app, ["analyze"]).exit_code == 0
-    assert _runner().invoke(m.app, ["market"]).exit_code == 0
+    assert CliRunner().invoke(m.app, ["analyze"]).exit_code == 0
+    assert CliRunner().invoke(m.app, ["market"]).exit_code == 0
+    assert calls[0]["sectors"] is None
 
 
 def test_market_command_parses_its_options(monkeypatch):
@@ -71,9 +47,9 @@ def test_market_command_parses_its_options(monkeypatch):
     monkeypatch.setattr(m, "select_workflow", lambda: "market")
     monkeypatch.setattr(m, "run_market_scan", lambda **k: captured.update(k))
 
-    result = _runner().invoke(
+    result = CliRunner().invoke(
         m.app,
-        ["market", "--date", "2026-08-19", "--sectors", "Technology, Energy",
+        ["market", "--date", "2026-08-19", "--sectors", "technology, ENERGY",
          "--limit", "5", "--save"],
     )
 
@@ -93,27 +69,8 @@ def test_market_command_rejects_an_unknown_sector_before_running(monkeypatch):
 
     monkeypatch.setattr(m, "run_market_scan", _should_not_run)
 
-    result = _runner().invoke(m.app, ["market", "--sectors", "Tecnology"])
+    result = CliRunner().invoke(m.app, ["market", "--sectors", "Tecnology"])
 
     assert result.exit_code == 2
     # The error has to teach the vocabulary, not just say no.
     assert "Technology" in result.output
-
-
-def test_market_command_canonicalises_sector_case(monkeypatch):
-    captured = {}
-    monkeypatch.setattr(m, "run_market_scan", lambda **k: captured.update(k))
-
-    _runner().invoke(m.app, ["market", "--sectors", "technology,ENERGY"])
-
-    assert captured["sectors"] == ["Technology", "Energy"]
-
-
-def test_market_command_defaults_sectors_to_none(monkeypatch):
-    captured = {}
-    monkeypatch.setattr(m, "run_market_scan", lambda **k: captured.update(k))
-
-    _runner().invoke(m.app, ["market"])
-
-    # None, not [] — the Sector Analyst picks for itself when nothing is asked for.
-    assert captured["sectors"] is None
