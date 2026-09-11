@@ -9,7 +9,7 @@ from langchain_openai import ChatOpenAI
 
 from .api_key_env import get_api_key_env
 from .base_client import BaseLLMClient, normalize_content
-from .capabilities import get_capabilities
+from .capabilities import _bare_model_id, get_capabilities
 from .validators import validate_model
 
 
@@ -66,6 +66,19 @@ class LocalCompatibleChatOpenAI(NormalizedChatOpenAI):
         if resolved == "function_calling":
             kwargs.setdefault("tool_choice", None)
         return super().with_structured_output(schema, method=method, **kwargs)
+
+
+class GatewayChatOpenAI(LocalCompatibleChatOpenAI):
+    """Use tool-based structured output without a model-name allowlist.
+
+    Gateway routes can support tools without supporting forced tool choice or
+    provider-native JSON schemas. Request the schema as a tool and validate the
+    returned arguments through LangChain; unsupported routes still fail at the
+    actual request/parse boundary rather than being declared valid locally.
+    """
+
+    use_responses_api: bool = False
+
 
 
 def _input_to_messages(input_: Any) -> list:
@@ -177,7 +190,7 @@ _OPENAI_REASONING_MODEL = re.compile(r"^(gpt-5|o[1-9])")
 
 def _supports_reasoning_effort(model: str) -> bool:
     """Whether the (native OpenAI) model accepts ``reasoning_effort``."""
-    return bool(_OPENAI_REASONING_MODEL.match(model.lower().strip()))
+    return bool(_OPENAI_REASONING_MODEL.match(_bare_model_id(model).lower().strip()))
 
 
 @dataclass(frozen=True)
@@ -220,6 +233,9 @@ OPENAI_COMPATIBLE_PROVIDERS: dict[str, ProviderSpec] = {
     "minimax":    ProviderSpec(base_url="https://api.minimax.io/v1", chat_class=MinimaxChatOpenAI),
     "minimax-cn": ProviderSpec(base_url="https://api.minimaxi.com/v1", chat_class=MinimaxChatOpenAI),
     "openrouter": ProviderSpec(base_url="https://openrouter.ai/api/v1"),
+    "llmgateway": ProviderSpec(
+        base_url="https://api.llmgateway.io/v1", chat_class=GatewayChatOpenAI
+    ),
     "mistral":    ProviderSpec(base_url="https://api.mistral.ai/v1"),
     "kimi":       ProviderSpec(base_url="https://api.moonshot.ai/v1"),
     "groq":       ProviderSpec(base_url="https://api.groq.com/openai/v1"),

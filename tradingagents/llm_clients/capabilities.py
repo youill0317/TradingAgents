@@ -89,7 +89,6 @@ _DEFAULT = ModelCapabilities(
     preferred_structured_method="function_calling",
 )
 
-
 # Exact-ID matches take precedence over pattern matches.
 _BY_ID: dict[str, ModelCapabilities] = {
     "deepseek-chat": _DEEPSEEK_CHAT,
@@ -114,6 +113,17 @@ _BY_PATTERN: list[tuple[re.Pattern[str], ModelCapabilities]] = [
     (re.compile(r"^deepseek-reasoner"), _DEEPSEEK_THINKING),
     (re.compile(r"^MiniMax-M\d"), _MINIMAX_THINKING),
 ]
+
+
+def _bare_model_id(model_name: str) -> str:
+    """Strip a gateway's vendor prefix and region pin.
+
+    ``alibaba/deepseek-v3.2:cn-beijing`` becomes ``deepseek-v3.2``. The
+    quirks in this table are properties of the model, not of its route.
+    """
+    if "/" not in model_name:
+        return model_name
+    return model_name.rsplit("/", 1)[-1].split(":", 1)[0]
 
 
 def get_capabilities(model_name: str) -> ModelCapabilities:
