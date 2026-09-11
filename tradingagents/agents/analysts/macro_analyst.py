@@ -14,6 +14,7 @@ from tradingagents.agents.utils.agent_utils import (
     get_macro_indicators,
     get_prediction_markets,
 )
+from tradingagents.llm_clients.base_client import normalize_content
 
 
 def create_macro_analyst(llm):
@@ -83,7 +84,7 @@ def create_macro_analyst(llm):
         prompt = prompt.partial(current_date=current_date)
 
         chain = prompt | llm.bind_tools(tools)
-        result = chain.invoke(state["messages"])
+        result = normalize_content(chain.invoke(state["messages"]))
 
         report = ""
         if len(result.tool_calls) == 0:

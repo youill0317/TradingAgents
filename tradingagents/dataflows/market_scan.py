@@ -84,16 +84,22 @@ def _pct_return(symbol: str, curr_date: str, look_back_days: int) -> float | Non
     if data.empty or "Close" not in data.columns:
         return None
 
-    cutoff = pd.to_datetime(curr_date) - pd.Timedelta(days=look_back_days)
-    window = data[data["Date"] >= cutoff]
-    # Fewer than two rows means no measurable change over the window.
-    if len(window) < 2:
+    data = data.copy()
+    data["Date"] = pd.to_datetime(data["Date"]).dt.tz_localize(None)
+    data = data[data["Date"] <= pd.Timestamp(curr_date)].sort_values("Date")
+    data = data.drop_duplicates("Date", keep="last")
+    cutoff = pd.Timestamp(curr_date) - pd.Timedelta(days=look_back_days)
+    baseline = data[data["Date"] <= cutoff]
+    if baseline.empty or data.empty:
         return None
-    first = float(window["Close"].iloc[0])
-    last = float(window["Close"].iloc[-1])
-    if first == 0:
+    first_row, last_row = baseline.iloc[-1], data.iloc[-1]
+    # Allow weekends/holidays at the boundary, never a shorter history.
+    if (cutoff - first_row["Date"]).days > 7 or last_row["Date"] <= cutoff:
         return None
-    return (last - first) / first * 100
+    first, last = float(first_row["Close"]), float(last_row["Close"])
+    if not all(math.isfinite(v) and v > 0 for v in (first, last)):
+        return None
+    return (last / first - 1) * 100
 
 
 def get_sector_performance(

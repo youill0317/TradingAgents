@@ -112,3 +112,15 @@ def test_alpha_news_payload_status_and_configured_limits():
             assert result["evidence"][0]["status"] == expected
             assert "apikey=secret" not in result["evidence"][0]["content"]
             assert route.call_args_list[0].kwargs == {"look_back_days": 3, "limit": 4}
+
+
+def test_partial_news_keeps_successful_coverage_usable():
+    with patch.object(global_context, "route_to_vendor", return_value=(
+        "## Global Market News\n### Policy news\n\nQuery coverage:\n"
+        "- US: success (1 in window)\n- Asia: failed (TimeoutError)"
+    )), patch.object(global_context, "collect_reddit_topic", return_value={"status": "empty", "posts": []}), \
+         patch.object(global_context, "fetch_stocktwits_messages", return_value="<no messages>"):
+        result = global_context.collect_global_context("2026-09-11")
+    assert result["evidence"][0]["status"] == "partial"
+    assert "Policy news" in result["evidence"][0]["content"]
+    assert result["warnings"]

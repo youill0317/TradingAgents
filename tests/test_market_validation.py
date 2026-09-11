@@ -10,6 +10,13 @@ from tradingagents.agents.utils.structured import StructuredOutputError
 SCREEN = "## Equity screen\n### Energy\n| Symbol | Name |\n| --- | --- |\n| XOM | Exxon |"
 
 
+EVIDENCE = [
+    {"source": "fred", "target": "US: policy rate", "status": "success", "content": "Rate: 4%"},
+    {"source": "yfinance", "target": "SPY", "status": "success", "content": "SPY: +2%"},
+    {"source": "get_global_news", "status": "success", "content": "Policy announcement"},
+]
+
+
 def report(tickers=("XOM",), **overrides):
     return MarketScanReport(**{
         "regime": "Risk-On", "regime_evidence": "Global context", "sector_view": "Energy",
@@ -23,7 +30,7 @@ def run(monkeypatch, answer=None, **overrides):
     invoke = Mock(return_value=answer or report())
     monkeypatch.setattr(strategist, "invoke_structured_required", invoke)
     state = {"macro_report": "Global conditions", "sector_report": "Energy report",
-             "screen_evidence": SCREEN, **overrides}
+             "screen_evidence": SCREEN, "global_evidence": EVIDENCE, **overrides}
     return strategist.create_market_strategist(None)(state), invoke
 
 
@@ -56,11 +63,11 @@ def test_model_cannot_set_completion_status(monkeypatch):
     assert result["scan_warnings"] == []
 
 
-def test_partial_data_lowers_conviction_and_preserves_global_context(monkeypatch):
+def test_optional_gap_preserves_conviction_and_global_context(monkeypatch):
     result, invoke = run(monkeypatch, data_warnings=["FRED_MISSING"],
                          global_snapshot="Japan\nGrowth: uncertain")
     assert result["scan_status"] == "DEGRADED"
-    assert result["market_scan_result"]["candidates"][0]["conviction"] == "Low"
+    assert result["market_scan_result"]["candidates"][0]["conviction"] == "High"
     assert "Japan\nGrowth: uncertain" in invoke.call_args.args[1]
 
 
@@ -126,3 +133,53 @@ def test_historical_state_is_rejected_before_model_invocation(monkeypatch, stage
     node = (create_sector_analyst if stage == "sector" else strategist.create_market_strategist)(None)
     with pytest.raises(ValueError, match="only live analysis"):
         node({"scan_mode": "historical"})
+
+
+@pytest.mark.parametrize("source", ["fred", "yfinance", "get_global_news"])
+@pytest.mark.parametrize("status", ["failed", "stale", "unavailable"])
+def test_missing_input_family_blocks_candidates_despite_reports(monkeypatch, source, status):
+    evidence = [dict(row, status=status) if row["source"] == source else row for row in EVIDENCE]
+    result, _ = run(monkeypatch, global_evidence=evidence)
+    assert result["scan_status"] == "INCOMPLETE"
+    assert result["market_scan_result"]["candidates"] == []
+
+
+def test_empty_news_search_is_observed_coverage(monkeypatch):
+    evidence = [dict(row, status="empty", content="No matching news")
+                if row["source"] == "get_global_news" else row for row in EVIDENCE]
+    result, _ = run(monkeypatch, global_evidence=evidence)
+    assert result["scan_status"] == "COMPLETE"
+
+
+def test_sector_recovery_reaches_grounding_and_saved_evidence(monkeypatch, tmp_path):
+    import json
+
+    from langchain_core.messages import ToolMessage
+
+    from tradingagents.graph.market_setup import capture_screen_evidence
+    from tradingagents.reporting import write_market_report_tree
+
+    table = "## Sector performance\n### Sectors (best to worst)\n| 1 | Energy | XLE | +3% | +1% |"
+    captured = capture_screen_evidence({
+        "sector_evidence": "DATA_UNAVAILABLE: failed", "data_warnings": ["SECTOR_DATA_UNAVAILABLE"],
+        "messages": [ToolMessage(content=table, name="get_sector_performance", tool_call_id="s"),
+                     ToolMessage(content=SCREEN, name="screen_equities", tool_call_id="e")],
+    })
+    result, _ = run(monkeypatch, **captured)
+    assert result["scan_status"] == "COMPLETE"
+    assert result["market_scan_result"]["candidates"][0]["ticker"] == "XOM"
+    write_market_report_tree({**captured, **result}, tmp_path)
+    saved = [json.loads(line) for line in (tmp_path / "evidence.jsonl").read_text().splitlines()]
+    assert next(r["content"] for r in saved if r["source"] == "yahoo_sectors") == table
+
+
+def test_candidate_conviction_only_changes_for_its_missing_benchmark(monkeypatch):
+    table = "## Sector performance\n### Sectors (best to worst)\n| 1 | Energy | XLE | +3% | n/a |\n| 2 | Technology | XLK | +2% | +1% |"
+    answer = report(candidates=[
+        {"ticker": "XOM", "sector": "Energy", "thesis": "Energy", "conviction": "High"},
+        {"ticker": "MSFT", "sector": "Technology", "thesis": "Technology", "conviction": "High"},
+    ])
+    result, _ = run(monkeypatch, answer, sector_evidence=table,
+                    screen_evidence=SCREEN + "\n### Technology\n| MSFT | Microsoft |")
+    assert [(c["ticker"], c["conviction"]) for c in result["market_scan_result"]["candidates"]] == [
+        ("XOM", "Low"), ("MSFT", "High")]

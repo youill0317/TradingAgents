@@ -14,6 +14,7 @@ from tradingagents.agents.utils.market_scan_tools import (
     get_sector_performance,
     screen_equities,
 )
+from tradingagents.llm_clients.base_client import normalize_content
 
 
 def create_sector_analyst(llm):
@@ -93,7 +94,7 @@ def create_sector_analyst(llm):
         prompt = prompt.partial(current_date=current_date)
 
         chain = prompt | llm.bind_tools(tools)
-        result = chain.invoke(state["messages"])
+        result = normalize_content(chain.invoke(state["messages"]))
 
         report = ""
         if len(result.tool_calls) == 0:

@@ -41,7 +41,9 @@ def collect_global_context(trade_date: str) -> dict:
             if method == "get_global_news" and isinstance(payload, dict):
                 failed = failed or any(key in payload for key in ("Error Message", "Information", "Note"))
                 empty = empty or payload.get("feed") == []
-            status = "failed" if failed or partial_failure else "empty" if empty else "success"
+            has_news = any(": success (" in line for line in coverage.splitlines())
+            status = ("failed" if failed or (partial_failure and not has_news) else
+                      "partial" if partial_failure else "empty" if empty else "success")
             if failed:
                 content = "Provider reported retrieval failure; error details omitted."
         except Exception as exc:

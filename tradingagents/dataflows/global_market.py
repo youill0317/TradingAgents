@@ -116,6 +116,7 @@ def _macro_observation(target, series, trade_date):
         "retrieved_at": datetime.now(timezone.utc).isoformat(),
     }
     if series is None:
+        record["status"] = "not_configured"
         record["content"] = f"{target}: no comparable series selected in the fixed baseline"
         return record
     record["url"] = f"https://fred.stlouisfed.org/series/{series}"
@@ -174,7 +175,7 @@ def collect_global_snapshot(trade_date: str) -> dict:
         futures += [pool.submit(copy_context().run, _macro_observation, f"US: {series}", series, trade_date) for series in US_FINANCIAL_SERIES]
         futures += [pool.submit(copy_context().run, _macro_observation, f"{region}: reserves excluding gold", series, trade_date) for region, series in RESERVE_SERIES.items()]
         evidence = [future.result() for future in futures]
-    warnings = [item.get("warning", f"{item['target']}: {item['status']}") for item in evidence if item["status"] != "success"]
+    warnings = [item.get("warning", f"{item['target']}: {item['status']}") for item in evidence if item["status"] not in ("success", "not_configured")]
     report = (
         f"## Global market baseline as of {trade_date}\n"
         "Equity/bond ETFs are USD investor proxies, not local indexes or measured capital flows. "

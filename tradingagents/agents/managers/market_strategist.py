@@ -67,6 +67,7 @@ def _ground_candidates(report: MarketScanReport, sector_report: str, limit: int,
     named = _screen_rows(sector_report)
     allowed = {sector.casefold() for sector in (requested_sectors or [])}
     available = set()
+    missing_benchmark = set()
     in_sectors = False
     for line in (sector_evidence or "").splitlines():
         line = line.strip()
@@ -84,6 +85,12 @@ def _ground_candidates(report: MarketScanReport, sector_report: str, limit: int,
                 continue
             if math.isfinite(value):
                 available.add(cells[1].casefold())
+                try:
+                    benchmark_ok = cells[4].endswith("%") and math.isfinite(float(cells[4][:-1]))
+                except ValueError:
+                    benchmark_ok = False
+                if not benchmark_ok:
+                    missing_benchmark.add(cells[1].casefold())
     kept, warnings, seen = [], list(report.warnings), set()
     for candidate in report.candidates:
         ticker, sector = candidate.ticker, candidate.sector.casefold()
@@ -102,9 +109,31 @@ def _ground_candidates(report: MarketScanReport, sector_report: str, limit: int,
             warnings.append(f"{reason}:{ticker}")
             logger.warning("Market Strategist: dropping candidate %r: %s", ticker, reason)
         else:
+            if sector in missing_benchmark:
+                candidate = candidate.model_copy(update={"conviction": Conviction.LOW})
+                warnings.append(f"CANDIDATE_BENCHMARK_MISSING:{ticker}")
             kept.append(candidate)
             seen.add(ticker)
     return report.model_copy(update={"candidates": kept, "warnings": warnings})
+
+
+def _required_evidence_warnings(state):
+    """Require observed inputs, not an LLM's assertion that it analysed them.
+
+    One usable observation per input family is a minimum availability gate,
+    not a claim of comprehensive regional coverage. Optional gaps remain
+    visible without mechanically lowering every unrelated candidate.
+    """
+    records = state.get("global_evidence", [])
+    requirements = (
+        ("fred", {"success"}, "MACRO_EVIDENCE_MISSING"),
+        ("yfinance", {"success", "partial"}, "GLOBAL_MARKET_EVIDENCE_MISSING"),
+        ("get_global_news", {"success", "partial", "empty"}, "NEWS_EVIDENCE_MISSING"),
+    )
+    return [warning for source, statuses, warning in requirements if not any(
+        r.get("source") == source and r.get("status") in statuses
+        and str(r.get("content") or "").strip() for r in records
+    )]
 
 
 def create_market_strategist(llm):
@@ -117,7 +146,7 @@ def create_market_strategist(llm):
         sector_report = state.get("sector_report", "")
         screen_evidence = state.get("screen_evidence", "")
         limit = state.get("candidate_limit", 10)
-        data_warnings = list(state.get("data_warnings", []))
+        data_warnings = [*state.get("data_warnings", []), *_required_evidence_warnings(state)]
         if not screen_evidence:
             data_warnings.append("SCREEN_EVIDENCE_MISSING")
         if not macro_report.strip():
@@ -153,6 +182,9 @@ Connect global conditions and geopolitical transmission channels to US sectors a
 
 ---
 
+**Collected sector performance (including successful retries):**
+{state.get("sector_evidence", "")}
+
 **Validated raw equity-screen evidence:**
 {screen_evidence or "No successful equity screen was captured."}
 
@@ -172,6 +204,8 @@ Connect global conditions and geopolitical transmission channels to US sectors a
             required_failures = {
                 "SCREEN_EVIDENCE_MISSING", "SECTOR_DATA_UNAVAILABLE",
                 "MACRO_REPORT_MISSING", "SECTOR_REPORT_MISSING",
+                "MACRO_EVIDENCE_MISSING", "GLOBAL_MARKET_EVIDENCE_MISSING",
+                "NEWS_EVIDENCE_MISSING",
             }
             incomplete = bool(required_failures.intersection(warnings))
             status = (ScanStatus.INCOMPLETE if incomplete else
@@ -179,10 +213,7 @@ Connect global conditions and geopolitical transmission channels to US sectors a
             report = report.model_copy(update={
                 "status": status,
                 "warnings": warnings,
-                "candidates": [] if incomplete else [
-                    c.model_copy(update={"conviction": Conviction.LOW})
-                    if warnings else c for c in report.candidates
-                ],
+                "candidates": [] if incomplete else report.candidates,
             })
         except StructuredOutputError as exc:
             logger.error("%s", exc)

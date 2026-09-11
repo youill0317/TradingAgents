@@ -165,8 +165,8 @@ class TestSectorPerformance:
     def test_ranks_best_to_worst(self, monkeypatch):
         # XLE climbs, everything else is flat, so XLE must lead.
         def fake_load(symbol, curr_date):
-            dates = pd.date_range(end=curr_date, periods=10, freq="D")
-            closes = list(range(100, 110)) if symbol == "XLE" else [100] * 10
+            dates = pd.date_range(end=curr_date, periods=40, freq="D")
+            closes = list(range(100, 140)) if symbol == "XLE" else [100] * 40
             return pd.DataFrame({"Date": dates, "Close": closes})
 
         monkeypatch.setattr(ms, "load_ohlcv", fake_load)
@@ -190,8 +190,8 @@ class TestSectorPerformance:
         def partial_load(symbol, curr_date):
             if symbol == "XLU":
                 raise RuntimeError("no rows")
-            dates = pd.date_range(end=curr_date, periods=10, freq="D")
-            return pd.DataFrame({"Date": dates, "Close": [100] * 10})
+            dates = pd.date_range(end=curr_date, periods=40, freq="D")
+            return pd.DataFrame({"Date": dates, "Close": [100] * 40})
 
         monkeypatch.setattr(ms, "load_ohlcv", partial_load)
         with caplog.at_level("WARNING"):
@@ -301,3 +301,17 @@ def test_cli_streams_reports_and_saves_even_without_optional_export(monkeypatch,
     assert "_BODY" not in console.export_text(clear=True)
     console.print(layouts[0]["analysis"].renderable)
     assert "FINAL_BODY" in console.export_text()
+
+
+@pytest.mark.parametrize("dates,prices,expected", [
+    (["2026-09-10", "2026-09-11"], [100, 110], None),
+    (["2026-08-11", "2026-08-13", "2026-09-11"], [100, 105, 110], 10),
+    (["2026-08-01", "2026-09-11"], [100, 110], None),
+    (["2026-08-12", "2026-09-11"], [float("nan"), 110], None),
+    (["2026-08-12", "2026-09-11", "2026-09-12"], [100, 110, 999], 10),
+])
+def test_sector_return_requires_full_window(monkeypatch, dates, prices, expected):
+    frame = pd.DataFrame({"Date": pd.to_datetime(dates), "Close": prices})
+    monkeypatch.setattr(ms, "load_ohlcv", lambda *args: frame)
+    result = ms._pct_return("XLE", "2026-09-11", 30)
+    assert result is None if expected is None else result == pytest.approx(expected)

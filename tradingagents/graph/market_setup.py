@@ -135,9 +135,13 @@ def capture_screen_evidence(state: MarketState) -> dict:
         str(m.content) for m in _tool_messages(state, "get_sector_performance")
     ]]
     usable = [s for s in sector_data if "## Sector performance" in s]
+    # Prefer the latest successful observation, including a tool retry. The
+    # same table must drive validation, prompts and persisted evidence.
+    sector_evidence = usable[-1] if usable else state.get("sector_evidence", "")
+    warnings = [w for w in warnings if w not in {"SECTOR_DATA_UNAVAILABLE", "SECTOR_DATA_PARTIAL"}]
     if not usable:
         warnings.append("SECTOR_DATA_UNAVAILABLE")
-    elif any("n/a" in s for s in usable):
+    elif "n/a" in sector_evidence:
         warnings.append("SECTOR_DATA_PARTIAL")
     if state.get("scan_mode") != "historical" and not evidence:
         warnings.append("SCREEN_EVIDENCE_MISSING")
@@ -147,6 +151,7 @@ def capture_screen_evidence(state: MarketState) -> dict:
     ):
         warnings.append("SECTOR_TOOL_BUDGET_EXHAUSTED")
     return {
+        "sector_evidence": sector_evidence,
         "screen_evidence": "\n\n".join(evidence),
         "data_warnings": list(dict.fromkeys(warnings)),
     }

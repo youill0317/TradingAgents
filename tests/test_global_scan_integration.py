@@ -104,8 +104,8 @@ def test_global_collection_reaches_real_graph_and_grounded_candidate(
                         return AIMessage(content="", tool_calls=[{
                             "name": "screen_equities", "args": {"sector": "Energy"}, "id": "screen",
                         }])
-                    return AIMessage(content="US Energy benefits from the global scenario")
-                return AIMessage(content="Japan and oil: a global scenario with uncertainty")
+                    return AIMessage(content=[{"type": "text", "text": "US Energy benefits from the global scenario"}] if provider == "google" else "US Energy benefits from the global scenario")
+                return AIMessage(content=[{"type": "text", "text": "Japan and oil: a global scenario with uncertainty"}] if provider == "google" else "Japan and oil: a global scenario with uncertainty")
             return RunnableLambda(answer)
 
         def with_structured_output(self, schema):
@@ -126,10 +126,15 @@ def test_global_collection_reaches_real_graph_and_grounded_candidate(
     client_options = []
     monkeypatch.setattr(mg, "create_llm_client", lambda **k: client_options.append(k) or Client())
     monkeypatch.setattr(mg, "collect_global_snapshot", lambda date: calls.append("snapshot") or {
-        "report": "JAPAN_BASELINE", "evidence": [], "warnings": [],
+        "report": "JAPAN_BASELINE", "evidence": [
+            {"source": "fred", "status": "success", "content": "Japan growth"},
+            {"source": "yfinance", "status": "success", "content": "Equity returns"},
+        ], "warnings": [],
     })
     monkeypatch.setattr(mg, "collect_global_context", lambda date: calls.append("context") or {
-        "report": "WAR_SUMMARY_ONLY", "evidence": [], "warnings": [],
+        "report": "WAR_SUMMARY_ONLY", "evidence": [
+            {"source": "get_global_news", "status": "success", "content": "War summary"},
+        ], "warnings": [],
     })
     monkeypatch.setattr(mg, "route_to_vendor", lambda *a: "## Sector performance\n### Sectors (best to worst)\n| 1 | Energy | XLE | +3% | +1% |")
     import tradingagents.dataflows.market_scan as market

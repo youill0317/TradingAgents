@@ -96,3 +96,18 @@ def test_macro_report_trimming_preserves_full_evidence_and_stale_warning():
     assert "- Units: Percent" in result and "**Latest:**" in result
     assert "STALE" in result
     assert evidence["content"] == content
+
+
+def test_unselected_series_do_not_degrade_successful_collection(monkeypatch):
+    original = gm._macro_observation
+    def macro(target, series, date):
+        if series is None:
+            return original(target, series, date)
+        return {"source": "fred", "target": target, "status": "success", "content": "Available"}
+    monkeypatch.setattr(gm, "_macro_observation", macro)
+    monkeypatch.setattr(gm, "_asset_observation", lambda asset, date: {
+        "source": "yfinance", "target": asset[0], "status": "success", "content": "Available"})
+    result = gm.collect_global_snapshot("2026-09-11")
+    assert not result["warnings"]
+    assert sum(r["status"] == "not_configured" for r in result["evidence"]) == 9
+    assert "no comparable series selected" in result["report"]
