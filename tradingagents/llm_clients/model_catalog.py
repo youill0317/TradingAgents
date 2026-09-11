@@ -13,6 +13,22 @@ _CUSTOM_ONLY: dict[str, list[ModelOption]] = {
 }
 
 
+# LLM Gateway shortlist. The gateway fronts many vendors, but DevPass — the
+# flat-rate plan — rejects a vendor-prefixed ID with 403, so only bare IDs are
+# offered. Same list for both modes: the gateway prices by plan, not by call,
+# so there is no cheap/expensive split to steer quick vs deep picks.
+# A shortlist, not a limit — llmgateway stays in validators._ANY_MODEL_PROVIDERS,
+# and "Custom model ID" reaches everything else the account can route to.
+_LLM_GATEWAY_OPTIONS: list[ModelOption] = [
+    ("GPT-5.6 Luna", "gpt-5.6-luna"),
+    ("Custom model ID", "custom"),
+]
+_LLM_GATEWAY_MODELS: dict[str, list[ModelOption]] = {
+    "quick": _LLM_GATEWAY_OPTIONS,
+    "deep": _LLM_GATEWAY_OPTIONS,
+}
+
+
 # Shared model list for GLM via Z.AI (international) and BigModel (China).
 # Source: docs.z.ai (GLM Coding Plan supported models + LLM guides).
 # All GLM 4.7+ entries support thinking mode via thinking={"type":"enabled"}.
@@ -178,11 +194,11 @@ MODEL_OPTIONS: ProviderModeOptions = {
     # Generic OpenAI-compatible endpoint: the model is whatever the user's
     # server serves, so only "Custom model ID" is offered.
     "openai_compatible": _CUSTOM_ONLY,
+    "llmgateway": _LLM_GATEWAY_MODELS,
     # Hosted OpenAI-compatible providers that serve many (and frequently
     # changing) models — offer "Custom model ID" rather than a list that goes
     # stale. The endpoint + key are wired by the provider; the user picks the
     # model their account has access to.
-    "llmgateway": _CUSTOM_ONLY,
     "mistral": _CUSTOM_ONLY,
     "kimi": _CUSTOM_ONLY,
     "groq": _CUSTOM_ONLY,
