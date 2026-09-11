@@ -80,7 +80,10 @@ def test_cli_incomplete_scan_has_failure_exit(monkeypatch):
 
 
 @pytest.mark.parametrize("stream", [False, True])
-def test_global_collection_reaches_real_graph_and_grounded_candidate(monkeypatch, tmp_path, stream):
+@pytest.mark.parametrize("provider,token_key", [("openai", "max_tokens"), ("google", "max_output_tokens")])
+def test_global_collection_reaches_real_graph_and_grounded_candidate(
+    monkeypatch, tmp_path, stream, provider, token_key
+):
     from langchain_core.runnables import RunnableLambda
 
     import tradingagents.graph.market_graph as mg
@@ -120,7 +123,8 @@ def test_global_collection_reaches_real_graph_and_grounded_candidate(monkeypatch
             return Model()
 
     calls = []
-    monkeypatch.setattr(mg, "create_llm_client", lambda **k: Client())
+    client_options = []
+    monkeypatch.setattr(mg, "create_llm_client", lambda **k: client_options.append(k) or Client())
     monkeypatch.setattr(mg, "collect_global_snapshot", lambda date: calls.append("snapshot") or {
         "report": "JAPAN_BASELINE", "evidence": [], "warnings": [],
     })
@@ -131,8 +135,13 @@ def test_global_collection_reaches_real_graph_and_grounded_candidate(monkeypatch
     import tradingagents.dataflows.market_scan as market
     monkeypatch.setattr(market.yf, "screen", lambda *a, **k: {"quotes": [{"symbol": "XOM"}], "total": 1})
     config = {**DEFAULT_CONFIG, "data_cache_dir": str(tmp_path / "cache"),
-              "results_dir": str(tmp_path / "results"), "checkpoint_enabled": True}
+              "results_dir": str(tmp_path / "results"), "checkpoint_enabled": True,
+              "llm_provider": provider, "max_tokens": "4096"}
     graph = mg.MarketAnalysisGraph(config=config)
+    assert len(client_options) == 2
+    assert all(options[token_key] == 4096 for options in client_options)
+    other_key = "max_tokens" if token_key == "max_output_tokens" else "max_output_tokens"
+    assert all(other_key not in options for options in client_options)
     chunks = []
     state = graph.scan(sectors=["Energy"], candidate_limit=3, on_chunk=chunks.append if stream else None)
     if stream:

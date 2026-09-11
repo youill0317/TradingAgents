@@ -57,7 +57,8 @@ def test_topic_rss_retains_permalink_and_reports_http_failure():
     assert result["posts"][0]["created_utc"] > 0
     with patch.object(reddit, "urlopen", side_effect=HTTPError("url", 403, "Forbidden", {}, None)):
         result = reddit.collect_reddit_topic("inflation", "Economics")
-    assert result["status"] == "failed" and result["error"] == "HTTPError"
+    assert result["status"] == "failed" and result["posts"] == []
+    assert result["error"]
 
 
 def test_news_failure_words_are_not_retrieval_errors_and_exceptions_are_sanitized():
