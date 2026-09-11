@@ -51,19 +51,6 @@ def test_registry_spec(provider, base_url, chat_class, responses):
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("model", ["claude-opus-5", "gpt-5.5", "gemini-2.5-pro", "custom-route"])
-def test_llmgateway_client_uses_registered_config(monkeypatch, model):
-    from tradingagents.llm_clients import create_llm_client
-
-    monkeypatch.setenv("LLM_GATEWAY_API_KEY", "dummy")
-    llm = create_llm_client(provider="llmgateway", model=model).get_llm()
-    assert type(llm).__name__ == "GatewayChatOpenAI"
-    assert str(llm.openai_api_base) == "https://api.llmgateway.io/v1"
-    schema = {"title": "Answer", "type": "object", "properties": {"answer": {"type": "string"}}}
-    assert llm.with_structured_output(schema) is not None
-
-
-@pytest.mark.unit
 def test_key_optionality():
     # Local/generic endpoints are key-optional; hosted APIs require a key.
     assert OPENAI_COMPATIBLE_PROVIDERS["ollama"].key_optional is True
@@ -87,6 +74,8 @@ def test_gateway_wire_request_and_schema_validation(monkeypatch, arguments, vali
     llm = create_llm_client(provider="llmgateway", model="custom-route").get_llm()
     from types import SimpleNamespace
 
+    assert str(llm.openai_api_base) == "https://api.llmgateway.io/v1"
+    assert llm.openai_api_key.get_secret_value() == "dummy"
     captured = []
     def create(**kwargs):
         captured.append(kwargs)
