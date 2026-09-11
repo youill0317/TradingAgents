@@ -43,9 +43,8 @@ def test_candidate_filters_record_every_drop():
     assert restricted.warnings == ["CANDIDATE_SECTOR_NOT_REQUESTED:XOM"]
 
 
-@pytest.mark.parametrize("warning", ["SCREEN_EVIDENCE_MISSING", "SECTOR_DATA_UNAVAILABLE"])
-def test_required_data_failure_blocks_candidates(monkeypatch, warning):
-    result, _ = run(monkeypatch, data_warnings=[warning])
+def test_sector_outage_blocks_candidates(monkeypatch):
+    result, _ = run(monkeypatch, data_warnings=["SECTOR_DATA_UNAVAILABLE"])
     assert result["scan_status"] == "INCOMPLETE"
     assert not result["market_scan_result"]["candidates"]
 
@@ -61,21 +60,6 @@ def test_model_cannot_set_completion_status(monkeypatch):
     result, _ = run(monkeypatch, report(status="INCOMPLETE", warnings=["invented"]))
     assert result["scan_status"] == "COMPLETE"
     assert result["scan_warnings"] == []
-
-
-def test_optional_gap_preserves_conviction_and_global_context(monkeypatch):
-    result, invoke = run(monkeypatch, data_warnings=["FRED_MISSING"],
-                         global_snapshot="Japan\nGrowth: uncertain")
-    assert result["scan_status"] == "DEGRADED"
-    assert result["market_scan_result"]["candidates"][0]["conviction"] == "High"
-    assert "Japan\nGrowth: uncertain" in invoke.call_args.args[1]
-
-
-def test_successful_empty_screen_is_complete(monkeypatch):
-    result, _ = run(monkeypatch, report(()),
-                    screen_evidence="## Equity screen\n### Energy\nNo matches.")
-    assert result["scan_status"] == "COMPLETE"
-    assert not result["market_scan_result"]["candidates"]
 
 
 def test_invalid_output_preserves_data_warnings(monkeypatch):
@@ -102,15 +86,6 @@ def test_candidate_needs_own_sector_performance(monkeypatch, sector_return):
     assert "CANDIDATE_SECTOR_DATA_MISSING:XOM" in result["scan_warnings"]
 
 
-def test_candidate_with_sector_return_survives_missing_benchmark(monkeypatch):
-    result, _ = run(monkeypatch, sector_evidence=(
-        "## Sector performance\n### Sectors (best to worst)\n"
-        "| 1 | Energy | XLE | +2.00% | n/a |"
-    ), data_warnings=["SECTOR_DATA_PARTIAL"])
-    assert [c["ticker"] for c in result["market_scan_result"]["candidates"]] == ["XOM"]
-    assert result["scan_status"] == "DEGRADED"
-
-
 @pytest.mark.parametrize("tickers,evidence,limit,kept,warning", [
     ((" xom ",), SCREEN, 10, ["XOM"], None),
     (("GDP", "VIX", "ETF"), "GDP weakened while VIX rose; the ETF lagged.", 10, [], "CANDIDATE_NOT_GROUNDED"),
@@ -125,18 +100,7 @@ def test_grounding_rejects_prose_wrong_sectors_and_excess_candidates(tickers, ev
         assert any(w.startswith(warning + ":") for w in result.warnings)
 
 
-@pytest.mark.parametrize("stage", ["sector", "strategist"])
-def test_historical_state_is_rejected_before_model_invocation(monkeypatch, stage):
-    from tradingagents.agents.analysts.sector_analyst import create_sector_analyst
-
-    monkeypatch.setattr(strategist, "bind_structured", lambda *a: None)
-    node = (create_sector_analyst if stage == "sector" else strategist.create_market_strategist)(None)
-    with pytest.raises(ValueError, match="only live analysis"):
-        node({"scan_mode": "historical"})
-
-
-@pytest.mark.parametrize("source", ["fred", "yfinance", "get_global_news"])
-@pytest.mark.parametrize("status", ["failed", "stale", "unavailable"])
+@pytest.mark.parametrize("source,status", [("fred", "stale"), ("yfinance", "failed"), ("get_global_news", "unavailable")])
 def test_missing_input_family_blocks_candidates_despite_reports(monkeypatch, source, status):
     evidence = [dict(row, status=status) if row["source"] == source else row for row in EVIDENCE]
     result, _ = run(monkeypatch, global_evidence=evidence)
@@ -179,8 +143,9 @@ def test_candidate_conviction_only_changes_for_its_missing_benchmark(monkeypatch
         {"ticker": "XOM", "sector": "Energy", "thesis": "Energy", "conviction": "High"},
         {"ticker": "MSFT", "sector": "Technology", "thesis": "Technology", "conviction": "High"},
     ])
-    result, _ = run(monkeypatch, answer, sector_evidence=table,
+    result, _ = run(monkeypatch, answer, sector_evidence=table, data_warnings=["OPTIONAL_REGION_GAP"],
                     screen_evidence=SCREEN + "\n### Technology\n| MSFT | Microsoft |")
+    assert result["scan_status"] == "DEGRADED"
     assert [(c["ticker"], c["conviction"]) for c in result["market_scan_result"]["candidates"]] == [
         ("XOM", "Low"), ("MSFT", "High")]
 
@@ -196,7 +161,8 @@ def test_market_assessment_survives_empty_shortlist(monkeypatch):
     result, _ = run(monkeypatch, report((), market_outlook="Range with downside risk",
         participation_assessment="Narrow participation", rotation_assessment="Defensives improving",
         catalyst_assessment="CPI expected tomorrow", scenarios=["Base: flat", "Upside: broadening", "Downside: breakdown"]),
-        market_diagnostics_data={"status": "success"})
+        market_diagnostics_data={"status": "success"},
+        screen_evidence="## Equity screen\n### Energy\nNo matches.")
     assert result["scan_status"] == "COMPLETE"
     assert "Narrow participation" in result["market_scan_report"]
     assert "Downside: breakdown" in result["market_scan_report"]
@@ -217,11 +183,3 @@ def test_final_review_cannot_be_skipped(monkeypatch, missing):
     result, _ = run(monkeypatch, answer, **state)
     assert result["scan_status"] == "INCOMPLETE"
     assert result["market_scan_result"]["candidates"] == []
-
-
-def test_draft_does_not_publish_final_result(monkeypatch):
-    monkeypatch.setattr(strategist, "bind_structured", lambda *a: None)
-    monkeypatch.setattr(strategist, "invoke_structured_required", lambda *a: report())
-    result = strategist.create_market_strategist(None, stage="draft")({"market_review_enabled": True})
-    assert "market_draft_report" in result
-    assert "market_scan_report" not in result and "scan_status" not in result

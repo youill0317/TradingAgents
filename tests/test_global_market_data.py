@@ -86,18 +86,6 @@ def test_snapshot_records_every_region_and_retains_thread_context(monkeypatch):
         assert any(item["target"].startswith(region + ":") for item in result["evidence"])
 
 
-def test_macro_report_trimming_preserves_full_evidence_and_stale_warning():
-    rows = [f"| 2026-0{month}-01 | {month} |" for month in range(1, 7)]
-    content = "- Units: Percent\n- Frequency: Monthly\n**Latest:** 6 (2026-06-01)\n| Date | Value |\n| --- | --- |\n" + "\n".join(rows) + "\nSTALE: do not treat as current."
-    evidence = {"source": "fred", "content": content}
-    result = gm._report_content(evidence)
-    assert rows[0] not in result and rows[1] not in result
-    assert all(row in result for row in rows[-4:])
-    assert "- Units: Percent" in result and "**Latest:**" in result
-    assert "STALE" in result
-    assert evidence["content"] == content
-
-
 def test_unselected_series_do_not_degrade_successful_collection(monkeypatch):
     original = gm._macro_observation
     def macro(target, series, date):

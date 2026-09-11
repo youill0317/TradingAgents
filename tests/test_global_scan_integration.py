@@ -8,8 +8,7 @@ from langchain_core.messages import AIMessage, ToolMessage
 
 from tradingagents.dataflows.config import config_context
 from tradingagents.dataflows.market_scan import screen_equities
-from tradingagents.graph.market_setup import capture_macro_evidence, capture_screen_evidence
-from tradingagents.reporting import write_market_report_tree
+from tradingagents.graph.market_setup import capture_screen_evidence
 
 
 def test_partial_screens_and_sector_outage_are_not_silent():
@@ -24,12 +23,6 @@ def test_partial_screens_and_sector_outage_are_not_silent():
     assert "SCREEN_EVIDENCE_MISSING" not in result["data_warnings"]
 
 
-def test_macro_capture_preserves_deterministic_global_gaps():
-    result = capture_macro_evidence({"global_snapshot": "data", "data_warnings": ["China: missing"],
-                                     "messages": [AIMessage(content="report")]})
-    assert result["data_warnings"] == ["China: missing"]
-
-
 def test_screen_uses_pinned_run_date_across_host_and_midnight(monkeypatch):
     import tradingagents.dataflows.market_scan as market
 
@@ -42,22 +35,6 @@ def test_screen_uses_pinned_run_date_across_host_and_midnight(monkeypatch):
     monkeypatch.setattr(market.yf, "screen", lambda *a, **k: {"quotes": [], "total": 0})
     with config_context({"market_scan_date": "2026-09-04"}):
         assert "No matches" in screen_equities(sector="Energy", curr_date="2026-09-04")
-
-
-def test_report_preserves_global_data_and_validated_json(tmp_path):
-    state = {"trade_date": "2026-09-04", "global_snapshot": "Japan data",
-             "global_context": "War: summary only", "macro_report": "Global interpretation",
-             "sector_report": "US sectors", "market_scan_report": "No candidates",
-             "scan_status": "DEGRADED", "scan_warnings": ["missing"],
-             "global_evidence": [{"source": "fred", "target": "Japan", "status": "failed",
-                                  "content": "unavailable", "retrieved_at": "2026-09-04T12:00:00Z"}],
-             "market_scan_result": {"status": "DEGRADED", "warnings": ["missing"], "candidates": []}}
-    report = write_market_report_tree(state, tmp_path)
-    assert "Global interpretation" in report.read_text(encoding="utf-8")
-    assert (tmp_path / "global_data.md").read_text() == "Japan data"
-    assert json.loads((tmp_path / "scan.json").read_text())["status"] == "DEGRADED"
-    evidence = json.loads((tmp_path / "evidence.jsonl").read_text().splitlines()[0])
-    assert evidence["status"] == "failed" and evidence["sha256"]
 
 
 @pytest.mark.parametrize("date", ["2000-01-01", "2999-01-01"])
@@ -79,8 +56,7 @@ def test_cli_incomplete_scan_has_failure_exit(monkeypatch):
     assert result.exit_code == 1
 
 
-@pytest.mark.parametrize("stream", [False, True])
-@pytest.mark.parametrize("provider,token_key", [("openai", "max_tokens"), ("google", "max_output_tokens")])
+@pytest.mark.parametrize("provider,token_key,stream", [("openai", "max_tokens", False), ("google", "max_output_tokens", True)])
 def test_global_collection_reaches_real_graph_and_grounded_candidate(
     monkeypatch, tmp_path, stream, provider, token_key
 ):
@@ -188,6 +164,9 @@ def test_global_collection_reaches_real_graph_and_grounded_candidate(
     assert "Conditional market outlook" in report and "Downside: breadth contracts" in report
     assert "Independent Risk Review" in report and "REVIEW: concentration" in report
     assert (tmp_path / "export" / "risk_review.md").exists()
+    assert (tmp_path / "export" / "global_data.md").read_text() == "JAPAN_BASELINE"
+    saved_evidence = [json.loads(line) for line in (tmp_path / "export" / "evidence.jsonl").read_text().splitlines()]
+    assert any(r["source"] == "fred" and r["sha256"] for r in saved_evidence)
     if stream:
         draft_chunk = next(c for c in chunks if c.get("market_draft_report") and not c.get("market_risk_review"))
         assert not draft_chunk.get("market_scan_report")

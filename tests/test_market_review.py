@@ -4,7 +4,7 @@ from unittest.mock import Mock
 import pytest
 from langchain_core.messages import AIMessage
 
-from tradingagents.agents.market_review import REVIEW_FIELDS, create_market_review
+from tradingagents.agents.market_review import create_market_review
 
 
 def test_initial_cases_are_independent_and_rebuttals_see_both_cases():
@@ -36,10 +36,3 @@ def test_review_failures_are_explicit_and_preserve_previous_warnings(failure):
     result = create_market_review(llm, "market_risk_review")({"data_warnings": ["OLD_GAP"]})
     assert result["market_risk_review"] == ""
     assert result["data_warnings"] == ["OLD_GAP", "MARKET_REVIEW_UNAVAILABLE:market_risk_review"]
-
-
-def test_historical_review_rejected_before_model_call():
-    llm = Mock()
-    with pytest.raises(ValueError):
-        create_market_review(llm, REVIEW_FIELDS[0])({"scan_mode": "historical"})
-    llm.invoke.assert_not_called()

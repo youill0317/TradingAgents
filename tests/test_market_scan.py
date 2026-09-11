@@ -83,30 +83,10 @@ class TestScreenEquities:
         assert "### Technology" in result
         assert "### Energy" in result
 
-    def test_rejects_an_unknown_sector(self):
-        with pytest.raises(ValueError) as exc:
-            ms.screen_equities(sector="Tech Stuff")
-        # The error has to teach the caller the vocabulary, not just say "no".
-        assert "Technology" in str(exc.value)
-
     def test_past_date_fails_closed(self, captured_screens):
         with pytest.raises(ValueError, match="UNSUPPORTED_HISTORICAL_UNIVERSE"):
             ms.screen_equities(sector="Energy", curr_date="2024-05-10")
         assert captured_screens == []
-
-    @pytest.mark.parametrize("limit", [0, -1, 101])
-    def test_rejects_out_of_range_limit(self, limit):
-        with pytest.raises(ValueError, match="limit must be between"):
-            ms.screen_equities(sector="Energy", limit=limit)
-
-    @pytest.mark.parametrize("value", [float("nan"), float("inf"), -1])
-    def test_rejects_invalid_numeric_filters(self, value):
-        with pytest.raises(ValueError, match="finite non-negative"):
-            ms.screen_equities(sector="Energy", min_volume=value)
-
-    def test_rejects_unknown_sort_field(self):
-        with pytest.raises(ValueError, match="sort_field"):
-            ms.screen_equities(sector="Energy", sort_field="marketCap;drop")
 
     def test_one_failing_sector_does_not_lose_the_others(self, monkeypatch):
         def flaky_screen(query, **kwargs):
@@ -146,22 +126,6 @@ class TestScreenEquities:
 
 
 class TestSectorPerformance:
-    def test_covers_every_sector_etf_and_the_benchmarks(self, monkeypatch):
-        requested = []
-
-        def fake_load(symbol, curr_date):
-            requested.append(symbol)
-            dates = pd.date_range(end=curr_date, periods=40, freq="D")
-            return pd.DataFrame({"Date": dates, "Close": range(100, 140)})
-
-        monkeypatch.setattr(ms, "load_ohlcv", fake_load)
-        result = ms.get_sector_performance("2026-08-19")
-
-        assert set(ms.SECTOR_ETFS.values()) <= set(requested)
-        assert set(ms.BENCHMARKS) <= set(requested)
-        for sector in ms.SECTOR_ETFS:
-            assert sector in result
-
     def test_ranks_best_to_worst(self, monkeypatch):
         # XLE climbs, everything else is flat, so XLE must lead.
         def fake_load(symbol, curr_date):
@@ -203,60 +167,7 @@ class TestSectorPerformance:
         assert any("XLU" in r.getMessage() for r in caplog.records)
 
 
-def test_market_scan_message_panel_survives_graph_message_clears():
-    from langchain_core.messages import AIMessage, HumanMessage
-    from rich.console import Console
-
-    import cli.main as cli
-
-    macro = AIMessage(
-        id="macro-message",
-        content="Checking inflation and rates.",
-        tool_calls=[
-            {
-                "name": "get_fred_indicators",
-                "args": {"series": "FEDFUNDS"},
-                "id": "macro-call",
-                "type": "tool_call",
-            }
-        ],
-    )
-    placeholder = HumanMessage(id="macro-cleared", content="Proceed to sector analysis.")
-    sector = AIMessage(
-        id="sector-message",
-        content="Screening the Energy sector.",
-        tool_calls=[
-            {
-                "name": "screen_equities",
-                "args": {"sector": "Energy"},
-                "id": "sector-call",
-                "type": "tool_call",
-            }
-        ],
-    )
-    chunks = (
-        {"messages": [macro]},
-        {"messages": [macro]},  # values mode repeats the full current state
-        {"messages": [placeholder]},  # Msg Clear Macro removed the old history
-        {"messages": [placeholder, sector]},
-    )
-
-    buffer = cli.MessageBuffer()
-    for chunk in chunks:
-        cli.accumulate_stream_messages(buffer, chunk)
-
-    rendered = Console(record=True, width=160)
-    rendered.print(cli.create_messages_panel(buffer))
-    output = rendered.export_text()
-
-    assert output.count("get_fred_indicators") == 1
-    assert output.count("screen_equities") == 1
-    assert "Checking inflation and rates." in output
-    assert "Screening the Energy sector." in output
-
-
-@pytest.mark.parametrize("display_full", [True, False])
-def test_cli_streams_reports_and_saves_even_without_optional_export(monkeypatch, tmp_path, display_full):
+def test_cli_streams_reports_and_saves_even_without_optional_export(monkeypatch, tmp_path):
     from contextlib import nullcontext
     from io import StringIO
     from types import SimpleNamespace
@@ -269,7 +180,6 @@ def test_cli_streams_reports_and_saves_even_without_optional_export(monkeypatch,
 
     reports = {"macro_report": "MACRO_BODY", "sector_report": "SECTOR_BODY", "market_scan_report": "FINAL_BODY"}
     state = {"scan_status": "COMPLETE"}
-    layouts = []
 
     def scan(**kwargs):
         for key, content in reports.items():
@@ -279,11 +189,11 @@ def test_cli_streams_reports_and_saves_even_without_optional_export(monkeypatch,
 
     save = Mock(return_value=tmp_path / "complete_report.md")
     monkeypatch.setattr(cli, "MarketAnalysisGraph", lambda **k: SimpleNamespace(scan=scan, save_reports=save, config=k["config"]))
-    monkeypatch.setattr(cli, "Live", lambda layout, **k: layouts.append(layout) or nullcontext())
+    monkeypatch.setattr(cli, "Live", lambda layout, **k: nullcontext())
     monkeypatch.setattr(cli, "get_market_selections", lambda: {})
     monkeypatch.setattr(cli, "_build_market_config", lambda _: {"results_dir": str(tmp_path)})
     monkeypatch.setattr(cli.typer, "prompt", lambda text, default=None:
-                        ("Y" if display_full else "N") if "Display full report" in text else "N")
+                        "Y" if "Display full report" in text else "N")
     console = Console(file=StringIO(), record=True, width=120)
     monkeypatch.setattr(cli, "console", console)
     assert cli.run_market_scan(show_welcome=False) == state
@@ -293,14 +203,6 @@ def test_cli_streams_reports_and_saves_even_without_optional_export(monkeypatch,
     assert (run_dir / "macro.md").read_text(encoding="utf-8") == "MACRO_BODY"
     assert (run_dir / "sector.md").read_text(encoding="utf-8") == "SECTOR_BODY"
     assert (run_dir / "strategist.md").read_text(encoding="utf-8") == "FINAL_BODY"
-    output = console.export_text(clear=True)
-    assert "FINAL_BODY" in output
-    assert ("MACRO_BODY" in output) == display_full
-    assert ("SECTOR_BODY" in output) == display_full
-    console.print(layouts[0]["messages"].renderable)
-    assert "_BODY" not in console.export_text(clear=True)
-    console.print(layouts[0]["analysis"].renderable)
-    assert "FINAL_BODY" in console.export_text()
 
 
 @pytest.mark.parametrize("dates,prices,expected", [

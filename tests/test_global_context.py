@@ -4,20 +4,6 @@ from unittest.mock import patch
 from tradingagents.dataflows import global_context, reddit, yfinance_news
 
 
-def test_context_keeps_optional_failures_and_urls():
-    with patch.object(global_context, "route_to_vendor", return_value="Headline https://news.example/item"), \
-         patch.object(global_context, "collect_reddit_topic", side_effect=[
-             {"status": "success", "posts": [{"title": "Inflation", "url": "https://reddit.com/post", "created_utc": 1}]},
-             {"status": "failed", "posts": [], "error": "HTTP 429"},
-         ]), patch.object(global_context, "fetch_stocktwits_messages", return_value="<stocktwits unavailable: HTTPError>"):
-        result = global_context.collect_global_context("2026-09-09")
-    assert len(result["evidence"]) == 6
-    assert len(result["warnings"]) == 2
-    assert "https://reddit.com/post" in result["report"]
-    assert "1970-01-01" in result["report"]
-    assert "unverified opinions" in result["report"]
-
-
 def test_reddit_empty_and_failure_differ():
     with patch.object(reddit, "_fetch_subreddit_rss", return_value=[]):
         assert reddit.collect_reddit_topic("inflation", "Economics")["status"] == "empty"

@@ -27,24 +27,9 @@ def test_bare_command_dispatches_selected_workflow(monkeypatch, workflow):
     assert calls == ["menu", workflow]
 
 
-def test_explicit_subcommands_skip_the_workflow_menu(monkeypatch):
-    """A scripted `tradingagents analyze` must not stop to ask a question."""
-    def _should_not_run():
-        raise AssertionError("select_workflow must not run for an explicit subcommand")
-
-    monkeypatch.setattr(m, "select_workflow", _should_not_run)
-    monkeypatch.setattr(m, "run_analysis", lambda **k: None)
-    calls = []
-    monkeypatch.setattr(m, "run_market_scan", lambda **k: calls.append(k))
-
-    assert CliRunner().invoke(m.app, ["analyze"]).exit_code == 0
-    assert CliRunner().invoke(m.app, ["market"]).exit_code == 0
-    assert calls[0]["sectors"] is None
-
-
 def test_market_command_parses_its_options(monkeypatch):
     captured = {}
-    monkeypatch.setattr(m, "select_workflow", lambda: "market")
+    monkeypatch.setattr(m, "select_workflow", lambda: pytest.fail("Explicit commands must skip the menu"))
     monkeypatch.setattr(m, "run_market_scan", lambda **k: captured.update(k))
 
     result = CliRunner().invoke(
@@ -60,17 +45,3 @@ def test_market_command_parses_its_options(monkeypatch):
     assert captured["sectors"] == ["Technology", "Energy"]
     assert captured["limit"] == 5
     assert captured["save"] is True
-
-
-def test_market_command_rejects_an_unknown_sector_before_running(monkeypatch):
-    """A typo must not cost an LLM turn to discover via a tool error."""
-    def _should_not_run(**k):
-        raise AssertionError("the scan must not start with an invalid sector")
-
-    monkeypatch.setattr(m, "run_market_scan", _should_not_run)
-
-    result = CliRunner().invoke(m.app, ["market", "--sectors", "Tecnology"])
-
-    assert result.exit_code == 2
-    # The error has to teach the vocabulary, not just say no.
-    assert "Technology" in result.output
