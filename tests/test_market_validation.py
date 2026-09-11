@@ -58,10 +58,10 @@ def test_model_cannot_set_completion_status(monkeypatch):
 
 def test_partial_data_lowers_conviction_and_preserves_global_context(monkeypatch):
     result, invoke = run(monkeypatch, data_warnings=["FRED_MISSING"],
-                         global_snapshot={"region": "Japan"})
+                         global_snapshot="Japan\nGrowth: uncertain")
     assert result["scan_status"] == "DEGRADED"
     assert result["market_scan_result"]["candidates"][0]["conviction"] == "Low"
-    assert "Japan" in invoke.call_args.args[1]
+    assert "Japan\nGrowth: uncertain" in invoke.call_args.args[1]
 
 
 def test_successful_empty_screen_is_complete(monkeypatch):
@@ -116,3 +116,13 @@ def test_grounding_rejects_prose_wrong_sectors_and_excess_candidates(tickers, ev
     assert result.regime_evidence == "Global context"
     if warning:
         assert any(w.startswith(warning + ":") for w in result.warnings)
+
+
+@pytest.mark.parametrize("stage", ["sector", "strategist"])
+def test_historical_state_is_rejected_before_model_invocation(monkeypatch, stage):
+    from tradingagents.agents.analysts.sector_analyst import create_sector_analyst
+
+    monkeypatch.setattr(strategist, "bind_structured", lambda *a: None)
+    node = (create_sector_analyst if stage == "sector" else strategist.create_market_strategist)(None)
+    with pytest.raises(ValueError, match="only live analysis"):
+        node({"scan_mode": "historical"})

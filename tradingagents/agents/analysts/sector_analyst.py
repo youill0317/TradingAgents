@@ -18,10 +18,11 @@ from tradingagents.agents.utils.market_scan_tools import (
 
 def create_sector_analyst(llm):
     def sector_analyst_node(state):
+        if state.get("scan_mode", "live") != "live":
+            raise ValueError("Market scans support only live analysis")
         current_date = state["trade_date"]
         macro_report = state.get("macro_report", "")
         requested = state.get("requested_sectors") or []
-        historical = state.get("scan_mode") == "historical"
 
         sector_instruction = (
             f"Restrict your screening to these sectors: {', '.join(requested)}."
@@ -33,9 +34,7 @@ def create_sector_analyst(llm):
             )
         )
 
-        tools = [get_sector_performance]
-        if not historical:
-            tools.extend([screen_equities, get_stock_data])
+        tools = [get_sector_performance, screen_equities, get_stock_data]
         if state.get("sector_tool_rounds", 0) >= 7:
             tools = []
 
@@ -65,14 +64,6 @@ def create_sector_analyst(llm):
             "comes back empty, report that plainly — an empty screen is a finding, "
             "and inventing names to fill the gap would poison every step "
             "downstream.\n\n"
-            + (
-                "This is a historical review. The current Yahoo universe is not "
-                "point-in-time safe, so do not screen or name equity candidates.\n\n"
-                if historical else
-                "Copy each equity-screen markdown table into an `## Equity screen` "
-                "appendix without changing its symbol or sector heading. This exact "
-                "table is the machine-checked evidence for the shortlist.\n\n"
-            )
             + "--- MACRO REGIME (from the Macro Analyst) ---\n"
             f"{macro_report}"
             + "\n--- COLLECTED US SECTOR PERFORMANCE ---\n"
