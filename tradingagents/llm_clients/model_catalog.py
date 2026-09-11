@@ -196,7 +196,15 @@ MODEL_OPTIONS: ProviderModeOptions = {
     # Generic OpenAI-compatible endpoint: the model is whatever the user's
     # server serves, so only "Custom model ID" is offered.
     "openai_compatible": _CUSTOM_ONLY,
-    "llmgateway": _CUSTOM_ONLY,
+    "llmgateway": {
+        mode: [
+            ("GPT-5.6 Luna", "gpt-5.6-luna"),
+            ("GPT-6 Astra", "gpt-6-astra"),
+            ("Claude Fable 5.1", "claude-fable-5.1"),
+            ("Custom model ID", "custom"),
+        ]
+        for mode in ("quick", "deep")
+    },
     # Hosted OpenAI-compatible providers that serve many (and frequently
     # changing) models — offer "Custom model ID" rather than a list that goes
     # stale. The endpoint + key are wired by the provider; the user picks the
