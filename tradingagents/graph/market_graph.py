@@ -172,6 +172,7 @@ class MarketAnalysisGraph:
             "code_commit": code_commit,
             "quick_model": self.config.get("quick_think_llm"),
             "deep_model": self.config.get("deep_think_llm"),
+            "market_review_enabled": True,
             "macro_tool_rounds": 0,
             "sector_tool_rounds": 0,
             "requested_sectors": resolve_sectors(sectors) if sectors else [],

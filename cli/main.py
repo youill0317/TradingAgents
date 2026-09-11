@@ -578,13 +578,19 @@ TICKER_WORKFLOW_STEPS = (
     "I. Analyst Team → II. Research Team → III. Trader → "
     "IV. Risk Management → V. Portfolio Management"
 )
-MARKET_WORKFLOW_STEPS = "I. Macro Analyst → II. Sector Analyst → III. Market Strategist"
+MARKET_WORKFLOW_STEPS = "Macro → Sector → Debate → Draft → Risk Review → Final Outlook"
 
 # Filenames must match write_market_report_tree's, so the live copy written
 # during the run and the final one land on the same file rather than two.
 SCAN_REPORT_FILES = {
     "macro_report": "macro.md",
     "sector_report": "sector.md",
+    "market_bull_case": "bull_case.md",
+    "market_bear_case": "bear_case.md",
+    "market_bull_rebuttal": "bull_rebuttal.md",
+    "market_bear_rebuttal": "bear_rebuttal.md",
+    "market_draft_report": "market_draft.md",
+    "market_risk_review": "risk_review.md",
     "market_scan_report": "strategist.md",
 }
 
@@ -1487,13 +1493,19 @@ def run_market_scan(
 
     console.print(
         f"\n[bold cyan]Scanning the market as of {date}...[/bold cyan]\n"
-        "[dim]Macro Analyst → Sector Analyst → Market Strategist. "
+        "[dim]Macro → Sector → Debate → Draft → Risk Review → Final Outlook. "
         "This makes several LLM calls and can take a few minutes.[/dim]\n"
     )
 
     agents = (
         ("Macro Analyst", "macro_report"),
         ("Sector Analyst", "sector_report"),
+        ("Market Bull Case", "market_bull_case"),
+        ("Market Bear Case", "market_bear_case"),
+        ("Market Bull Rebuttal", "market_bull_rebuttal"),
+        ("Market Bear Rebuttal", "market_bear_rebuttal"),
+        ("Market Draft", "market_draft_report"),
+        ("Market Risk Review", "market_risk_review"),
         ("Market Strategist", "market_scan_report"),
     )
     scan_messages = MessageBuffer()
@@ -1701,8 +1713,9 @@ def run_market_scan(
                     final_state.get("sector_report"),
                     "magenta",
                 ),
+                *[(title, title, final_state.get(key), "yellow") for title, key in agents[2:-1]],
                 (
-                    "III. Market Strategist",
+                    "Final Market Strategist",
                     "Market Strategist",
                     final_state.get("market_scan_report"),
                     "green",

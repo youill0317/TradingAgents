@@ -201,3 +201,27 @@ def test_market_assessment_survives_empty_shortlist(monkeypatch):
     assert "Narrow participation" in result["market_scan_report"]
     assert "Downside: breakdown" in result["market_scan_report"]
     assert result["market_scan_result"]["candidates"] == []
+
+
+@pytest.mark.parametrize("missing", ["market_risk_review", "market_bear_rebuttal", "market_draft_report", "resolution"])
+def test_final_review_cannot_be_skipped(monkeypatch, missing):
+    from tradingagents.agents.market_review import REVIEW_FIELDS
+
+    state = dict.fromkeys(REVIEW_FIELDS, "Review available")
+    state.update(market_review_enabled=True, market_draft_report="Provisional outlook")
+    answer = report(review_resolution="Accepted; revised claim")
+    if missing == "resolution":
+        answer.review_resolution = ""
+    else:
+        state[missing] = ""
+    result, _ = run(monkeypatch, answer, **state)
+    assert result["scan_status"] == "INCOMPLETE"
+    assert result["market_scan_result"]["candidates"] == []
+
+
+def test_draft_does_not_publish_final_result(monkeypatch):
+    monkeypatch.setattr(strategist, "bind_structured", lambda *a: None)
+    monkeypatch.setattr(strategist, "invoke_structured_required", lambda *a: report())
+    result = strategist.create_market_strategist(None, stage="draft")({"market_review_enabled": True})
+    assert "market_draft_report" in result
+    assert "market_scan_report" not in result and "scan_status" not in result

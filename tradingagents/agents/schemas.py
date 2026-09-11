@@ -471,6 +471,7 @@ class MarketScanReport(BaseModel):
         default_factory=list,
         description="Machine-readable reasons for degraded or incomplete output.",
     )
+    review_resolution: str = Field(default="", description="Final response to material independent risk findings: accepted/rejected, evidence, corrections and unresolved uncertainty.")
     market_outlook: str = Field(default="", description="Independent 1–4 week market outlook: regime, contradictions, risk appetite and conditions for reassessment.")
     participation_assessment: str = Field(default="", description="Breadth of sector/ETF participation, equal-weight vs cap-weight and small vs large caps; cite dates and coverage, not invented stock breadth.")
     rotation_assessment: str = Field(default="", description="Multi-horizon sector leadership, reversals and like-for-like rank or weekly relative changes, grounded in the diagnostics.")
@@ -525,6 +526,7 @@ def render_market_scan_report(report: MarketScanReport) -> str:
     # Market assessment remains useful even when no stock candidates qualify.
     for title, text in (
         ("Market Outlook (1–4 weeks)", report.market_outlook),
+        ("Risk Review Resolution", report.review_resolution),
         ("Participation and Concentration", report.participation_assessment),
         ("Rotation and Transitions", report.rotation_assessment),
         ("Catalysts and Expectations", report.catalyst_assessment),

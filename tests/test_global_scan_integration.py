@@ -108,11 +108,15 @@ def test_global_collection_reaches_real_graph_and_grounded_candidate(
                 return AIMessage(content=[{"type": "text", "text": "Japan and oil: a global scenario with uncertainty"}] if provider == "google" else "Japan and oil: a global scenario with uncertainty")
             return RunnableLambda(answer)
 
+        def invoke(self, prompt):
+            prompts.append(str(prompt))
+            return AIMessage(content=[{"type": "text", "text": "REVIEW: concentration contradicts the headline index; monitor RSP/SPY"}])
+
         def with_structured_output(self, schema):
             def final(prompt):
                 prompts.append(str(prompt))
                 return MarketScanReport(regime="Rotation", regime_evidence="Japan and oil",
-                                        sector_view="Energy", market_outlook="Conditional market outlook",
+                                        sector_view="Energy", review_resolution="Accepted concentration finding: monitor RSP/SPY", market_outlook="Conditional market outlook",
                                         participation_assessment="ETF participation", rotation_assessment="Leadership reversal",
                                         catalyst_assessment="Upcoming CPI", scenarios=["Base: stable", "Upside: breadth expands", "Downside: breadth contracts"], candidates=[{
                                             "ticker": "XOM", "sector": "Energy", "conviction": "High",
@@ -168,6 +172,11 @@ def test_global_collection_reaches_real_graph_and_grounded_candidate(
     assert "JAPAN_BASELINE" in prompts[0] and "WAR_SUMMARY_ONLY" in prompts[0]
     assert "Japan and oil" in prompts[1]
     assert "Japan and oil" in prompts[-1] and "US Energy benefits" in prompts[-1]
+    assert state["market_risk_review"].startswith("REVIEW:")
+    assert "REVIEW: concentration" in prompts[-1]
+    assert "DRAFT:" in prompts[-1] and "RISK REVIEW:" in prompts[-1]
+    assert "Accepted concentration" in state["market_scan_report"]
+    assert state["market_draft_result"]["candidates"][0]["ticker"] == "XOM"
     assert state["scan_status"] == "COMPLETE"
     assert state["market_scan_result"]["candidates"][0]["ticker"] == "XOM"
     assert not list(tmp_path.rglob("*.db")), "live scans must not resume old checkpoints"
@@ -177,6 +186,11 @@ def test_global_collection_reaches_real_graph_and_grounded_candidate(
     assert json.loads((tmp_path / "export" / "event_calendar.json").read_text())["events"] == []
     report = (tmp_path / "export" / "complete_report.md").read_text()
     assert "Conditional market outlook" in report and "Downside: breadth contracts" in report
+    assert "Independent Risk Review" in report and "REVIEW: concentration" in report
+    assert (tmp_path / "export" / "risk_review.md").exists()
+    if stream:
+        draft_chunk = next(c for c in chunks if c.get("market_draft_report") and not c.get("market_risk_review"))
+        assert not draft_chunk.get("market_scan_report")
     assert {"complete_report.md", "macro.md", "sector.md", "strategist.md"} <= {p.name for p in (tmp_path / "export").iterdir()}
 
 

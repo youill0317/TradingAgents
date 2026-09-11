@@ -123,7 +123,13 @@ def write_market_report_tree(final_state: dict, save_path) -> Path:
         ("event_calendar", "event_calendar.md", "Economic Catalysts"),
         ("macro_report", "macro.md", "I. Macro Analyst"),
         ("sector_report", "sector.md", "II. Sector Analyst"),
-        ("market_scan_report", "strategist.md", "III. Market Strategist"),
+        ("market_bull_case", "bull_case.md", "Market Upside Case"),
+        ("market_bear_case", "bear_case.md", "Market Downside Case"),
+        ("market_bull_rebuttal", "bull_rebuttal.md", "Upside Rebuttal"),
+        ("market_bear_rebuttal", "bear_rebuttal.md", "Downside Rebuttal"),
+        ("market_draft_report", "market_draft.md", "Provisional Market Outlook"),
+        ("market_risk_review", "risk_review.md", "Independent Risk Review"),
+        ("market_scan_report", "strategist.md", "Final Market Strategist"),
     ]
     for key, filename, heading in parts:
         content = final_state.get(key)
@@ -185,7 +191,8 @@ def write_market_report_tree(final_state: dict, save_path) -> Path:
         "".join(json.dumps(row, sort_keys=True) + "\n" for row in evidence_records),
         encoding="utf-8",
     )
-    for key, filename in (("market_diagnostics_data", "market_diagnostics.json"),
+    for key, filename in (("market_draft_result", "market_draft.json"),
+                          ("market_diagnostics_data", "market_diagnostics.json"),
                           ("event_calendar_data", "event_calendar.json")):
         if key in final_state:
             (save_path / filename).write_text(

@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import math
 
+from tradingagents.agents.market_review import DEBATE_FIELDS, REVIEW_FIELDS
 from tradingagents.agents.schemas import (
     Conviction,
     MarketScanReport,
@@ -135,7 +136,9 @@ def _required_evidence_warnings(state):
     )]
 
 
-def create_market_strategist(llm):
+def create_market_strategist(llm, stage="final"):
+    if stage not in ("draft", "final"):
+        raise ValueError("Unknown market strategist stage")
     structured_llm = bind_structured(llm, MarketScanReport, "Market Strategist")
 
     def market_strategist_node(state) -> dict:
@@ -197,6 +200,23 @@ Connect global conditions and geopolitical transmission channels to US sectors a
 
 {NO_EXTERNAL_TOOLS}""" + get_language_instruction()
 
+        debate = "\n\n".join(f"{key}:\n{state.get(key, 'Unavailable')}" for key in DEBATE_FIELDS)
+        prompt += "\n\nTwo-sided market debate (interpretations, not new data):\n" + debate
+        if stage == "draft":
+            prompt += "\nWrite a provisional synthesis for independent risk review. Adjudicate disputed claims using evidence, not majority vote or artificial compromise. Preserve unresolved uncertainty."
+        elif state.get("market_review_enabled"):
+            prompt += ("\nRevise the draft after independent review. For each material risk finding, state in review_resolution "
+                       "whether you accepted or rejected it, cite evidence and explain the resulting change or retained uncertainty. "
+                       "Do not claim a missing review succeeded. Keep the final report self-contained.\nDRAFT:\n"
+                       + state.get("market_draft_report", "Unavailable") + "\nRISK REVIEW:\n"
+                       + state.get("market_risk_review", "Unavailable"))
+            for field in REVIEW_FIELDS:
+                if not state.get(field, "").strip():
+                    data_warnings.append(f"MARKET_REVIEW_UNAVAILABLE:{field}")
+            if (not state.get("market_draft_report", "").strip()
+                    or "STRUCTURED_OUTPUT_INVALID" in state.get("market_draft_result", {}).get("warnings", [])):
+                data_warnings.append("MARKET_DRAFT_UNAVAILABLE")
+
         try:
             report = invoke_structured_required(
                 structured_llm, prompt, MarketScanReport, "Market Strategist"
@@ -213,6 +233,8 @@ Connect global conditions and geopolitical transmission channels to US sectors a
                         data_warnings.append(f"MARKET_ASSESSMENT_MISSING:{field}")
                 if len([s for s in report.scenarios if s.strip()]) < 3:
                     data_warnings.append("MARKET_SCENARIOS_INCOMPLETE")
+            if stage == "final" and state.get("market_review_enabled") and not report.review_resolution.strip():
+                data_warnings.append("MARKET_REVIEW_RESOLUTION_MISSING")
             warnings = list(dict.fromkeys([*data_warnings, *report.warnings]))
             required_failures = {
                 "SCREEN_EVIDENCE_MISSING", "SECTOR_DATA_UNAVAILABLE",
@@ -220,7 +242,10 @@ Connect global conditions and geopolitical transmission channels to US sectors a
                 "MACRO_EVIDENCE_MISSING", "GLOBAL_MARKET_EVIDENCE_MISSING",
                 "NEWS_EVIDENCE_MISSING",
             }
-            incomplete = bool(required_failures.intersection(warnings))
+            incomplete = bool(required_failures.intersection(warnings)) or any(
+                w.startswith("MARKET_REVIEW_UNAVAILABLE:") or w in {"MARKET_DRAFT_UNAVAILABLE", "MARKET_REVIEW_RESOLUTION_MISSING"}
+                for w in warnings
+            )
             status = (ScanStatus.INCOMPLETE if incomplete else
                       ScanStatus.DEGRADED if warnings else ScanStatus.COMPLETE)
             report = report.model_copy(update={
@@ -238,6 +263,10 @@ Connect global conditions and geopolitical transmission channels to US sectors a
                 sector_view="No candidate selection was accepted.",
                 candidates=[],
             )
+
+        if stage == "draft":
+            return {"market_draft_report": render_market_scan_report(report),
+                    "market_draft_result": report.model_dump(mode="json")}
 
         return {
             "market_scan_report": render_market_scan_report(report),

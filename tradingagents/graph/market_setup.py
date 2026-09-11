@@ -1,11 +1,4 @@
-"""Graph wiring for the market-wide scan workflow.
-
-Deliberately a separate graph from ``setup.py``. The per-ticker workflow's
-state is built around ``company_of_interest``; a scan has no ticker until it
-produces one, so bending ``AgentState`` to fit would have meant threading a
-placeholder company through every existing node. A parallel five-node graph is
-both smaller and leaves the per-ticker path untouched.
-"""
+"""Graph wiring for market analysis, bounded debate, and risk review."""
 
 from typing import Annotated, Any
 
@@ -19,6 +12,7 @@ from tradingagents.agents import (
     create_msg_delete,
     create_sector_analyst,
 )
+from tradingagents.agents.market_review import create_market_review
 
 # The per-ticker placeholder anchors on the instrument under analysis; a scan has
 # no instrument, so it anchors on the task instead. A bare "Continue" is not an
@@ -33,6 +27,14 @@ MAX_AGENT_TOOL_ROUNDS = 8
 class MarketState(MessagesState):
     """State for the market scan. No ticker — that is the output, not the input."""
 
+    market_review_enabled: bool
+    market_bull_case: str
+    market_bear_case: str
+    market_bull_rebuttal: str
+    market_bear_rebuttal: str
+    market_draft_report: str
+    market_draft_result: dict
+    market_risk_review: str
     trade_date: Annotated[str, "Date the scan is run for"]
     as_of_utc: Annotated[str, "Timezone-aware retrieval cutoff"]
     effective_market_session: Annotated[str, "US market session represented"]
@@ -175,7 +177,7 @@ class MarketGraphSetup:
         self.tool_nodes = tool_nodes
 
     def setup_graph(self) -> StateGraph:
-        """Wire Macro Analyst -> Sector Analyst -> Market Strategist."""
+        """Wire analysis, two-sided cases/rebuttals, draft, audit and revision."""
         workflow = StateGraph(MarketState)
 
         workflow.add_node("Macro Analyst", create_macro_analyst(self.quick_thinking_llm))
@@ -187,6 +189,17 @@ class MarketGraphSetup:
         workflow.add_node("tools_sector", self.tool_nodes["sector"])
         workflow.add_node("Capture Screen Evidence", capture_screen_evidence)
         workflow.add_node("Msg Clear Sector", create_msg_delete(SCAN_CONTEXT))
+
+        review_nodes = (
+            ("Market Bull Case", "market_bull_case"),
+            ("Market Bear Case", "market_bear_case"),
+            ("Market Bull Rebuttal", "market_bull_rebuttal"),
+            ("Market Bear Rebuttal", "market_bear_rebuttal"),
+        )
+        for name, field in review_nodes:
+            workflow.add_node(name, create_market_review(self.quick_thinking_llm, field))
+        workflow.add_node("Market Draft", create_market_strategist(self.deep_thinking_llm, stage="draft"))
+        workflow.add_node("Market Risk Review", create_market_review(self.deep_thinking_llm, "market_risk_review"))
 
         # The strategist gets the deep model: it is the one call that has to hold
         # both reports at once and commit to a shortlist.
@@ -211,7 +224,10 @@ class MarketGraphSetup:
         )
         workflow.add_edge("tools_sector", "Sector Analyst")
         workflow.add_edge("Capture Screen Evidence", "Msg Clear Sector")
-        workflow.add_edge("Msg Clear Sector", "Market Strategist")
+        chain = ["Msg Clear Sector", *[name for name, _ in review_nodes],
+                 "Market Draft", "Market Risk Review", "Market Strategist"]
+        for source, target in zip(chain, chain[1:], strict=False):
+            workflow.add_edge(source, target)
 
         workflow.add_edge("Market Strategist", END)
 
