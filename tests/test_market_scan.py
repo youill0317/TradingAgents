@@ -178,31 +178,52 @@ def test_cli_streams_reports_and_saves_even_without_optional_export(monkeypatch,
 
     import cli.main as cli
 
-    reports = {"macro_report": "MACRO_BODY", "sector_report": "SECTOR_BODY", "market_scan_report": "FINAL_BODY"}
-    state = {"scan_status": "COMPLETE"}
+    monkeypatch.setenv("FRED_API_KEY", "offline-test")
+    reports = {field: agent + " report" for agent, field in cli.MARKET_STAGES}
+    state = {"scan_status": "COMPLETE", "run_id": "run-1", "as_of_utc": "2026-09-11T12:00:00+00:00",
+             "market_scan_result": {"candidates": [{"ticker": "XOM", "thesis": "Oil transmission"}]}}
+    frames = []
+
+    def live(layout, **kwargs):
+        frames.append(layout)
+        return nullcontext()
 
     def scan(**kwargs):
+        kwargs["on_progress"]("Collecting economic events")
+        with console.capture() as capture:
+            console.print(frames[0])
+        assert "Collecting economic events" in capture.get()
+        kwargs["on_progress"]("Analysis")
         for key, content in reports.items():
             state.update({key: content, "messages": [AIMessage(content=content)]})
             kwargs["on_chunk"](state.copy())
+        with console.capture() as capture:
+            console.print(frames[0])
+        rendered = capture.get()
+        assert all(agent in rendered for agent, _ in cli.MARKET_STAGES)
+        assert frames[0]["progress"].renderable.title == "Progress"
         return state
 
     save = Mock(return_value=tmp_path / "complete_report.md")
+    handoff = Mock()
+    monkeypatch.setattr(cli, "run_analysis", handoff)
     monkeypatch.setattr(cli, "MarketAnalysisGraph", lambda **k: SimpleNamespace(scan=scan, save_reports=save, config=k["config"]))
-    monkeypatch.setattr(cli, "Live", lambda layout, **k: nullcontext())
+    monkeypatch.setattr(cli, "Live", live)
     monkeypatch.setattr(cli, "get_market_selections", lambda: {})
     monkeypatch.setattr(cli, "_build_market_config", lambda _: {"results_dir": str(tmp_path)})
-    monkeypatch.setattr(cli.typer, "prompt", lambda text, default=None:
-                        "Y" if "Display full report" in text else "N")
-    console = Console(file=StringIO(), record=True, width=120)
+    answers = iter(["N", "Y", "XOM"])
+    monkeypatch.setattr(cli.typer, "prompt", lambda *a, **k: next(answers))
+    console = Console(file=StringIO(), record=True, width=120, height=40)
     monkeypatch.setattr(cli, "console", console)
     assert cli.run_market_scan(show_welcome=False) == state
     save.assert_called_once()
     assert save.call_args.args[0] == state
     run_dir = next((tmp_path / "market_scans").iterdir())
-    assert (run_dir / "macro.md").read_text(encoding="utf-8") == "MACRO_BODY"
-    assert (run_dir / "sector.md").read_text(encoding="utf-8") == "SECTOR_BODY"
-    assert (run_dir / "strategist.md").read_text(encoding="utf-8") == "FINAL_BODY"
+    for _, field in cli.MARKET_STAGES:
+        assert (run_dir / cli.SCAN_REPORT_FILES[field]).read_text() == reports[field]
+    assert handoff.call_args.kwargs["ticker"] == "XOM"
+    assert "Oil transmission" in handoff.call_args.kwargs["market_context"]
+    assert "run-1" in handoff.call_args.kwargs["market_context"]
 
 
 @pytest.mark.parametrize("dates,prices,expected", [

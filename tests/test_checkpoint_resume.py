@@ -212,6 +212,8 @@ class TestCheckpointSignature(unittest.TestCase):
         # Stable for identical inputs.
         g.config = {"max_debate_rounds": 1, "max_risk_discuss_rounds": 1}
         self.assertEqual(base, g._run_signature("stock"))
+        g.config["market_context"] = "Different market research"
+        self.assertNotEqual(base, g._run_signature("stock"))
 
 
 if __name__ == "__main__":

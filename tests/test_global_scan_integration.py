@@ -63,10 +63,12 @@ def test_global_collection_reaches_real_graph_and_grounded_candidate(
     from langchain_core.runnables import RunnableLambda
 
     import tradingagents.graph.market_graph as mg
-    from tradingagents.agents.schemas import MarketScanReport
+    from tradingagents.agents.schemas import MarketRiskReview, MarketScanReport
     from tradingagents.default_config import DEFAULT_CONFIG
 
+    monkeypatch.setenv("FRED_API_KEY", "offline-test")
     prompts = []
+    final_calls = []
 
     class Model:
         sector_calls = 0
@@ -91,7 +93,12 @@ def test_global_collection_reaches_real_graph_and_grounded_candidate(
         def with_structured_output(self, schema):
             def final(prompt):
                 prompts.append(str(prompt))
-                return MarketScanReport(regime="Rotation", regime_evidence="Japan and oil",
+                if schema is MarketRiskReview:
+                    return MarketRiskReview(summary="REVIEW: concentration", findings=["Concentration: monitor RSP/SPY"])
+                final_calls.append(prompt)
+                if stream and len(final_calls) == 2:
+                    raise RuntimeError("Temporary final-model failure")
+                return MarketScanReport(risk_resolutions=[{"finding_id": "R1", "decision": "accepted", "rationale": "Observed ratio; monitor RSP/SPY"}], regime="Rotation", regime_evidence="Japan and oil",
                                         sector_view="Energy", review_resolution="Accepted concentration finding: monitor RSP/SPY", market_outlook="Conditional market outlook",
                                         participation_assessment="ETF participation", rotation_assessment="Leadership reversal",
                                         catalyst_assessment="Upcoming CPI", scenarios=["Base: stable", "Upside: breadth expands", "Downside: breadth contracts"], candidates=[{
@@ -138,6 +145,13 @@ def test_global_collection_reaches_real_graph_and_grounded_candidate(
     chunks = []
     state = graph.scan(sectors=["Energy"], candidate_limit=3, on_chunk=chunks.append if stream else None)
     if stream:
+        assert state["scan_status"] == "INCOMPLETE"
+        with pytest.raises(ValueError, match="No interrupted"):
+            graph.scan(sectors=["Energy"], candidate_limit=4, resume=True)
+        snapshot_time = state["as_of_utc"]
+        state = graph.scan(sectors=["Energy"], candidate_limit=3, on_chunk=chunks.append, resume=True)
+        assert state["as_of_utc"] == snapshot_time
+        assert len(final_calls) == 3, "resume retries only the failed final call"
         assert chunks[-1] == state
         assert any(c.get("macro_report") and not c.get("sector_report") for c in chunks)
     assert state["requested_sectors"] == ["Energy"] and state["candidate_limit"] == 3
@@ -155,7 +169,8 @@ def test_global_collection_reaches_real_graph_and_grounded_candidate(
     assert state["market_draft_result"]["candidates"][0]["ticker"] == "XOM"
     assert state["scan_status"] == "COMPLETE"
     assert state["market_scan_result"]["candidates"][0]["ticker"] == "XOM"
-    assert not list(tmp_path.rglob("*.db")), "live scans must not resume old checkpoints"
+    with pytest.raises(ValueError, match="No interrupted"):
+        graph.scan(sectors=["Energy"], candidate_limit=3, resume=True)
     graph.save_reports(state, tmp_path / "export")
     assert json.loads((tmp_path / "export" / "scan.json").read_text())["candidates"]
     assert json.loads((tmp_path / "export" / "market_diagnostics.json").read_text())["status"] == "success"
@@ -171,6 +186,18 @@ def test_global_collection_reaches_real_graph_and_grounded_candidate(
         draft_chunk = next(c for c in chunks if c.get("market_draft_report") and not c.get("market_risk_review"))
         assert not draft_chunk.get("market_scan_report")
     assert {"complete_report.md", "macro.md", "sector.md", "strategist.md"} <= {p.name for p in (tmp_path / "export").iterdir()}
+    if not stream:
+        before = len(prompts)
+        monkeypatch.setattr(mg, "collect_global_snapshot", lambda date: {
+            "report": "FRED outage", "evidence": [], "warnings": ["FRED outage"],
+        })
+        failed = graph.scan()
+        assert failed["scan_status"] == "INCOMPLETE" and "MACRO_EVIDENCE_MISSING" in failed["scan_warnings"]
+        assert len(prompts) == before, "missing required observations must not consume LLM calls"
+        monkeypatch.delenv("FRED_API_KEY")
+        with pytest.raises(ValueError, match="FRED_API_KEY"):
+            graph.scan()
+        assert len(prompts) == before
 
 
 @pytest.mark.parametrize("kwargs", [

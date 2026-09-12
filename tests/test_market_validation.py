@@ -174,7 +174,7 @@ def test_final_review_cannot_be_skipped(monkeypatch, missing):
     from tradingagents.agents.market_review import REVIEW_FIELDS
 
     state = dict.fromkeys(REVIEW_FIELDS, "Review available")
-    state.update(market_review_enabled=True, market_draft_report="Provisional outlook")
+    state.update(market_review_enabled=True, market_draft_report="Provisional outlook", market_risk_findings=[])
     answer = report(review_resolution="Accepted; revised claim")
     if missing == "resolution":
         answer.review_resolution = ""
@@ -183,3 +183,20 @@ def test_final_review_cannot_be_skipped(monkeypatch, missing):
     result, _ = run(monkeypatch, answer, **state)
     assert result["scan_status"] == "INCOMPLETE"
     assert result["market_scan_result"]["candidates"] == []
+
+
+@pytest.mark.parametrize("resolutions,complete", [
+    ([], False),
+    ([{"finding_id": "R2", "decision": "accepted", "rationale": "Observed oil price"}], False),
+    ([{"finding_id": "R1", "decision": "accepted", "rationale": " "}], False),
+    ([{"finding_id": "R1", "decision": "accepted", "rationale": "Observed oil price"}] * 2, False),
+    ([{"finding_id": "R1", "decision": "rejected", "rationale": "Observed oil price on scan date supports the claim"}], True),
+])
+def test_every_material_risk_finding_needs_one_substantive_response(monkeypatch, resolutions, complete):
+    from tradingagents.agents.market_review import REVIEW_FIELDS
+    state = dict.fromkeys(REVIEW_FIELDS, "Review available")
+    state.update(market_review_enabled=True, market_draft_report="Draft",
+                 market_risk_findings=[{"id": "R1", "finding": "Check oil"}])
+    result, _ = run(monkeypatch, report(review_resolution="Checked", risk_resolutions=resolutions), **state)
+    assert (result["scan_status"] == "COMPLETE") is complete
+    assert bool(result["market_scan_result"]["candidates"]) is complete

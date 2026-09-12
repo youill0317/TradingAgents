@@ -95,7 +95,7 @@ def invoke_structured_or_freetext(
 
 def invoke_structured_required(
     structured_llm: Any | None,
-    prompt: Any,
+    prompt: str,
     schema: type[T],
     agent_name: str,
 ) -> T:
@@ -111,7 +111,14 @@ def invoke_structured_required(
             f"{agent_name}: provider does not support required structured output"
         )
     try:
-        result = structured_llm.invoke(prompt)
+        # Gateways may not support forced tool_choice. The output schema is
+        # still permitted when the analyst is forbidden from using data tools.
+        result = structured_llm.invoke(
+            prompt + f"\n\nReturn the result using the {schema.__name__} output schema. "
+            f"If exposed as a tool, call {schema.__name__} exactly once. "
+            "This output tool is allowed; it is not an external data/search tool. "
+            "Do not return the result as ordinary prose."
+        )
         if result is None:
             raise ValueError("structured output returned no parsed result")
         return schema.model_validate(result)

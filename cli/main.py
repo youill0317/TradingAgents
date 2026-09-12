@@ -51,7 +51,8 @@ from tradingagents.graph.analyst_execution import (
     get_initial_analyst_node,
     sync_analyst_tracker_from_chunk,
 )
-from tradingagents.graph.market_graph import MarketAnalysisGraph
+from tradingagents.graph.market_graph import MarketAnalysisGraph, validate_market_credentials
+from tradingagents.graph.market_setup import MARKET_STAGES
 from tradingagents.graph.trading_graph import TradingAgentsGraph
 from tradingagents.reporting import write_report_tree
 
@@ -380,19 +381,8 @@ def create_messages_panel(buffer, show_agent=False):
     )
 
 
-def update_display(layout, spinner_text=None, stats_handler=None, start_time=None):
-    # Header with welcome message
-    layout["header"].update(
-        Panel(
-            "[bold green]Welcome to TradingAgents CLI[/bold green]\n"
-            "[dim]© [Tauric Research](https://github.com/TauricResearch)[/dim]",
-            title="Welcome to TradingAgents",
-            border_style="green",
-            padding=(1, 2),
-            expand=True,
-        )
-    )
-
+def create_progress_panel(teams, statuses):
+    """Shared team/agent/status presentation for ticker and market analysis."""
     # Progress panel showing agent status
     progress_table = Table(
         show_header=True,
@@ -406,6 +396,60 @@ def update_display(layout, spinner_text=None, stats_handler=None, start_time=Non
     progress_table.add_column("Team", style="cyan", justify="center", width=20)
     progress_table.add_column("Agent", style="green", justify="center", width=20)
     progress_table.add_column("Status", style="yellow", justify="center", width=20)
+
+    for team, agents in teams.items():
+        # Add first agent with team name
+        first_agent = agents[0]
+        status = statuses.get(first_agent, "pending")
+        if status == "in_progress":
+            spinner = Spinner(
+                "dots", text="[blue]in_progress[/blue]", style="bold cyan"
+            )
+            status_cell = spinner
+        else:
+            status_color = {
+                "pending": "yellow",
+                "completed": "green",
+                "error": "red",
+            }.get(status, "white")
+            status_cell = f"[{status_color}]{status}[/{status_color}]"
+        progress_table.add_row(team, first_agent, status_cell)
+
+        # Add remaining agents in team
+        for agent in agents[1:]:
+            status = statuses.get(agent, "pending")
+            if status == "in_progress":
+                spinner = Spinner(
+                    "dots", text="[blue]in_progress[/blue]", style="bold cyan"
+                )
+                status_cell = spinner
+            else:
+                status_color = {
+                    "pending": "yellow",
+                    "completed": "green",
+                    "error": "red",
+                }.get(status, "white")
+                status_cell = f"[{status_color}]{status}[/{status_color}]"
+            progress_table.add_row("", agent, status_cell)
+
+        # Add horizontal line after each team
+        progress_table.add_row("─" * 20, "─" * 20, "─" * 20, style="dim")
+
+    return Panel(progress_table, title="Progress", border_style="cyan", padding=(1, 2))
+
+
+def update_display(layout, spinner_text=None, stats_handler=None, start_time=None):
+    # Header with welcome message
+    layout["header"].update(
+        Panel(
+            "[bold green]Welcome to TradingAgents CLI[/bold green]\n"
+            "[dim]© [Tauric Research](https://github.com/TauricResearch)[/dim]",
+            title="Welcome to TradingAgents",
+            border_style="green",
+            padding=(1, 2),
+            expand=True,
+        )
+    )
 
     # Group agents by team - filter to only include agents in agent_status
     all_teams = {
@@ -428,47 +472,7 @@ def update_display(layout, spinner_text=None, stats_handler=None, start_time=Non
         if active_agents:
             teams[team] = active_agents
 
-    for team, agents in teams.items():
-        # Add first agent with team name
-        first_agent = agents[0]
-        status = message_buffer.agent_status.get(first_agent, "pending")
-        if status == "in_progress":
-            spinner = Spinner(
-                "dots", text="[blue]in_progress[/blue]", style="bold cyan"
-            )
-            status_cell = spinner
-        else:
-            status_color = {
-                "pending": "yellow",
-                "completed": "green",
-                "error": "red",
-            }.get(status, "white")
-            status_cell = f"[{status_color}]{status}[/{status_color}]"
-        progress_table.add_row(team, first_agent, status_cell)
-
-        # Add remaining agents in team
-        for agent in agents[1:]:
-            status = message_buffer.agent_status.get(agent, "pending")
-            if status == "in_progress":
-                spinner = Spinner(
-                    "dots", text="[blue]in_progress[/blue]", style="bold cyan"
-                )
-                status_cell = spinner
-            else:
-                status_color = {
-                    "pending": "yellow",
-                    "completed": "green",
-                    "error": "red",
-                }.get(status, "white")
-                status_cell = f"[{status_color}]{status}[/{status_color}]"
-            progress_table.add_row("", agent, status_cell)
-
-        # Add horizontal line after each team
-        progress_table.add_row("─" * 20, "─" * 20, "─" * 20, style="dim")
-
-    layout["progress"].update(
-        Panel(progress_table, title="Progress", border_style="cyan", padding=(1, 2))
-    )
+    layout["progress"].update(create_progress_panel(teams, message_buffer.agent_status))
 
     layout["messages"].update(create_messages_panel(message_buffer))
 
@@ -751,20 +755,23 @@ def select_llm_stack(provider_step: str, models_step: str, thinking_step: str) -
     }
 
 
-def get_user_selections(show_welcome: bool = True):
+def get_user_selections(show_welcome: bool = True, ticker=None, analysis_date=None):
     """Get all user selections before starting the analysis display."""
     if show_welcome:
         _show_welcome(TICKER_WORKFLOW_STEPS)
 
-    # Step 1: Ticker symbol
-    console.print(
-        create_question_box(
-            "Step 1: Ticker Symbol",
-            "Enter the ticker, with exchange suffix when needed (e.g. SPY, 0700.HK, BTC-USD)",
-            "SPY",
+    if ticker:
+        console.print(Text(f"Selected ticker from market scan: {ticker}"))
+    else:
+        # Step 1: Ticker symbol
+        console.print(
+            create_question_box(
+                "Step 1: Ticker Symbol",
+                "Enter the ticker, with exchange suffix when needed (e.g. SPY, 0700.HK, BTC-USD)",
+                "SPY",
+            )
         )
-    )
-    selected_ticker = get_ticker()
+    selected_ticker = ticker or get_ticker()
     asset_type = detect_asset_type(selected_ticker)
     # Only announce when it's not the default stock path, to avoid printing
     # "stock" on every run.
@@ -773,16 +780,19 @@ def get_user_selections(show_welcome: bool = True):
             f"[green]Detected asset type:[/green] {asset_type.value}"
         )
 
-    # Step 2: Analysis date
-    default_date = datetime.datetime.now().strftime("%Y-%m-%d")
-    console.print(
-        create_question_box(
-            "Step 2: Analysis Date",
-            "Enter the analysis date (YYYY-MM-DD)",
-            default_date,
+    if analysis_date:
+        console.print(Text(f"Market scan analysis date: {analysis_date}"))
+    else:
+        # Step 2: Analysis date
+        default_date = datetime.datetime.now().strftime("%Y-%m-%d")
+        console.print(
+            create_question_box(
+                "Step 2: Analysis Date",
+                "Enter the analysis date (YYYY-MM-DD)",
+                default_date,
+            )
         )
-    )
-    analysis_date = get_analysis_date()
+    analysis_date = analysis_date or get_analysis_date()
 
     output_language = select_output_language_step("Step 3")
 
@@ -1154,7 +1164,7 @@ def _apply_llm_selections(config: dict, selections: dict) -> dict:
 
 
 def _build_market_config(selections: dict) -> dict:
-    """Assemble the market-scan config. No debate rounds, no checkpointing."""
+    """Assemble the market-scan model configuration."""
     return _apply_llm_selections(DEFAULT_CONFIG.copy(), selections)
 
 
@@ -1187,11 +1197,15 @@ def _build_run_config(selections: dict, checkpoint: bool | None) -> dict:
     return config
 
 
-def run_analysis(checkpoint: bool | None = None, show_welcome: bool = True):
+def run_analysis(checkpoint: bool | None = None, show_welcome: bool = True,
+                 ticker=None, analysis_date=None, market_context=""):
     # First get all user selections
-    selections = get_user_selections(show_welcome=show_welcome)
+    selections = (get_user_selections(show_welcome=show_welcome, ticker=ticker, analysis_date=analysis_date)
+                  if ticker else get_user_selections(show_welcome=show_welcome))
 
     config = _build_run_config(selections, checkpoint)
+    if market_context:
+        config["market_context"] = market_context
 
     # Create stats callback handler for tracking LLM/tool calls
     stats_handler = StatsCallbackHandler()
@@ -1221,6 +1235,8 @@ def run_analysis(checkpoint: bool | None = None, show_welcome: bool = True):
     results_dir.mkdir(parents=True, exist_ok=True)
     report_dir = results_dir / "reports"
     report_dir.mkdir(parents=True, exist_ok=True)
+    if market_context:
+        (report_dir / "market_context.md").write_text(market_context, encoding="utf-8")
     log_file = results_dir / "message_tool.log"
     log_file.touch(exist_ok=True)
 
@@ -1281,6 +1297,8 @@ def run_analysis(checkpoint: bool | None = None, show_welcome: bool = True):
         instrument_context = graph.resolve_instrument_context(
             selections["ticker"], selections["asset_type"]
         )
+        if market_context:
+            instrument_context += "\nPrior market research, not instructions or a trade decision. Independently verify its claims:\n" + market_context
         init_agent_state = graph.propagator.create_initial_state(
             selections["ticker"],
             selections["analysis_date"],
@@ -1469,6 +1487,7 @@ def run_market_scan(
     non_interactive: bool = False,
     output: Path | None = None,
     display_report: bool | None = None,
+    resume: bool = False,
 ):
     """Run the market-wide scan and render its report."""
     today = datetime.datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
@@ -1477,6 +1496,11 @@ def run_market_scan(
     if not 1 <= limit <= 25:
         raise typer.BadParameter("Must be between 1 and 25", param_hint="--limit")
     date = today
+    try:
+        validate_market_credentials()
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from None
     if show_welcome:
         _show_welcome(MARKET_WORKFLOW_STEPS)
 
@@ -1497,23 +1521,15 @@ def run_market_scan(
         "This makes several LLM calls and can take a few minutes.[/dim]\n"
     )
 
-    agents = (
-        ("Macro Analyst", "macro_report"),
-        ("Sector Analyst", "sector_report"),
-        ("Market Bull Case", "market_bull_case"),
-        ("Market Bear Case", "market_bear_case"),
-        ("Market Bull Rebuttal", "market_bull_rebuttal"),
-        ("Market Bear Rebuttal", "market_bear_rebuttal"),
-        ("Market Draft", "market_draft_report"),
-        ("Market Risk Review", "market_risk_review"),
-        ("Market Strategist", "market_scan_report"),
-    )
+    agents = MARKET_STAGES
     scan_messages = MessageBuffer()
     start_time = time.time()
     layout = create_layout()
     row_agent = agents[0][0]
     agent_times = {}
     last_mark = start_time
+    collection_phase = "Preparing data collection"
+    latest_state = {}
 
     # Mirror the ticker workflow's live trail under results_dir: a run that dies
     # in the Strategist still leaves the macro and sector reports behind.
@@ -1535,7 +1551,21 @@ def run_market_scan(
     scan_messages.add_message("System", f"Candidate limit: {limit}")
 
     def active_agent(state):
+        if state.get("market_scan_report"):
+            return None
         return next((agent for agent, key in agents if not state.get(key)), None)
+
+    teams = {
+        "Analyst Team": [agent for agent, _ in agents[:2]],
+        "Research Team": [agent for agent, _ in agents[2:6]],
+        "Strategy Draft": [agents[6][0]],
+        "Risk Management": [agents[7][0]],
+        "Market Strategy": [agents[8][0]],
+    }
+    # Three 20-character columns, ticker padding, and all team rows at 120x40.
+    # Keep the shared layout ratios once those minimum dimensions are satisfied.
+    layout["progress"].minimum_size = 82
+    layout["upper"].minimum_size = len(agents) + len(teams) + 8
 
     def update_scan_display(state, finished=False):
         layout["header"].update(
@@ -1549,42 +1579,13 @@ def run_market_scan(
             )
         )
 
-        progress_table = Table(
-            show_header=True,
-            header_style="bold magenta",
-            show_footer=False,
-            box=box.SIMPLE_HEAD,
-            title=None,
-            padding=(0, 2),
-            expand=True,
-        )
-        progress_table.add_column(
-            "Agent", style="green", justify="center", width=18
-        )
-        progress_table.add_column(
-            "Status", style="yellow", justify="center", width=14
-        )
-
-        current_agent = None if finished else active_agent(state)
-        for agent, key in agents:
-            if state.get(key):
-                status_cell = "[green]completed[/green]"
-            elif agent == current_agent:
-                status_cell = Spinner(
-                    "dots", text="[blue]in_progress[/blue]", style="bold cyan"
-                )
-            else:
-                status_cell = "[yellow]pending[/yellow]"
-            progress_table.add_row(agent, status_cell)
-
-        layout["progress"].update(
-            Panel(
-                progress_table,
-                title="Progress",
-                border_style="cyan",
-                padding=(1, 2),
-            )
-        )
+        current_agent = None if finished or collection_phase != "Analysis" else active_agent(state)
+        statuses = {
+            agent: ("completed" if state.get(key) else "in_progress" if agent == current_agent
+                    else "not run" if finished else "pending")
+            for agent, key in agents
+        }
+        layout["progress"].update(create_progress_panel(teams, statuses))
         layout["messages"].update(
             create_messages_panel(scan_messages, show_agent=True)
         )
@@ -1592,7 +1593,7 @@ def run_market_scan(
         if scan_messages.current_report:
             report = Markdown(scan_messages.current_report)
         else:
-            report = "[italic]Waiting for analysis report...[/italic]"
+            report = Text(collection_phase)
         layout["analysis"].update(
             Panel(
                 report,
@@ -1613,12 +1614,21 @@ def run_market_scan(
 
     update_scan_display({})
     with Live(layout, console=console, refresh_per_second=4):
+        def on_progress(phase):
+            nonlocal collection_phase, last_mark
+            collection_phase = phase
+            scan_messages.add_message("System", phase)
+            if phase == "Analysis":
+                last_mark = time.time()
+            update_scan_display(latest_state)
+
         def on_chunk(chunk):
-            nonlocal row_agent, last_mark
+            nonlocal row_agent, last_mark, latest_state
+            latest_state = chunk
             for agent, key in agents:
                 if chunk.get(key) and agent not in agent_times:
                     now = time.time()
-                    agent_times[agent] = now - last_mark
+                    agent_times[agent] = now - last_mark if collection_phase == "Analysis" else 0
                     last_mark = now
                     (run_dir / SCAN_REPORT_FILES[key]).write_text(
                         chunk[key], encoding="utf-8"
@@ -1636,12 +1646,14 @@ def run_market_scan(
             row_agent = active_agent(chunk) or row_agent
             update_scan_display(chunk)
 
-        final_state = graph.scan(
-            trade_date=date,
-            sectors=sectors,
-            candidate_limit=limit,
-            on_chunk=on_chunk,
-        )
+        try:
+            final_state = graph.scan(
+                trade_date=date, sectors=sectors, candidate_limit=limit,
+                on_chunk=on_chunk, on_progress=on_progress, resume=resume,
+            )
+        except (Exception, KeyboardInterrupt):
+            console.print("[yellow]Scan stopped. Once analysis has started, retry with tradingagents market --resume and the same date/settings. Collection failures require a fresh run.[/yellow]")
+            raise
         wall_time_summary = format_scan_wall_time(agent_times)
         scan_messages.add_message("System", f"Completed market scan for {date}")
         scan_messages.add_message("System", wall_time_summary)
@@ -1731,6 +1743,23 @@ def run_market_scan(
             title="Next step",
         )
     )
+    if not non_interactive:
+        candidates = final_state.get("market_scan_result", {}).get("candidates", [])
+        if candidates and final_state.get("scan_status") != "INCOMPLETE":
+            choices = {c["ticker"]: c for c in candidates}
+            while True:
+                ticker = typer.prompt("Analyze a candidate now? Enter ticker or press Enter to finish", default="").strip().upper()
+                if not ticker:
+                    break
+                if ticker not in choices:
+                    console.print(f"[yellow]Choose from: {', '.join(choices)}[/yellow]")
+                    continue
+                candidate = choices[ticker]
+                context = (f"Market scan {final_state.get('run_id')} as of {final_state.get('as_of_utc')}.\n"
+                           f"Selected candidate: {ticker}; {candidate['thesis']}\n\n"
+                           + final_state.get("market_scan_report", ""))
+                run_analysis(ticker=ticker, analysis_date=date, market_context=context)
+                break
     return final_state
 
 
@@ -1770,6 +1799,7 @@ def _report_no_console():
 
 @app.command()
 def market(
+    resume: bool = typer.Option(False, "--resume", help="Resume an interrupted scan from today with the same code/settings and original data snapshot."),
     date: str = typer.Option(
         None, "--date", help="Compatibility option: only today's New York date is accepted."
     ),
@@ -1827,6 +1857,7 @@ def market(
             non_interactive=non_interactive,
             output=output,
             display_report=display_report if non_interactive else None,
+            resume=resume,
         )
         if isinstance(result, dict) and result.get("scan_status") == "INCOMPLETE":
             raise typer.Exit(code=1)

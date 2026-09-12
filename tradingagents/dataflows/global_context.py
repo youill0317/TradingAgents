@@ -78,7 +78,7 @@ def collect_global_context(trade_date: str) -> dict:
                      "content": content + "\nSource: https://stocktwits.com/symbol/SPY",
                      "retrieved_at": datetime.now(timezone.utc).isoformat()})
     for item in evidence:
-        if item["status"] != "success":
+        if item["status"] not in ("success", "empty"):
             warnings.append(f"{item['source']} ({item['target']}): {item['status']}")
     caution = (
         "News may contain only headlines and summaries, not verified full articles. "

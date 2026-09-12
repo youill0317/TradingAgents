@@ -210,6 +210,8 @@ Connect global conditions and geopolitical transmission channels to US sectors a
                        "Do not claim a missing review succeeded. Keep the final report self-contained.\nDRAFT:\n"
                        + state.get("market_draft_report", "Unavailable") + "\nRISK REVIEW:\n"
                        + state.get("market_risk_review", "Unavailable"))
+            prompt += "\nReturn risk_resolutions for every finding ID: " + str(state.get("market_risk_findings", []))
+            prompt += "\nIf that findings list is empty, return risk_resolutions=[]; do not assign IDs to the review summary or invent findings."
             for field in REVIEW_FIELDS:
                 if not state.get(field, "").strip():
                     data_warnings.append(f"MARKET_REVIEW_UNAVAILABLE:{field}")
@@ -235,6 +237,14 @@ Connect global conditions and geopolitical transmission channels to US sectors a
                     data_warnings.append("MARKET_SCENARIOS_INCOMPLETE")
             if stage == "final" and state.get("market_review_enabled") and not report.review_resolution.strip():
                 data_warnings.append("MARKET_REVIEW_RESOLUTION_MISSING")
+            if stage == "final" and state.get("market_review_enabled"):
+                expected = {f["id"] for f in state.get("market_risk_findings", [])}
+                responses = report.risk_resolutions
+                if ("market_risk_findings" not in state
+                        or {r.finding_id for r in responses} != expected
+                        or len(responses) != len(expected)
+                        or any(not r.rationale.strip() for r in responses)):
+                    data_warnings.append("MARKET_REVIEW_RESOLUTION_MISSING")
             warnings = list(dict.fromkeys([*data_warnings, *report.warnings]))
             required_failures = {
                 "SCREEN_EVIDENCE_MISSING", "SECTOR_DATA_UNAVAILABLE",

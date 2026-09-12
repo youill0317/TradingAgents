@@ -1,5 +1,6 @@
 # TradingAgents/graph/trading_graph.py
 
+import hashlib
 import json
 import logging
 import os
@@ -407,6 +408,8 @@ class TradingAgentsGraph:
             f"debate={self.config['max_debate_rounds']}",
             f"risk={self.config['max_risk_discuss_rounds']}",
             f"asset={asset_type}",
+            *(["market=" + hashlib.sha256(self.config["market_context"].encode()).hexdigest()]
+              if self.config.get("market_context") else []),
         ])
 
     def propagate(self, company_name, trade_date, asset_type: str = "stock"):

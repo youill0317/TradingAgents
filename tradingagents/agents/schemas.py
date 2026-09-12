@@ -455,6 +455,17 @@ class MarketCandidate(BaseModel):
         return v.strip().upper() if isinstance(v, str) else v
 
 
+class MarketRiskReview(BaseModel):
+    summary: str = Field(description="What was audited, including unavailable evidence.")
+    findings: list[str] = Field(description="Material findings only. Each states the claim, source/date, severity, required correction and monitoring condition. Empty if none.")
+
+
+class MarketRiskResolution(BaseModel):
+    finding_id: str
+    decision: Literal["accepted", "rejected"]
+    rationale: str = Field(description="Evidence/date and correction made, or evidence supporting rejection.")
+
+
 class MarketScanReport(BaseModel):
     """Structured output produced by the Market Strategist.
 
@@ -472,6 +483,7 @@ class MarketScanReport(BaseModel):
         description="Machine-readable reasons for degraded or incomplete output.",
     )
     review_resolution: str = Field(default="", description="Final response to material independent risk findings: accepted/rejected, evidence, corrections and unresolved uncertainty.")
+    risk_resolutions: list[MarketRiskResolution] = Field(default_factory=list, description="Exactly one response per supplied risk finding ID; no invented IDs.")
     market_outlook: str = Field(default="", description="Independent 1–4 week market outlook: regime, contradictions, risk appetite and conditions for reassessment.")
     participation_assessment: str = Field(default="", description="Breadth of sector/ETF participation, equal-weight vs cap-weight and small vs large caps; cite dates and coverage, not invented stock breadth.")
     rotation_assessment: str = Field(default="", description="Multi-horizon sector leadership, reversals and like-for-like rank or weekly relative changes, grounded in the diagnostics.")
@@ -535,6 +547,10 @@ def render_market_scan_report(report: MarketScanReport) -> str:
             parts.extend([f"## {title}", "", text, ""])
     if report.scenarios:
         parts.extend(["## Conditional Scenarios", "", *[f"- {s}" for s in report.scenarios], ""])
+    if report.risk_resolutions:
+        parts.extend(["## Risk Findings Addressed", "", *[
+            f"- {r.finding_id} — {r.decision}: {r.rationale}" for r in report.risk_resolutions
+        ], ""])
     parts.extend(["## Candidates", ""])
 
     if not report.candidates:

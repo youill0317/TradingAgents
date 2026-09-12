@@ -22,6 +22,13 @@ SCAN_CONTEXT = (
     "Your subject is the market itself."
 )
 MAX_AGENT_TOOL_ROUNDS = 8
+MARKET_STAGES = (
+    ("Macro Analyst", "macro_report"), ("Sector Analyst", "sector_report"),
+    ("Market Bull Case", "market_bull_case"), ("Market Bear Case", "market_bear_case"),
+    ("Market Bull Rebuttal", "market_bull_rebuttal"), ("Market Bear Rebuttal", "market_bear_rebuttal"),
+    ("Market Draft", "market_draft_report"), ("Market Risk Review", "market_risk_review"),
+    ("Market Strategist", "market_scan_report"),
+)
 
 
 class MarketState(MessagesState):
@@ -35,6 +42,7 @@ class MarketState(MessagesState):
     market_draft_report: str
     market_draft_result: dict
     market_risk_review: str
+    market_risk_findings: list[dict]
     trade_date: Annotated[str, "Date the scan is run for"]
     as_of_utc: Annotated[str, "Timezone-aware retrieval cutoff"]
     effective_market_session: Annotated[str, "US market session represented"]

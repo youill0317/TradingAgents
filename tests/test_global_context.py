@@ -58,6 +58,7 @@ def test_news_failure_words_are_not_retrieval_errors_and_exceptions_are_sanitize
     assert result["evidence"][0]["status"] == "success"
     assert result["evidence"][0]["configured_provider"] == "yfinance"
     assert result["evidence"][1]["content"] == "RuntimeError"
+    assert len(result["warnings"]) == 1, "empty optional results are not degraded coverage"
     assert "secret" not in result["report"]
     assert all(item["retrieved_at"].endswith("+00:00") for item in result["evidence"])
     assert route.call_args_list[1].args == ("get_prediction_markets", "interest rates")
