@@ -233,6 +233,7 @@ def get_macro_data(
         f"- Frequency: {frequency}"
         f"{f' ({seasonal})' if seasonal else ''}\n"
         f"- Window: {start_date} to {curr_date}\n"
+        f"- Vintage available as of: {pit}\n"
     )
 
     if not points:

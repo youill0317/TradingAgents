@@ -1,5 +1,6 @@
 # TradingAgents/graph/trading_graph.py
 
+import hashlib
 import json
 import logging
 import os
@@ -29,7 +30,7 @@ from tradingagents.agents.utils.agent_utils import (
     resolve_instrument_identity,
 )
 from tradingagents.agents.utils.memory import TradingMemoryLog
-from tradingagents.dataflows.config import set_config
+from tradingagents.dataflows.config import config_context, set_config
 from tradingagents.dataflows.utils import safe_ticker_component
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.llm_clients import create_llm_client
@@ -74,6 +75,52 @@ def _coerce_max_tokens(value):
     if n <= 0:
         raise ValueError(f"max_tokens must be > 0, got {n}")
     return n
+
+
+def build_provider_kwargs(config: dict[str, Any]) -> dict[str, Any]:
+    """Build provider-specific kwargs for LLM client creation from a config dict.
+
+    A module function rather than a method because both graphs (per-ticker and
+    market scan) must construct their clients the same way; duplicating these
+    rules would let the two drift apart silently.
+    """
+    kwargs = {}
+    provider = config.get("llm_provider", "").lower()
+
+    if provider == "google":
+        thinking_level = config.get("google_thinking_level")
+        if thinking_level:
+            kwargs["thinking_level"] = thinking_level
+
+    elif provider == "openai":
+        reasoning_effort = config.get("openai_reasoning_effort")
+        if reasoning_effort:
+            kwargs["reasoning_effort"] = reasoning_effort
+
+    elif provider == "anthropic":
+        effort = config.get("anthropic_effort")
+        if effort:
+            kwargs["effort"] = effort
+
+    # Sampling temperature is cross-provider: forward it whenever set.
+    # float() here so a value coming from a TRADINGAGENTS_TEMPERATURE env
+    # string ("0.2") works the same as a programmatic float.
+    temperature = config.get("temperature")
+    if temperature is not None and temperature != "":
+        kwargs["temperature"] = float(temperature)
+
+    # SDK retry budget is cross-provider. Forward it only when explicitly set
+    # so each provider keeps its own default (usually 2) otherwise (#1091).
+    max_retries = config.get("llm_max_retries")
+    if max_retries is not None and max_retries != "":
+        kwargs["max_retries"] = _coerce_max_retries(max_retries)
+
+    max_tokens = config.get("max_tokens")
+    if max_tokens is not None and max_tokens != "":
+        key = "max_output_tokens" if provider == "google" else "max_tokens"
+        kwargs[key] = _coerce_max_tokens(max_tokens)
+
+    return kwargs
 
 
 class TradingAgentsGraph:
@@ -167,45 +214,7 @@ class TradingAgentsGraph:
 
     def _get_provider_kwargs(self) -> dict[str, Any]:
         """Get provider-specific kwargs for LLM client creation."""
-        kwargs = {}
-        provider = self.config.get("llm_provider", "").lower()
-
-        if provider == "google":
-            thinking_level = self.config.get("google_thinking_level")
-            if thinking_level:
-                kwargs["thinking_level"] = thinking_level
-
-        elif provider == "openai":
-            reasoning_effort = self.config.get("openai_reasoning_effort")
-            if reasoning_effort:
-                kwargs["reasoning_effort"] = reasoning_effort
-
-        elif provider == "anthropic":
-            effort = self.config.get("anthropic_effort")
-            if effort:
-                kwargs["effort"] = effort
-
-        # Sampling temperature is cross-provider: forward it whenever set.
-        # float() here so a value coming from a TRADINGAGENTS_TEMPERATURE env
-        # string ("0.2") works the same as a programmatic float.
-        temperature = self.config.get("temperature")
-        if temperature is not None and temperature != "":
-            kwargs["temperature"] = float(temperature)
-
-        # SDK retry budget is cross-provider. Forward it only when explicitly set
-        # so each provider keeps its own default (usually 2) otherwise (#1091).
-        max_retries = self.config.get("llm_max_retries")
-        if max_retries is not None and max_retries != "":
-            kwargs["max_retries"] = _coerce_max_retries(max_retries)
-
-        # Output-token cap is cross-provider, but Gemini names it
-        # ``max_output_tokens``; forward under the right key when set (#1204).
-        max_tokens = self.config.get("max_tokens")
-        if max_tokens is not None and max_tokens != "":
-            key = "max_output_tokens" if provider == "google" else "max_tokens"
-            kwargs[key] = _coerce_max_tokens(max_tokens)
-
-        return kwargs
+        return build_provider_kwargs(self.config)
 
     def _create_tool_nodes(self) -> dict[str, ToolNode]:
         """Create tool nodes for different data sources using abstract methods."""
@@ -399,6 +408,8 @@ class TradingAgentsGraph:
             f"debate={self.config['max_debate_rounds']}",
             f"risk={self.config['max_risk_discuss_rounds']}",
             f"asset={asset_type}",
+            *(["market=" + hashlib.sha256(self.config["market_context"].encode()).hexdigest()]
+              if self.config.get("market_context") else []),
         ])
 
     def propagate(self, company_name, trade_date, asset_type: str = "stock"):
@@ -422,7 +433,9 @@ class TradingAgentsGraph:
         # Resolve any pending memory-log entries for this ticker before the pipeline runs.
         self._resolve_pending_entries(company_name)
 
-        with self.checkpoint_scope(company_name, trade_date, asset_type) as thread_id_value:
+        with config_context(self.config), self.checkpoint_scope(
+            company_name, trade_date, asset_type
+        ) as thread_id_value:
             return self._run_graph(
                 company_name, trade_date, asset_type=asset_type,
                 checkpoint_thread_id=thread_id_value,

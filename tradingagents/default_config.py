@@ -126,9 +126,14 @@ DEFAULT_CONFIG = _apply_env_overrides({
     # replace to broaden geographic / sector coverage.
     "global_news_queries": [
         "Federal Reserve interest rates inflation",
-        "S&P 500 earnings GDP economic outlook",
-        "geopolitical risk trade war sanctions",
-        "ECB Bank of England BOJ central bank policy",
+        "eurozone ECB inflation economy",
+        "United Kingdom Bank of England economy",
+        "China economy trade policy",
+        "Japan Bank of Japan yen economy",
+        "South Korea economy exports",
+        "India economy inflation rates",
+        "emerging markets debt currencies economy",
+        "war geopolitical conflict sanctions tariffs",
         "oil commodities supply chain energy",
     ],
     # Data vendor configuration
@@ -143,6 +148,7 @@ DEFAULT_CONFIG = _apply_env_overrides({
         "news_data": "yfinance",             # Options: alpha_vantage, yfinance
         "macro_data": "fred",                # Options: fred (needs FRED_API_KEY)
         "prediction_markets": "polymarket",  # Options: polymarket (keyless)
+        "market_scan": "yfinance",           # Options: yfinance (keyless)
     },
     # Tool-level configuration (takes precedence over category-level)
     "tool_vendors": {

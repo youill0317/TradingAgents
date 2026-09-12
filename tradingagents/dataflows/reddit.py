@@ -203,7 +203,11 @@ def _fetch_subreddit_rss(
         title_el = entry.find("atom:title", _ATOM_NS)
         published_el = entry.find("atom:published", _ATOM_NS)
         content_el = entry.find("atom:content", _ATOM_NS)
+        link_el = entry.find("atom:link[@rel='alternate']", _ATOM_NS)
+        if link_el is None:
+            link_el = entry.find("atom:link", _ATOM_NS)
         posts.append({
+            "url": link_el.get("href", "") if link_el is not None else "",
             "title": (title_el.text if title_el is not None else "") or "",
             "score": None,
             "num_comments": None,
@@ -356,3 +360,14 @@ def fetch_reddit_posts(
             )
         return summary
     return "\n\n".join(blocks)
+
+
+def collect_reddit_topic(query: str, subreddit: str, limit: int = 5) -> dict:
+    """Preserve topic evidence and distinguish failed requests from empty feeds."""
+    try:
+        posts = _fetch_subreddit_rss(query, subreddit, limit, 10.0)
+        if posts is None:
+            return {"status": "failed", "posts": [], "error": "Reddit fetch unavailable"}
+        return {"status": "success" if posts else "empty", "posts": posts}
+    except (OSError, http.client.HTTPException, ET.ParseError) as exc:
+        return {"status": "failed", "posts": [], "error": type(exc).__name__}

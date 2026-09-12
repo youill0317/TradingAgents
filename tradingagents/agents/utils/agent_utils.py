@@ -201,7 +201,13 @@ def get_instrument_context_from_state(state: Mapping[str, Any]) -> str:
     )
 
 
-def create_msg_delete():
+def create_msg_delete(task_context: str | None = None):
+    """Build the message-clearing node.
+
+    ``task_context`` overrides the anchor text for workflows that have no single
+    instrument (the market-wide scan). Left unset, the anchor is resolved from
+    the state's instrument, which is what every per-ticker analyst wants.
+    """
     def delete_messages(state):
         """Clear messages and add a context-anchored placeholder.
 
@@ -215,7 +221,7 @@ def create_msg_delete():
         messages = state["messages"]
         removal_operations = [RemoveMessage(id=m.id) for m in messages]
 
-        instrument_context = get_instrument_context_from_state(state)
+        instrument_context = task_context or get_instrument_context_from_state(state)
         trade_date = state.get("trade_date", "the requested date")
         placeholder = HumanMessage(
             content=(

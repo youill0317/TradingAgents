@@ -168,7 +168,46 @@ Launch the interactive CLI:
 tradingagents          # installed command
 python -m cli.main     # alternative: run directly from source
 ```
-You will see a screen where you can select your desired tickers, analysis date, LLM provider, research depth, and more.
+You will first be asked which workflow to run:
+
+- **Ticker Analysis** — analyse one ticker in depth. You then select the ticker, analysis date, LLM provider, research depth, and more. This is the original workflow.
+- **Market Scan** — survey the whole market instead of a single name (see below).
+
+Either workflow can also be launched directly, skipping the menu, which is what you want for scripts and cron:
+
+```bash
+tradingagents analyze  # ticker analysis
+tradingagents market   # market scan
+tradingagents market --non-interactive --output reports/latest
+```
+
+### Market Scan
+
+The scan starts with global market conditions, then narrows to US sectors and liquid NYSE/Nasdaq candidates for further analysis.
+
+```bash
+tradingagents market                                  # current New York date
+tradingagents market --sectors Technology,Energy
+tradingagents market --limit 5 --save
+```
+
+| Stage | Coverage | Existing sources |
+| --- | --- | --- |
+| Global baseline | US, eurozone, UK, China, Japan, Korea, India and emerging-market equity proxies; FX, bonds, commodities; 1-week, 1-month and 3-month returns | Yahoo Finance |
+| Regional macro | Available growth, inflation, employment, rates and selected reserves excluding gold; explicit coverage gaps | FRED, optional `FRED_API_KEY` |
+| Global context | Regional news, war, political conflict, trade and energy; optional community and prediction-market signals | Configured news provider, Reddit, StockTwits, Polymarket |
+| US sectors | Sector ETF performance relative to benchmarks, informed by the global report | Yahoo Finance |
+| Candidates | Names supported by actual screener rows and usable sector evidence | Existing equity screener and strategist |
+
+The Macro Analyst explains global conditions and transmission to US markets before the Sector Analyst and Market Strategist narrow the search. ETF returns are proxies, not measured capital flows. Community posts are supporting signals, not verified facts. This does not provide exhaustive country-sector, reserve or international capital-flow coverage.
+
+Market scans accept only the current date in `America/New_York`; omit `--date` for normal use. Recent price history is still used to measure today's trends. Historical ticker analysis remains available separately. Market scans start fresh and do not resume old checkpoints.
+
+Every run saves reports, `global_data.md`, `global_context.md`, raw evidence and a structured `scan.json` in its run directory. Evidence records sources, retrieval times, observation dates and availability. Missing or stale data is visible: partial evidence produces `DEGRADED` results with lower conviction; missing essential reports, sector evidence or screener evidence produces `INCOMPLETE` with no candidates. The `market` command exits unsuccessfully for `INCOMPLETE` runs. A successful screen with no matches is a valid empty result.
+
+Existing provider and model settings are retained. No new data subscriptions are required; your LLM provider credentials are still necessary. FRED credentials enrich macro coverage. Public endpoints can rate-limit or deny access, and optional source failures remain visible without inventing replacement evidence.
+
+**The shortlist is not a recommendation.** Each candidate is a prompt to run `tradingagents analyze` for deeper research.
 
 ### Markets and tickers
 
