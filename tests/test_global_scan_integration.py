@@ -8,6 +8,8 @@ from langchain_core.messages import AIMessage, ToolMessage
 
 from tradingagents.dataflows.config import config_context
 from tradingagents.dataflows.market_scan import screen_equities
+from tradingagents.dataflows.public_data import render_public_data
+from tradingagents.dataflows.public_data_common import evidence
 from tradingagents.graph.market_setup import capture_screen_evidence
 
 
@@ -113,6 +115,11 @@ def test_global_collection_reaches_real_graph_and_grounded_candidate(
 
     calls = []
     client_options = []
+    public_evidence = [
+        evidence("nyfed", "rates", "NYFED_RATE", "https://nyfed.example"),
+        evidence("kosis", "energy", "KOSIS_SECTOR", "https://kosis.example"),
+    ]
+    public_report = render_public_data(public_evidence)
     monkeypatch.setattr(mg, "create_llm_client", lambda **k: client_options.append(k) or Client())
     monkeypatch.setattr(mg, "collect_global_snapshot", lambda date: calls.append("snapshot") or {
         "report": "JAPAN_BASELINE", "evidence": [
@@ -124,6 +131,9 @@ def test_global_collection_reaches_real_graph_and_grounded_candidate(
         "report": "WAR_SUMMARY_ONLY", "evidence": [
             {"source": "get_global_news", "status": "success", "content": "War summary"},
         ], "warnings": [],
+    })
+    monkeypatch.setattr(mg, "collect_public_data", lambda date, config: calls.append("public") or {
+        "report": public_report, "evidence": public_evidence, "warnings": [],
     })
     monkeypatch.setattr(mg, "collect_market_diagnostics", lambda date: calls.append("diagnostics") or {
         "report": "PARTICIPATION_ROTATION", "data": {"status": "success"}, "evidence": [], "warnings": [],
@@ -157,8 +167,11 @@ def test_global_collection_reaches_real_graph_and_grounded_candidate(
     assert state["requested_sectors"] == ["Energy"] and state["candidate_limit"] == 3
     assert "company_of_interest" not in state
     assert state["trade_date"] == datetime.fromisoformat(state["as_of_utc"]).astimezone(mg.ZoneInfo("America/New_York")).date().isoformat()
-    assert calls == ["snapshot", "context", "diagnostics", "events"]
+    assert calls == ["snapshot", "context", "public", "diagnostics", "events"]
     assert all("PARTICIPATION_ROTATION" in p and "DATED_CATALYSTS" in p for p in prompts)
+    assert "NYFED_RATE" in prompts[0] and "KOSIS_SECTOR" not in prompts[0]
+    assert all("KOSIS_SECTOR" in p and "NYFED_RATE" not in p for p in prompts[1:3])
+    assert all("NYFED_RATE" in p and "KOSIS_SECTOR" in p for p in prompts[3:])
     assert "JAPAN_BASELINE" in prompts[0] and "WAR_SUMMARY_ONLY" in prompts[0]
     assert "Japan and oil" in prompts[1]
     assert "Japan and oil" in prompts[-1] and "US Energy benefits" in prompts[-1]
@@ -169,6 +182,8 @@ def test_global_collection_reaches_real_graph_and_grounded_candidate(
     assert state["market_draft_result"]["candidates"][0]["ticker"] == "XOM"
     assert state["scan_status"] == "COMPLETE"
     assert state["market_scan_result"]["candidates"][0]["ticker"] == "XOM"
+    assert state["public_data_report"] == public_report
+    assert state["public_data_evidence"] == public_evidence
     with pytest.raises(ValueError, match="No interrupted"):
         graph.scan(sectors=["Energy"], candidate_limit=3, resume=True)
     graph.save_reports(state, tmp_path / "export")
@@ -180,8 +195,10 @@ def test_global_collection_reaches_real_graph_and_grounded_candidate(
     assert "Independent Risk Review" in report and "REVIEW: concentration" in report
     assert (tmp_path / "export" / "risk_review.md").exists()
     assert (tmp_path / "export" / "global_data.md").read_text() == "JAPAN_BASELINE"
+    assert (tmp_path / "export" / "public_data.md").read_text() == public_report
     saved_evidence = [json.loads(line) for line in (tmp_path / "export" / "evidence.jsonl").read_text().splitlines()]
     assert any(r["source"] == "fred" and r["sha256"] for r in saved_evidence)
+    assert any(r["source"] == "nyfed" and r["content"] == "NYFED_RATE" and r["sha256"] for r in saved_evidence)
     if stream:
         draft_chunk = next(c for c in chunks if c.get("market_draft_report") and not c.get("market_risk_review"))
         assert not draft_chunk.get("market_scan_report")

@@ -14,6 +14,7 @@ from tradingagents.agents.utils.agent_utils import (
     get_macro_indicators,
     get_prediction_markets,
 )
+from tradingagents.dataflows.public_data import public_data_for_agent
 from tradingagents.llm_clients.base_client import normalize_content
 
 
@@ -61,6 +62,7 @@ def create_macro_analyst(llm):
             + "\n--- COLLECTION WARNINGS ---\n" + str(state.get("data_warnings", []))
             + "\n--- COMPUTED MARKET INTERNALS ---\n" + state.get("market_diagnostics", "")
             + "\n--- ECONOMIC CALENDAR ---\n" + state.get("event_calendar", "")
+            + "\n--- OFFICIAL PUBLIC DATA ---\n" + public_data_for_agent(state, "macro")
             + "\nAssess whether price trends are broadening or narrowing using the observed sector and ETF proxies; "
             "do not describe these as stock-level breadth. Distinguish established trends from short-term reversals. "
             "Use the calendar to identify upcoming dated catalysts, consensus where present, and recent actual-minus-consensus "

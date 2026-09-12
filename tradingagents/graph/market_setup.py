@@ -59,6 +59,8 @@ class MarketState(MessagesState):
     global_snapshot: Annotated[str, "Collected regional macro and cross-asset observations"]
     global_context: Annotated[str, "Collected global news and optional social context"]
     global_evidence: Annotated[list[dict], "Per-source collection outcomes and provenance"]
+    public_data_report: Annotated[str, "Collected official public data report"]
+    public_data_evidence: Annotated[list[dict], "Public-data collection outcomes and provenance"]
     sector_evidence: Annotated[str, "Raw US sector performance collected before analysis"]
     market_scan_result: Annotated[dict, "Validated final structured result"]
     macro_tool_rounds: Annotated[int, "Macro analyst invocation count"]

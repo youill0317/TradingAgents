@@ -59,6 +59,9 @@ class AgentState(MessagesState):
         str, "Report from the News Researcher of current world affairs"
     ]
     fundamentals_report: Annotated[str, "Report from the Fundamentals Researcher"]
+    public_data_report: Annotated[str, "Collected official public data report"]
+    public_data_evidence: Annotated[list[dict], "Public-data collection outcomes and provenance"]
+    instrument_identity: Annotated[dict, "Resolved business classification for public-data relevance"]
 
     # researcher team discussion step
     investment_debate_state: Annotated[

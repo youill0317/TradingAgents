@@ -42,6 +42,7 @@ from tradingagents.dataflows.global_market import collect_global_snapshot
 from tradingagents.dataflows.market_diagnostics import collect_market_diagnostics
 from tradingagents.dataflows.market_events import collect_market_events
 from tradingagents.dataflows.market_scan import resolve_sectors
+from tradingagents.dataflows.public_data import collect_public_data
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.llm_clients import create_llm_client
 from tradingagents.reporting import write_market_report_tree
@@ -254,6 +255,13 @@ class MarketAnalysisGraph:
                         data_warnings=[*snapshot["warnings"], *context["warnings"]],
                         effective_market_session=snapshot.get("effective_market_session"),
                     )
+                    if self.config.get("public_data_sources") and on_progress:
+                        on_progress("Collecting official US, global and Korean public data")
+                    public = collect_public_data(str(trade_date), self.config)
+                    initial_state.update(public_data_report=public["report"],
+                                         public_data_evidence=public["evidence"])
+                    initial_state["global_evidence"].extend(public["evidence"])
+                    initial_state["data_warnings"].extend(public["warnings"])
                     if on_progress:
                         on_progress("Computing market participation and sector trends")
                     diagnostics = collect_market_diagnostics(str(trade_date))

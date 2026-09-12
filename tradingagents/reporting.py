@@ -17,6 +17,9 @@ def write_report_tree(final_state: dict, ticker: str, save_path) -> Path:
     save_path = Path(save_path)
     save_path.mkdir(parents=True, exist_ok=True)
     sections = []
+    if final_state.get("public_data_report"):
+        (save_path / "public_data.md").write_text(final_state["public_data_report"], encoding="utf-8")
+        sections.append(f"## Official Public Data\n\n{final_state['public_data_report']}")
 
     # 1. Analysts
     analysts_dir = save_path / "1_analysts"
@@ -97,6 +100,12 @@ def write_report_tree(final_state: dict, ticker: str, save_path) -> Path:
             (portfolio_dir / "decision.md").write_text(risk["judge_decision"], encoding="utf-8")
             sections.append(f"## V. Portfolio Manager Decision\n\n### Portfolio Manager\n{risk['judge_decision']}")
 
+    if final_state.get("public_data_evidence"):
+        (save_path / "public_evidence.jsonl").write_text(
+            "".join(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n"
+                    for row in final_state["public_data_evidence"]), encoding="utf-8",
+        )
+
     # Write consolidated report
     header = f"# Trading Analysis Report: {ticker}\n\nGenerated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
     (save_path / "complete_report.md").write_text(header + "\n\n".join(sections), encoding="utf-8")
@@ -121,6 +130,7 @@ def write_market_report_tree(final_state: dict, save_path) -> Path:
         ("global_context", "global_context.md", "Global News and Community Context"),
         ("market_diagnostics", "market_diagnostics.md", "Market Participation and Transitions"),
         ("event_calendar", "event_calendar.md", "Economic Catalysts"),
+        ("public_data_report", "public_data.md", "Official Public Data"),
         ("macro_report", "macro.md", "I. Macro Analyst"),
         ("sector_report", "sector.md", "II. Sector Analyst"),
         ("market_bull_case", "bull_case.md", "Market Upside Case"),
@@ -170,9 +180,10 @@ def write_market_report_tree(final_state: dict, save_path) -> Path:
     evidence_records = []
     for record in final_state.get("global_evidence", []):
         content = record.get("content") or ""
+        hashed_content = content if isinstance(content, str) else json.dumps(content, ensure_ascii=False, sort_keys=True)
         evidence_records.append({
             **record,
-            "sha256": hashlib.sha256(content.encode()).hexdigest(),
+            "sha256": hashlib.sha256(hashed_content.encode()).hexdigest(),
         })
     for source, key in (
         ("fred", "macro_evidence"),

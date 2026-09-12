@@ -20,6 +20,7 @@ from tradingagents.agents.utils.structured import (
     bind_structured,
     invoke_structured_or_freetext,
 )
+from tradingagents.dataflows.public_data import public_data_for_agent
 
 
 def create_portfolio_manager(llm):
@@ -59,6 +60,9 @@ def create_portfolio_manager(llm):
 {lessons_line}
 **Risk Analysts Debate History:**
 {history}
+
+**Relevant Public Data Evidence:**
+{public_data_for_agent(state, "ticker_review")}
 
 ---
 

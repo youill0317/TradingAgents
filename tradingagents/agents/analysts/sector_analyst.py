@@ -14,6 +14,7 @@ from tradingagents.agents.utils.market_scan_tools import (
     get_sector_performance,
     screen_equities,
 )
+from tradingagents.dataflows.public_data import public_data_for_agent
 from tradingagents.llm_clients.base_client import normalize_content
 
 
@@ -72,6 +73,7 @@ def create_sector_analyst(llm):
             + state.get("sector_evidence", "")
             + "\n--- PARTICIPATION AND ROTATION ---\n" + state.get("market_diagnostics", "")
             + "\n--- UPCOMING CATALYSTS ---\n" + state.get("event_calendar", "")
+            + "\n--- OFFICIAL PUBLIC DATA ---\n" + public_data_for_agent(state, "sector")
             + "\nCompare 1w/1mo/3mo relative performance, like-for-like rank changes and successive weekly spread changes. "
             "Distinguish persistent leadership, emerging reversal and weakening leadership. Explain how dated events could "
             "reinforce or invalidate the sector view over the next 1–4 weeks. Missing diagnostics are uncertainty, not a flat market."

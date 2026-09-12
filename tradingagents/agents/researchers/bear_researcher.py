@@ -3,6 +3,7 @@ from tradingagents.agents.utils.agent_utils import (
     get_language_instruction,
     opponent_argument_or_opening,
 )
+from tradingagents.dataflows.public_data import public_data_for_agent
 
 
 def create_bear_researcher(llm):
@@ -44,6 +45,7 @@ Market research report: {market_research_report}
 Social media sentiment report: {sentiment_report}
 Latest world affairs news: {news_report}
 {fundamentals_label}: {fundamentals_report}
+Relevant public data evidence: {public_data_for_agent(state, "ticker_review")}
 Conversation history of the debate: {history}
 Last bull argument: {current_response}
 Use this information to deliver a compelling bear argument, refute the bull's claims, and engage in a dynamic debate that demonstrates the risks and weaknesses of investing in the {target_label}.

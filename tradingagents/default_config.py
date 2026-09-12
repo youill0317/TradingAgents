@@ -20,6 +20,7 @@ _ENV_OVERRIDES = {
     "TRADINGAGENTS_TEMPERATURE":          "temperature",
     "TRADINGAGENTS_LLM_MAX_RETRIES":      "llm_max_retries",
     "TRADINGAGENTS_MAX_TOKENS":           "max_tokens",
+    "TRADINGAGENTS_PUBLIC_DATA_SOURCES":  "public_data_sources",
     # Provider-specific reasoning/thinking knobs (None = each provider's own
     # default). Settable here for non-interactive runs; the CLI also offers an
     # interactive choice, which is skipped when the matching var is set.
@@ -78,6 +79,8 @@ DEFAULT_CONFIG = _apply_env_overrides({
     # the oldest resolved entries are pruned once this limit is exceeded.
     # Pending entries are never pruned. None disables rotation entirely.
     "memory_log_max_entries": None,
+    # Opt-in official supplements: comma-separated source IDs or "all".
+    "public_data_sources": "",
     # LLM settings
     "llm_provider": "openai",
     "deep_think_llm": "gpt-5.6",

@@ -890,6 +890,8 @@ def display_complete_report(final_state):
     """Display the complete analysis report sequentially (avoids truncation)."""
     console.print()
     console.print(Rule("Complete Analysis Report", style="bold green"))
+    if final_state.get("public_data_report"):
+        console.print(Panel(Markdown(final_state["public_data_report"]), title="Official Public Data", border_style="cyan"))
 
     # I. Analyst Team Reports
     analysts = []
@@ -1323,7 +1325,10 @@ def run_analysis(checkpoint: bool | None = None, show_welcome: bool = True,
         # try/finally tears the checkpointer down even if the stream raises.
         trace = []
         try:
-            for chunk in graph.graph.stream(graph.checkpoint_input(init_agent_state), **args):
+            if config.get("public_data_sources"):
+                message_buffer.add_message("System", "Collecting selected official public data")
+                update_display(layout, stats_handler=stats_handler, start_time=start_time)
+            for chunk in graph.graph.stream(graph.prepare_graph_input(init_agent_state), **args):
                 accumulate_stream_messages(message_buffer, chunk)
 
                 # Update analyst statuses based on report state (runs on every chunk)
@@ -1442,6 +1447,9 @@ def run_analysis(checkpoint: bool | None = None, show_welcome: bool = True,
     # Post-analysis prompts (outside Live context for clean interaction)
     console.print("\n[bold cyan]Analysis Complete![/bold cyan]\n")
     console.print(f"[dim]{analyst_wall_time_tracker.format_summary()}[/dim]")
+    for row in final_state.get("public_data_evidence", []):
+        if row.get("status") != "success":
+            console.print(Text(f"Public data: {row['source']} — {row['content']}", style="yellow"))
 
     display_report_sections(
         "Final Analysis Report",
@@ -1713,6 +1721,7 @@ def run_market_scan(
         display_report_sections(
             "Complete Market Scan Report",
             (
+                ("Official Public Data", "Official Public Data", final_state.get("public_data_report"), "cyan"),
                 (
                     "I. Macro Analyst",
                     "Macro Analyst",

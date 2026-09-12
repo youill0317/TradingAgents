@@ -16,6 +16,7 @@ from tradingagents.agents.utils.structured import (
     bind_structured,
     invoke_structured_or_freetext,
 )
+from tradingagents.dataflows.public_data import public_data_for_agent
 
 
 def create_trader(llm):
@@ -68,6 +69,7 @@ def create_trader(llm):
                     f"{instrument_context}\n\n"
                     f"{report_section}"
                     f"Proposed Investment Plan:\n{investment_plan}\n\n"
+                    f"Relevant Public Data Evidence:\n{public_data_for_agent(state, 'ticker_review')}\n\n"
                     f"Make an informed, strategic trading decision."
                 ),
             },

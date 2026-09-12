@@ -12,6 +12,7 @@ from tradingagents.agents.utils.structured import (
     bind_structured,
     invoke_structured_or_freetext,
 )
+from tradingagents.dataflows.public_data import public_data_for_agent
 
 
 def create_research_manager(llm):
@@ -42,6 +43,9 @@ Commit to a directional stance only when the debate's strongest arguments clearl
 
 **Debate History:**
 {history}
+
+**Relevant Public Data Evidence:**
+{public_data_for_agent(state, "ticker_review")}
 
 {NO_EXTERNAL_TOOLS}""" + get_language_instruction()
 

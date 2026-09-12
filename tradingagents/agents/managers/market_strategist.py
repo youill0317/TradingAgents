@@ -24,6 +24,7 @@ from tradingagents.agents.utils.structured import (
     bind_structured,
     invoke_structured_required,
 )
+from tradingagents.dataflows.public_data import public_data_for_agent
 
 logger = logging.getLogger(__name__)
 
@@ -191,6 +192,9 @@ Connect global conditions and geopolitical transmission channels to US sectors a
 
 **Economic events and expectations:**
 {state.get("event_calendar", "Unavailable")}
+
+**Official public data:**
+{public_data_for_agent(state, "market_review")}
 
 **Collected sector performance (including successful retries):**
 {state.get("sector_evidence", "")}

@@ -31,6 +31,7 @@ from tradingagents.agents.utils.agent_utils import (
 )
 from tradingagents.agents.utils.memory import TradingMemoryLog
 from tradingagents.dataflows.config import config_context, set_config
+from tradingagents.dataflows.public_data import collect_public_data, selected_public_sources
 from tradingagents.dataflows.utils import safe_ticker_component
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.llm_clients import create_llm_client
@@ -408,6 +409,8 @@ class TradingAgentsGraph:
             f"debate={self.config['max_debate_rounds']}",
             f"risk={self.config['max_risk_discuss_rounds']}",
             f"asset={asset_type}",
+            *(["public=role-routing-v1:" + ",".join(selected_public_sources(self.config))]
+              if self.config.get("public_data_sources") else []),
             *(["market=" + hashlib.sha256(self.config["market_context"].encode()).hexdigest()]
               if self.config.get("market_context") else []),
         ])
@@ -480,6 +483,20 @@ class TradingAgentsGraph:
         """
         return None if self._resuming else init_state
 
+    def prepare_graph_input(self, init_state):
+        """Attach official evidence once on both CLI/API fresh runs; reuse it on resume."""
+        state = self.checkpoint_input(init_state)
+        if state is not None:
+            if self.config.get("public_data_sources"):
+                # This lookup is cached and already used by CLI/API instrument resolution.
+                state["instrument_identity"] = resolve_instrument_identity(state["company_of_interest"])
+            public = collect_public_data(
+                state["trade_date"], self.config,
+                ticker=state["company_of_interest"], asset_type=state.get("asset_type", "stock"),
+            )
+            state.update(public_data_report=public["report"], public_data_evidence=public["evidence"])
+        return state
+
     def end_checkpoint(self):
         """Restore the plain uncheckpointed graph after a checkpointed run."""
         if self._checkpointer_ctx is not None:
@@ -545,7 +562,7 @@ class TradingAgentsGraph:
             args.setdefault("config", {}).setdefault("configurable", {})["thread_id"] = checkpoint_thread_id
 
         # None resumes an existing checkpoint; init_agent_state starts fresh (#1249).
-        graph_input = self.checkpoint_input(init_agent_state)
+        graph_input = self.prepare_graph_input(init_agent_state)
         if self.debug:
             trace = []
             last_printed = None
