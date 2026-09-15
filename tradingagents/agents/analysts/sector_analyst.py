@@ -14,6 +14,7 @@ from tradingagents.agents.utils.market_scan_tools import (
     get_sector_performance,
     screen_equities,
 )
+from tradingagents.agents.utils.public_data_tools import get_official_evidence
 from tradingagents.dataflows.public_data import public_data_for_agent
 from tradingagents.llm_clients.base_client import normalize_content
 
@@ -39,6 +40,9 @@ def create_sector_analyst(llm):
         tools = [get_sector_performance, screen_equities, get_stock_data]
         if state.get("sector_tool_rounds", 0) >= 7:
             tools = []
+
+        if state.get("public_data_evidence") and tools:
+            tools.append(get_official_evidence)
 
         system_message = (
             "You are a sector strategist. Identify changes in relative price leadership "

@@ -8,6 +8,7 @@ from tradingagents.agents.utils.agent_utils import (
     get_instrument_context_from_state,
     get_language_instruction,
 )
+from tradingagents.agents.utils.public_data_tools import get_official_evidence
 from tradingagents.dataflows.public_data import public_data_for_agent
 
 
@@ -22,6 +23,9 @@ def create_fundamentals_analyst(llm):
             get_cashflow,
             get_income_statement,
         ]
+
+        if state.get("public_data_evidence") and tools:
+            tools.append(get_official_evidence)
 
         system_message = (
             "You are a researcher tasked with analyzing fundamental information over the past week about a company. Please write a comprehensive report of the company's fundamental information such as financial documents, company profile, basic company financials, and company financial history to gain a full view of the company's fundamental information to inform traders. Make sure to include as much detail as possible. Provide specific, actionable insights with supporting evidence to help traders make informed decisions."

@@ -209,6 +209,18 @@ Existing provider and model settings are retained. No new data subscriptions are
 
 **The shortlist is not a recommendation.** Each candidate is a prompt to run `tradingagents analyze` for deeper research.
 
+### Official public data
+
+Set `TRADINGAGENTS_PUBLIC_DATA_SOURCES=all` in your `.env` to enable the official-data workflow for both ticker analysis and market scans. Select a comma-separated subset for faster runs. The default remains opt-in; missing credentials produce visible coverage gaps.
+
+The 21 source IDs cover SEC/DART financial facts and filing excerpts; US and Korean industry activity; central-bank liquidity, credit and financial stress; regional leading indicators; and measured cross-border securities transactions. Analysis uses comparable histories, units and reporting bases. Relevant evidence reaches the News, Fundamentals, Macro and Sector Analysts and their downstream debate, strategy and risk workflows. Analysts can retrieve omitted series and recent observations through `get_official_evidence` without another provider request.
+
+See [the source catalog, agent mapping, credentials and verification guide](docs/public-data.md). A provider-only check requires no LLM key:
+
+```bash
+python scripts/smoke_public_data.py --sources census,ofr,bis,tic,mof_japan
+```
+
 ### Markets and tickers
 
 TradingAgents works with any market Yahoo Finance covers, using the exchange-suffixed ticker. Company identity and the alpha benchmark resolve automatically per market.

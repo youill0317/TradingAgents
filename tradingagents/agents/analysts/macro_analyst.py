@@ -14,6 +14,7 @@ from tradingagents.agents.utils.agent_utils import (
     get_macro_indicators,
     get_prediction_markets,
 )
+from tradingagents.agents.utils.public_data_tools import get_official_evidence
 from tradingagents.dataflows.public_data import public_data_for_agent
 from tradingagents.llm_clients.base_client import normalize_content
 
@@ -25,6 +26,9 @@ def create_macro_analyst(llm):
         tools.extend([get_global_news, get_prediction_markets])
         if state.get("macro_tool_rounds", 0) >= 7:
             tools = []
+
+        if state.get("public_data_evidence") and tools:
+            tools.append(get_official_evidence)
 
         system_message = (
             "You are a macro strategist establishing the market regime. You are "

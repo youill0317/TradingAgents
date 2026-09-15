@@ -36,6 +36,7 @@ from tradingagents.agents.utils.market_scan_tools import (
     get_sector_performance,
     screen_equities,
 )
+from tradingagents.agents.utils.public_data_tools import get_official_evidence
 from tradingagents.dataflows.config import config_context, set_config
 from tradingagents.dataflows.global_context import collect_global_context
 from tradingagents.dataflows.global_market import collect_global_snapshot
@@ -118,6 +119,7 @@ class MarketAnalysisGraph:
         return {
             "macro": ToolNode(
                 [
+                    get_official_evidence,
                     get_macro_indicators,
                     get_global_news,
                     get_prediction_markets,
@@ -125,6 +127,7 @@ class MarketAnalysisGraph:
             ),
             "sector": ToolNode(
                 [
+                    get_official_evidence,
                     get_sector_performance,
                     screen_equities,
                     get_stock_data,

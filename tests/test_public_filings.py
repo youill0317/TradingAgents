@@ -2,8 +2,6 @@ import io
 import zipfile
 from unittest.mock import Mock
 
-import pytest
-
 from tradingagents.dataflows import public_filings
 
 
@@ -31,9 +29,13 @@ def test_sec_maps_ticker_filters_cutoff_and_builds_document_link(monkeypatch):
         }}}
 
     monkeypatch.setattr(public_filings, "request_json", fake_json)
+    enrich = Mock(return_value=[])
+    monkeypatch.setattr(public_filings, "sec_enrichment", enrich)
     rows = public_filings.collect_sec("AAPL", "2024-05-31")
+    assert enrich.call_args.args[0] == "0000320193"
 
-    assert len(rows) == 1
+    assert len(rows) == 2
+    assert rows[1]["content"]["form"] == "10-Q/A"
     assert rows[0]["source"] == "sec"
     assert rows[0]["url"].endswith("/320193/000032019324000069/aapl-20240330.htm")
     assert calls[0][1]["headers"]["User-Agent"] == "Researcher contact@example.com"
@@ -84,8 +86,9 @@ def test_provider_errors_are_not_returned_as_evidence(monkeypatch):
     monkeypatch.setattr(public_filings.requests, "get", Mock(return_value=Mock(content=_corp_zip())))
     monkeypatch.setattr(public_filings, "request_json", lambda *args, **kwargs: {"status": "010", "message": "bad key"})
 
-    with pytest.raises(ValueError, match="OpenDART error 010"):
-        public_filings.collect_dart("005930", "2024-05-31")
+    rows = public_filings.collect_dart("005930", "2024-05-31")
+    assert len(rows) == 2 and all(r["status"] == "error" for r in rows)
+    assert "bad key" not in str(rows)
 
 
 def test_non_equities_have_no_corporate_filings():

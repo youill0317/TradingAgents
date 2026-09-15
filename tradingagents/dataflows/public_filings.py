@@ -4,19 +4,23 @@ import io
 import os
 import re
 import zipfile
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from xml.etree import ElementTree
+from zoneinfo import ZoneInfo
 
 import requests
 
-from tradingagents.dataflows.public_data_common import evidence, request_json
+from tradingagents.dataflows.public_data_common import collect_parts, evidence, request_json
+from tradingagents.dataflows.public_financials import dart_enrichment, sec_enrichment
 
 _SEC_TICKERS = "https://www.sec.gov/files/company_tickers.json"
 _SEC_SUBMISSIONS = "https://data.sec.gov/submissions/CIK{cik}.json"
 _DART_CORP_CODES = "https://opendart.fss.or.kr/api/corpCode.xml"
 _DART_LIST = "https://opendart.fss.or.kr/api/list.json"
 _DART_COMPANY = "https://opendart.fss.or.kr/api/company.json"
-_FSC_OUTLINE = "https://apis.data.go.kr/1160100/service/GetCorpBasicInfoService_V2/getCorpOutline_V2"
+_FSC_OUTLINE = (
+    "https://apis.data.go.kr/1160100/service/GetCorpBasicInfoService_V2/getCorpOutline_V2"
+)
 
 
 def _kr_stock_code(ticker):
@@ -32,7 +36,9 @@ def _dart_identity(stock_code, key):
             root = ElementTree.fromstring(archive.read(archive.namelist()[0]))
     except zipfile.BadZipFile:
         error = ElementTree.fromstring(response.content)
-        raise ValueError(f"OpenDART error {error.findtext('status')}: {error.findtext('message', '')}") from None
+        raise ValueError(
+            f"OpenDART error {error.findtext('status')}: {error.findtext('message', '')}"
+        ) from None
     for item in root.findall("list"):
         if item.findtext("stock_code", "").strip() == stock_code:
             return item.findtext("corp_code"), item.findtext("corp_name")
@@ -47,8 +53,11 @@ def _dart_error(payload):
 
 def collect_sec(ticker, trade_date):
     """Return recent 10-K, 10-Q, and 8-K filing metadata through trade_date."""
-    if (not re.fullmatch(r"[A-Za-z][A-Za-z0-9.-]*", ticker)
-            or ticker.upper().endswith("-USD") or _kr_stock_code(ticker)):
+    if (
+        not re.fullmatch(r"[A-Za-z][A-Za-z0-9.-]*", ticker)
+        or ticker.upper().endswith("-USD")
+        or _kr_stock_code(ticker)
+    ):
         return []
     headers = {"User-Agent": os.environ["SEC_USER_AGENT"]}
     tickers = request_json(_SEC_TICKERS, headers=headers)
@@ -61,21 +70,50 @@ def collect_sec(ticker, trade_date):
     recent = payload.get("filings", {}).get("recent", {})
     results = []
     for form, filed, accession, document, period in zip(
-        recent.get("form", []), recent.get("filingDate", []),
-        recent.get("accessionNumber", []), recent.get("primaryDocument", []),
+        recent.get("form", []),
+        recent.get("filingDate", []),
+        recent.get("accessionNumber", []),
+        recent.get("primaryDocument", []),
         recent.get("reportDate", []),
         strict=True,
     ):
-        if form not in {"10-K", "10-Q", "8-K"} or filed > trade_date:
+        if (
+            form
+            not in {
+                "10-K",
+                "10-Q",
+                "8-K",
+                "20-F",
+                "40-F",
+                "6-K",
+                "10-K/A",
+                "10-Q/A",
+                "8-K/A",
+                "20-F/A",
+            }
+            or filed > trade_date
+        ):
             continue
         accession_path = accession.replace("-", "")
-        filing_url = f"https://www.sec.gov/Archives/edgar/data/{int(cik)}/{accession_path}/{document}"
-        results.append(evidence(
-            "sec", ticker, {"company": payload.get("name", row.get("title")), "form": form,
-                            "accession_number": accession, "report_date": period},
-            filing_url, published_at=filed, filing_metadata_only=True,
-        ))
-    return results
+        filing_url = (
+            f"https://www.sec.gov/Archives/edgar/data/{int(cik)}/{accession_path}/{document}"
+        )
+        results.append(
+            evidence(
+                "sec",
+                ticker,
+                {
+                    "company": payload.get("name", row.get("title")),
+                    "form": form,
+                    "accession_number": accession,
+                    "report_date": period,
+                },
+                filing_url,
+                published_at=filed,
+                filing_metadata_only=True,
+            )
+        )
+    return results + sec_enrichment(cik, ticker, trade_date, headers, results)
 
 
 def collect_dart(ticker, trade_date):
@@ -89,25 +127,66 @@ def collect_dart(ticker, trade_date):
         return []
     cutoff = date.fromisoformat(trade_date)
     compact_date = cutoff.strftime("%Y%m%d")
-    payload = request_json(_DART_LIST, params={
-        "crtfc_key": key, "corp_code": corp_code,
-        "bgn_de": (cutoff - timedelta(days=365)).strftime("%Y%m%d"), "end_de": compact_date,
+    params = {
+        "crtfc_key": key,
+        "corp_code": corp_code,
+        "bgn_de": (cutoff - timedelta(days=1100)).strftime("%Y%m%d"),
+        "end_de": compact_date,
         "page_count": 100,
-    })
-    _dart_error(payload)
-    results = []
-    for filing in payload.get("list", []):
-        filed = filing.get("rcept_dt", "")
-        if filed and filed <= compact_date:
-            receipt = filing["rcept_no"]
-            results.append(evidence(
-                "dart", ticker,
-                {"company": filing.get("corp_name", corp_name), "report_name": filing.get("report_nm"),
-                 "receipt_number": receipt, "correction": "정정" in filing.get("report_nm", "")},
-                f"https://dart.fss.or.kr/dsaf001/main.do?rcpNo={receipt}",
-                published_at=f"{filed[:4]}-{filed[4:6]}-{filed[6:]}", filing_metadata_only=True,
-            ))
-    return results
+        "sort": "date",
+        "sort_mth": "desc",
+    }
+
+    def listing(periodic=False):
+        payload = request_json(
+            _DART_LIST, params={**params, **({"pblntf_ty": "A"} if periodic else {})}
+        )
+        _dart_error(payload)
+        rows = []
+        for filing in payload.get("list", []):
+            filed = filing.get("rcept_dt", "")
+            if filed and filed <= compact_date:
+                receipt = filing["rcept_no"]
+                rows.append(
+                    evidence(
+                        "dart",
+                        ticker,
+                        {
+                            "company": filing.get("corp_name", corp_name),
+                            "report_name": filing.get("report_nm"),
+                            "receipt_number": receipt,
+                            "correction": "정정" in filing.get("report_nm", ""),
+                        },
+                        f"https://dart.fss.or.kr/dsaf001/main.do?rcpNo={receipt}",
+                        published_at=f"{filed[:4]}-{filed[4:6]}-{filed[6:]}",
+                        filing_metadata_only=True,
+                    )
+                )
+        return rows
+
+    # A separate periodic list prevents a busy issuer's event notices from
+    # crowding its annual/quarterly reports out of the bounded recent page.
+    batches = collect_parts(
+        "dart", [("recent filings", listing), ("periodic filings", lambda: listing(True))]
+    )
+    results, seen = [], set()
+    for row in batches:
+        receipt = (
+            row.get("content", {}).get("receipt_number")
+            if isinstance(row.get("content"), dict)
+            else None
+        )
+        if receipt and receipt in seen:
+            continue
+        seen.add(receipt)
+        results.append(row)
+    # Current financial endpoints cannot reconstruct all historical restatements.
+    # Dated metadata remains available for backtests.
+    if cutoff < datetime.now(ZoneInfo("America/New_York")).date():
+        return results
+    return results + dart_enrichment(
+        corp_code, ticker, trade_date, [r for r in results if r["status"] == "success"]
+    )
 
 
 def collect_fsc(ticker, trade_date):
@@ -124,10 +203,16 @@ def collect_fsc(ticker, trade_date):
     registration_number = company.get("jurir_no")
     if not registration_number:
         return []
-    payload = request_json(_FSC_OUTLINE, params={
-        "serviceKey": os.environ["DATA_GO_KR_API_KEY"], "resultType": "json",
-        "pageNo": 1, "numOfRows": 10, "crno": registration_number,
-    })
+    payload = request_json(
+        _FSC_OUTLINE,
+        params={
+            "serviceKey": os.environ["DATA_GO_KR_API_KEY"],
+            "resultType": "json",
+            "pageNo": 1,
+            "numOfRows": 10,
+            "crno": registration_number,
+        },
+    )
     response = payload.get("response", {})
     header = response.get("header", {})
     if str(header.get("resultCode", "00")) != "00":
@@ -135,9 +220,27 @@ def collect_fsc(ticker, trade_date):
     items = response.get("body", {}).get("items", {}).get("item", [])
     if isinstance(items, dict):
         items = [items]
-    return [evidence(
-        "fsc", ticker,
-        {key: item.get(key) for key in ("corpNm", "crno", "bzno", "enpRprFnm", "sicNm",
-                                        "enpEstbDt", "enpMainBizNm", "fssCorpChgDtm") if item.get(key)},
-        _FSC_OUTLINE, point_in_time=False,
-    ) for item in items if item.get("crno") == registration_number]
+    return [
+        evidence(
+            "fsc",
+            ticker,
+            {
+                key: item.get(key)
+                for key in (
+                    "corpNm",
+                    "crno",
+                    "bzno",
+                    "enpRprFnm",
+                    "sicNm",
+                    "enpEstbDt",
+                    "enpMainBizNm",
+                    "fssCorpChgDtm",
+                )
+                if item.get(key)
+            },
+            _FSC_OUTLINE,
+            point_in_time=False,
+        )
+        for item in items
+        if item.get("crno") == registration_number
+    ]

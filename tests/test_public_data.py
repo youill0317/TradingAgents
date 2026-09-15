@@ -86,12 +86,12 @@ def test_historical_filings_remain_available_and_monthly_series_are_not_crowded_
 
 
 @pytest.mark.parametrize(("role", "sources"), [
-    ("news", {"sec", "dart", "ecos", "nyfed", "treasury", "ecb"}),
+    ("news", {"sec", "dart", "ecos", "nyfed", "treasury", "ecb", "fred", "ofr"}),
     ("fundamentals", {"sec", "dart", "fsc"}),
-    ("macro", {"ecos", "nyfed", "treasury", "ecb", "cftc", "eia"}),
-    ("sector", {"eia", "customs", "kosis", "cftc"}),
-    ("ticker_review", {"sec", "dart", "fsc", "ecos", "nyfed", "treasury", "ecb"}),
-    ("market_review", {"ecos", "nyfed", "treasury", "ecb", "cftc", "eia", "customs", "kosis"}),
+    ("macro", {"ecos", "nyfed", "treasury", "ecb", "cftc", "eia", "fred", "ofr", "census", "bea", "bls", "oecd", "eurostat", "bis", "tic", "mof_japan"}),
+    ("sector", {"eia", "customs", "kosis", "cftc", "census", "bea", "bls", "eurostat"}),
+    ("ticker_review", {"sec", "dart", "fsc", "ecos", "nyfed", "treasury", "ecb", "fred", "ofr", "cftc", "oecd", "bis", "tic", "mof_japan"}),
+    ("market_review", {"ecos", "nyfed", "treasury", "ecb", "cftc", "eia", "customs", "kosis", "fred", "ofr", "census", "bea", "bls", "oecd", "eurostat", "bis", "tic", "mof_japan"}),
 ])
 def test_roles_receive_only_relevant_sources_and_keep_failure_provenance(role, sources):
     rows = [public_data.evidence(source, source, f"{source} observation", "https://example.test",

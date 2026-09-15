@@ -26,14 +26,14 @@ def test_collect_eia_preserves_units_and_filters_future(monkeypatch):
 
 @pytest.mark.unit
 def test_collect_nyfed_combines_sofr_rate_and_volume():
-    rate = {"refRates": [{"effectiveDate": "2025-01-03", "percentRate": 4.31,
-                           "revisionIndicator": ""}]}
-    volume = {"refRates": [{"effectiveDate": "2025-01-03", "volumeInBillions": 2398}]}
-    with patch.object(public_us, "request_json", side_effect=[rate, volume]):
-        item = public_us.collect_nyfed("2025-01-03")[0]
-    assert item["observed_at"] == "2025-01-03"
-    assert "4.31%" in item["content"] and "2398 billion USD" in item["content"]
-    assert "Terms of Use" in item["content"] and "no liability" in item["content"]
+    payload = {"refRates": [{"effectiveDate": "2025-01-03", "percentRate": 4.31,
+                              "volumeInBillions": 2398, "revisionIndicator": ""}]}
+    with patch.object(public_us, "request_json", return_value=payload):
+        rows = public_us.collect_nyfed("2025-01-03")
+    assert {r["target"] for r in rows} == {"SOFR", "SOFR volume", "EFFR", "EFFR volume", "OBFR", "OBFR volume"}
+    assert rows[0]["value"] == 4.31 and rows[0]["unit"] == "percent"
+    assert rows[1]["value"] == 2398 and rows[1]["unit"] == "billion USD"
+    assert all("Terms of Use" in r["note"] and "no liability" in r["note"] for r in rows)
 
 
 @pytest.mark.unit
@@ -46,9 +46,11 @@ def test_collect_cftc_uses_release_lag_and_calculates_nets():
         "lev_money_positions_short": "30", "contract_units": "$50 x index",
     }]
     with patch.object(public_us, "request_json", return_value=rows) as request:
-        item = public_us.collect_cftc("2025-01-03")[0]
+        result = public_us.collect_cftc("2025-01-03")
+        item = result[0]
     assert item["observed_at"] == "2024-12-31" and item["published_at"] is None
-    assert "asset-manager net +40" in item["content"] and "leveraged-money net -20" in item["content"]
+    assert [r["value"] for r in result] == [40, -20, 100]
+    assert all(r["unit"] == "contracts" for r in result)
     assert "2024-12-31" in request.call_args.kwargs["params"]["$where"]
 
 
@@ -61,23 +63,21 @@ def test_collect_treasury_uses_tga_account_field_and_units():
     with patch.object(public_us, "request_json", return_value=payload):
         item = public_us.collect_treasury("2025-01-03")[0]
     assert item["observed_at"] == "2025-01-03"
-    assert "650277 million USD" in item["content"] and "close_today_bal is null" in item["content"]
+    assert "650277 million USD" in item["content"] and "open_today_bal" in item["note"]
 
 
 @pytest.mark.unit
-def test_collect_ecb_parses_sdmx_json_and_filters_future():
-    payload = {
-        "structure": {"dimensions": {"observation": [{"values": [
-            {"id": "2025-01-02"}, {"id": "2025-01-03"}, {"id": "2025-01-04"},
-        ]}]}},
-        "dataSets": [{"series": {"0:0": {"observations": {"0": [3.0], "1": [3.0], "2": [9.0]}}}}],
-    }
-    with patch.object(public_us, "request_json", return_value=payload):
-        item = public_us.collect_ecb("2025-01-03")[0]
-    assert item["observed_at"] == "2025-01-03" and "3.0%" in item["content"]
+def test_collect_ecb_parses_sdmx_csv_and_filters_future():
+    text = "PROVIDER_FM_ID,TIME_PERIOD,OBS_VALUE,TITLE,UNIT_MULT\nDFR,2025-01-03,3.0,Deposit rate,0\nMRR_FR,2025-01-03,3.15,Main refinancing rate,0\nDFR,2025-01-04,9.0,Deposit rate,0\n"
+    with patch.object(public_us, "request_text", return_value=text):
+        rows = public_us.collect_ecb("2025-01-03")
+    assert len(rows) == 2
+    assert {r["target"] for r in rows} == {"DFR", "MRR_FR"}
+    assert all(r["observed_at"] == "2025-01-03" and r["unit"] == "percent" for r in rows)
 
 
 @pytest.mark.unit
 def test_collect_nyfed_rejects_empty_http_200_payload():
-    with patch.object(public_us, "request_json", return_value={}), pytest.raises(ValueError):
-        public_us.collect_nyfed("2025-01-03")
+    with patch.object(public_us, "request_json", return_value={}):
+        rows = public_us.collect_nyfed("2025-01-03")
+    assert len(rows) == 3 and all(r["status"] == "error" for r in rows)

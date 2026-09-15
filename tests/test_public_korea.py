@@ -15,13 +15,14 @@ def test_collect_ecos_filters_future_rows(monkeypatch):
         {"StatisticSearch": {"row": [
             {"TIME": "202608", "ITEM_NAME1": "총지수", "DATA_VALUE": "117.3", "UNIT_NAME": "2020=100"},
         ]}},
+        {"KeyStatisticList": {"row": [{"KEYSTAT_NAME": "환율", "CYCLE": "20260910", "DATA_VALUE": "1300", "UNIT_NAME": "원"}]}},
     ])
     monkeypatch.setattr(public_korea, "request_json", lambda url: next(responses))
 
     rows = public_korea.collect_ecos("2026-09-12")
 
     assert [(row["target"], row["observed_at"], row["value"]) for row in rows] == [
-        ("policy_rate", "20260910", "3"), ("consumer_prices", "202608", "117.3")
+        ("policy_rate", "20260910", 3.0), ("consumer_prices", "202608", 117.3), ("key/환율", "20260910", 1300.0)
     ]
 
 
@@ -41,15 +42,18 @@ def test_collect_customs_uses_latest_finalized_month_and_keeps_zero(monkeypatch)
     monkeypatch.setattr(public_korea, "request_xml", fake_request)
     rows = public_korea.collect_customs("2026-09-12")
 
-    assert len(rows) == 2
-    assert rows[0]["expDlr"] == "0"
+    good = [r for r in rows if r["status"] == "success"]
+    assert len(good) == 5
+    assert good[0]["target"] == "HS8542-US/expDlr"
+    assert good[0]["value"] == 0
+    assert len(rows) == 28  # Five valid measures; 23 mismatched product/country responses are explicit gaps.
     assert rows[0]["export_valuation"] == "FOB"
     assert rows[0]["import_valuation"] == "CIF"
-    assert {call["cntyCd"] for call in calls} == {"US", "CN"}
+    assert {call["cntyCd"] for call in calls} == {"US", "CN", "JP", "VN"}
     assert all(call["endYymm"] == "202607" for call in calls)
 
 
-def test_collect_kosis_selects_semiconductor_production_and_inventory(monkeypatch):
+def test_collect_kosis_selects_industry_production_shipments_inventory(monkeypatch):
     monkeypatch.setenv("KOSIS_API_KEY", "key")
     captured = {}
     payload = [
@@ -66,9 +70,10 @@ def test_collect_kosis_selects_semiconductor_production_and_inventory(monkeypatc
     rows = public_korea.collect_kosis("2026-09-12")
 
     assert captured["tblId"] == "DT_1F02011"
-    assert captured["objL1"] == "EC"
-    assert captured["itmId"] == "T10 T12"
-    assert [(row["observed_at"], row["value"]) for row in rows] == [("202608", "142.1"), ("202609", "")]
+    assert captured["objL1"] == "ALL"
+    assert captured["itmId"] == "T10 T11 T12"
+    assert [(row["observed_at"], row["value"]) for row in rows] == [("202608", 142.1)]
+    assert rows[0]["sectors"] == ["Technology"]
 
 
 def test_provider_body_errors_are_not_treated_as_data(monkeypatch):

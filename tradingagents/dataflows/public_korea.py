@@ -4,7 +4,14 @@ import os
 import re
 from datetime import date, datetime, timedelta
 
-from .public_data_common import evidence, request_json, request_xml
+from .public_data_common import (
+    collect_parts,
+    evidence,
+    number,
+    numeric_rows,
+    request_json,
+    request_xml,
+)
 
 ECOS_URL = "https://ecos.bok.or.kr/api/StatisticSearch"
 CUSTOMS_URL = "https://apis.data.go.kr/1220000/nitemtrade/getNitemtradeList"
@@ -25,86 +32,232 @@ def _ecos_rows(key, stat_code, cycle, start, end, item_code):
     return payload["StatisticSearch"].get("row", [])
 
 
-def collect_ecos(trade_date):
+def _collect_ecos_history(trade_date):
     """Collect fixed policy-rate and CPI observations available by trade_date."""
     day = datetime.strptime(trade_date, "%Y-%m-%d").date()
     key = os.environ["ECOS_API_KEY"]
     series = (
-        ("policy_rate", "722Y001", "D", (day - timedelta(days=45)).strftime("%Y%m%d"), day.strftime("%Y%m%d"), "0101000"),
-        ("consumer_prices", "901Y009", "M", _month_offset(day, -12).strftime("%Y%m"), day.strftime("%Y%m"), "0"),
+        (
+            "policy_rate",
+            "722Y001",
+            "D",
+            (day - timedelta(days=45)).strftime("%Y%m%d"),
+            day.strftime("%Y%m%d"),
+            "0101000",
+        ),
+        (
+            "consumer_prices",
+            "901Y009",
+            "M",
+            _month_offset(day, -12).strftime("%Y%m"),
+            day.strftime("%Y%m"),
+            "0",
+        ),
     )
     records = []
     for target, stat_code, cycle, start, end, item_code in series:
         rows = _ecos_rows(key, stat_code, cycle, start, end, item_code)
         for row in rows:
             observed = row.get("TIME", "")
-            if observed and observed <= end:
-                records.append(evidence(
-                    "ecos", target,
-                    f"{row.get('ITEM_NAME1', target)}: {row.get('DATA_VALUE', '')} {row.get('UNIT_NAME', '')}".strip(),
-                    ECOS_URL, observed_at=observed, stat_code=stat_code, item_code=item_code,
-                    frequency=cycle, value=row.get("DATA_VALUE"), unit=row.get("UNIT_NAME"),
-                ))
+            if observed and observed <= end and number(row.get("DATA_VALUE")) is not None:
+                records.append(
+                    evidence(
+                        "ecos",
+                        target,
+                        f"{row.get('ITEM_NAME1', target)}: {row.get('DATA_VALUE', '')} {row.get('UNIT_NAME', '')}".strip(),
+                        ECOS_URL,
+                        observed_at=observed,
+                        stat_code=stat_code,
+                        item_code=item_code,
+                        frequency=cycle,
+                        value=number(row.get("DATA_VALUE")),
+                        unit=row.get("UNIT_NAME"),
+                        point_in_time=False,
+                        country="KR",
+                        title=row.get("ITEM_NAME1", target),
+                    )
+                )
     return records
 
 
+def collect_ecos(trade_date):
+    def key_statistics():
+        endpoint = f"https://ecos.bok.or.kr/api/KeyStatisticList/{os.environ['ECOS_API_KEY']}/json/kr/1/100"
+        payload = request_json(endpoint)
+        rows = payload.get("KeyStatisticList", {}).get("row")
+        if not isinstance(rows, list):
+            raise ValueError("ECOS key-statistics schema changed")
+        result = []
+        for row in rows:
+            period = row.get("CYCLE", "")
+            result.extend(
+                numeric_rows(
+                    "ecos",
+                    "key/" + row.get("KEYSTAT_NAME", "unknown"),
+                    [(period, row.get("DATA_VALUE"))],
+                    "https://ecos.bok.or.kr/",
+                    trade_date=trade_date,
+                    unit=row.get("UNIT_NAME", "provider units"),
+                    frequency="",
+                    country="KR",
+                    classification=row.get("CLASS_NAME"),
+                    note="Latest key-statistics snapshot; historical trend unavailable for this series.",
+                )
+            )
+        return result
+
+    return collect_parts(
+        "ecos",
+        [
+            ("policy and CPI history", lambda: _collect_ecos_history(trade_date)),
+            ("100 key statistics", key_statistics),
+        ],
+    )
+
+
+CUSTOMS_PRODUCTS = {
+    "8542": ("Integrated circuits", ["Technology"]),
+    "8703": ("Passenger motor vehicles", ["Consumer Cyclical"]),
+    "8507": ("Electric accumulators", ["Industrials", "Consumer Cyclical"]),
+    "3004": ("Medicaments", ["Healthcare"]),
+    "2710": ("Petroleum oils and preparations", ["Energy"]),
+    "7208": ("Hot-rolled flat iron/steel", ["Basic Materials"]),
+}
+
+
 def collect_customs(trade_date):
-    """Collect the last twelve finalized months of HS 8542 trade with the US and China."""
-    day = datetime.strptime(trade_date, "%Y-%m-%d").date()
+    """Monthly Korean trade by six product groups and four partner countries."""
+    day = date.fromisoformat(trade_date)
     end_month = _month_offset(day, -1 if day.day >= 15 else -2)
-    start_month = _month_offset(end_month, -11)
-    records = []
-    for country in ("US", "CN"):
-        params = {
-            "serviceKey": os.environ["DATA_GO_KR_API_KEY"],
-            "strtYymm": start_month.strftime("%Y%m"), "endYymm": end_month.strftime("%Y%m"),
-            "hsSgn": "8542", "cntyCd": country,
-        }
-        root = request_xml(CUSTOMS_URL, params=params)
-        code = root.findtext(".//resultCode")
-        if code != "00":
-            raise ValueError(f"Customs: {root.findtext('.//resultMsg') or code or 'invalid response'}")
+    start_month = _month_offset(end_month, -12)
+
+    def product(country, hs_code):
+        root = request_xml(
+            CUSTOMS_URL,
+            params={
+                "serviceKey": os.environ["DATA_GO_KR_API_KEY"],
+                "strtYymm": start_month.strftime("%Y%m"),
+                "endYymm": end_month.strftime("%Y%m"),
+                "hsSgn": hs_code,
+                "cntyCd": country,
+            },
+        )
+        if root.findtext(".//resultCode") != "00":
+            raise ValueError("Customs request unsuccessful")
+        result = []
         for item in root.findall(".//item"):
             raw_period = item.findtext("year") or ""
             if not re.fullmatch(r"\d{4}\.\d{2}", raw_period):
                 continue
             period = raw_period.replace(".", "")
-            if period > end_month.strftime("%Y%m"):
+            if not start_month.strftime("%Y%m") <= period <= end_month.strftime("%Y%m"):
                 continue
-            values = {name: item.findtext(name) for name in ("expDlr", "expWgt", "impDlr", "impWgt", "balPayments")}
-            records.append(evidence(
-                "customs", f"HS8542-{country}",
-                f"HS 8542 {country} exports FOB ${values['expDlr']} ({values['expWgt']} kg); imports CIF ${values['impDlr']} ({values['impWgt']} kg); balance ${values['balPayments']}",
-                CUSTOMS_URL, observed_at=period, hs_code=item.findtext("hsCd") or "8542",
-                country_code=item.findtext("statCd") or country, unit_currency="USD", unit_weight="kg",
-                export_valuation="FOB", import_valuation="CIF", **values,
-            ))
-    return records
+            reported_hs, reported_country = item.findtext("hsCd"), item.findtext("statCd")
+            if (reported_hs and not reported_hs.startswith(hs_code)) or (
+                reported_country and reported_country != country
+            ):
+                continue
+            for field, label, unit in (
+                ("expDlr", "exports FOB", "USD"),
+                ("impDlr", "imports CIF", "USD"),
+                ("balPayments", "trade balance", "USD"),
+                ("expWgt", "export weight", "kg"),
+                ("impWgt", "import weight", "kg"),
+            ):
+                result.extend(
+                    numeric_rows(
+                        "customs",
+                        f"HS{hs_code}-{country}/{field}",
+                        [(period, item.findtext(field))],
+                        CUSTOMS_URL,
+                        trade_date=trade_date,
+                        unit=unit,
+                        frequency="M",
+                        country="KR",
+                        sectors=CUSTOMS_PRODUCTS[hs_code][1],
+                        title=f"Korea {CUSTOMS_PRODUCTS[hs_code][0]} {label} with {country}",
+                        kind="flow" if field == "balPayments" else "level",
+                        hs_code=hs_code,
+                        country_code=country,
+                        export_valuation="FOB",
+                        import_valuation="CIF",
+                    )
+                )
+        return result
+
+    return collect_parts(
+        "customs",
+        [
+            (f"HS{hs}-{country}", lambda c=country, h=hs: product(c, h))
+            for country in ("US", "CN", "JP", "VN")
+            for hs in CUSTOMS_PRODUCTS
+        ],
+    )
 
 
 def collect_kosis(trade_date):
-    """Collect monthly semiconductor production and inventory indexes (2020=100)."""
+    """Monthly industry production, shipment and inventory indexes; retain provider units."""
     day = datetime.strptime(trade_date, "%Y-%m-%d").date()
     end = day.strftime("%Y%m")
     params = {
-        "method": "getList", "apiKey": os.environ["KOSIS_API_KEY"], "format": "json", "jsonVD": "Y",
-        "orgId": "101", "tblId": "DT_1F02011", "objL1": "EC", "itmId": "T10 T12", "prdSe": "M",
-        "startPrdDe": _month_offset(day, -12).strftime("%Y%m"), "endPrdDe": end,
+        "method": "getList",
+        "apiKey": os.environ["KOSIS_API_KEY"],
+        "format": "json",
+        "jsonVD": "Y",
+        "orgId": "101",
+        "tblId": "DT_1F02011",
+        "objL1": "ALL",
+        "itmId": "T10 T11 T12",
+        "prdSe": "M",
+        "startPrdDe": _month_offset(day, -12).strftime("%Y%m"),
+        "endPrdDe": end,
     }
     payload = request_json(KOSIS_URL, params=params)
     if not isinstance(payload, list):
-        raise ValueError(f"KOSIS: {payload.get('errMsg', 'invalid response') if isinstance(payload, dict) else 'invalid response'}")
+        raise ValueError(
+            f"KOSIS: {payload.get('errMsg', 'invalid response') if isinstance(payload, dict) else 'invalid response'}"
+        )
     records = []
     for row in payload:
         period = row.get("PRD_DE", "")
         if not period or period > end:
             continue
         value = row.get("DT")
-        records.append(evidence(
-            "kosis", f"semiconductors-{row.get('ITM_ID', '')}",
-            f"{row.get('C1_NM', '반도체 및 부품')} {row.get('ITM_NM', '')}: {value} {row.get('UNIT_NM', '')}".strip(),
-            KOSIS_URL, observed_at=period, table_id="DT_1F02011", item_id=row.get("ITM_ID"),
-            industry_code=row.get("C1"), value=value, unit=row.get("UNIT_NM"),
-            last_changed_at=row.get("LST_CHN_DE"),
-        ))
+        if number(value) is None:
+            continue
+        records.append(
+            evidence(
+                "kosis",
+                f"{row.get('C1', 'unknown')}-{row.get('ITM_ID', '')}",
+                f"{row.get('C1_NM', 'Unknown industry')} {row.get('ITM_NM', '')}: {value} {row.get('UNIT_NM', '')}".strip(),
+                KOSIS_URL,
+                observed_at=period,
+                table_id="DT_1F02011",
+                item_id=row.get("ITM_ID"),
+                industry_code=row.get("C1"),
+                value=number(value),
+                raw_value=value,
+                unit=row.get("UNIT_NM"),
+                point_in_time=False,
+                kind="index",
+                title=row.get("C1_NM", "") + " " + row.get("ITM_NM", ""),
+                last_changed_at=row.get("LST_CHN_DE"),
+                frequency="M",
+                country="KR",
+                sectors=korean_industry_sectors(row.get("C1_NM", "")),
+            )
+        )
     return records
+
+
+def korean_industry_sectors(label):
+    mapping = {
+        "Technology": ("반도체", "전자", "컴퓨터", "통신"),
+        "Healthcare": ("의약", "의료"),
+        "Consumer Cyclical": ("자동차", "가구", "의복", "섬유"),
+        "Consumer Defensive": ("식료", "음료", "담배"),
+        "Industrials": ("기계", "전기장비", "운송장비"),
+        "Basic Materials": ("화학", "금속", "철강", "고무", "플라스틱", "목재", "종이"),
+        "Energy": ("석유", "연료"),
+    }
+    return [sector for sector, terms in mapping.items() if any(term in label for term in terms)]

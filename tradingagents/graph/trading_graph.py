@@ -30,6 +30,7 @@ from tradingagents.agents.utils.agent_utils import (
     resolve_instrument_identity,
 )
 from tradingagents.agents.utils.memory import TradingMemoryLog
+from tradingagents.agents.utils.public_data_tools import get_official_evidence
 from tradingagents.dataflows.config import config_context, set_config
 from tradingagents.dataflows.public_data import collect_public_data, selected_public_sources
 from tradingagents.dataflows.utils import safe_ticker_component
@@ -241,6 +242,7 @@ class TradingAgentsGraph:
             "news": ToolNode(
                 [
                     # News and insider information
+                    get_official_evidence,
                     get_news,
                     get_global_news,
                     get_insider_transactions,
@@ -251,6 +253,7 @@ class TradingAgentsGraph:
             "fundamentals": ToolNode(
                 [
                     # Fundamental analysis tools
+                    get_official_evidence,
                     get_fundamentals,
                     get_balance_sheet,
                     get_cashflow,
@@ -409,7 +412,7 @@ class TradingAgentsGraph:
             f"debate={self.config['max_debate_rounds']}",
             f"risk={self.config['max_risk_discuss_rounds']}",
             f"asset={asset_type}",
-            *(["public=role-routing-v1:" + ",".join(selected_public_sources(self.config))]
+            *(["public=role-routing-v2:" + ",".join(selected_public_sources(self.config))]
               if self.config.get("public_data_sources") else []),
             *(["market=" + hashlib.sha256(self.config["market_context"].encode()).hexdigest()]
               if self.config.get("market_context") else []),
