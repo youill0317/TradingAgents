@@ -4,6 +4,7 @@ import os
 from datetime import date, timedelta
 
 from .public_data_common import collect_parts, numeric_rows, request_json, request_text
+from .public_evidence import require_series
 
 _EIA_URL = "https://api.eia.gov/v2/petroleum/sum/sndw/data/"
 _NYFED_URL = "https://markets.newyorkfed.org/api/rates/secured/sofr/search.json"
@@ -43,7 +44,7 @@ def collect_eia(trade_date):
         "WDISTUS1": "U.S. distillate fuel oil stocks",
     }
     units = {"MBBL": "thousand barrels", "MBBL/D": "thousand barrels per day"}
-    return [
+    result = [
         record
         for series, label in labels.items()
         for record in numeric_rows(
@@ -72,6 +73,8 @@ def collect_eia(trade_date):
             note="Weekly petroleum observations, released after the observation week; current data may include revisions.",
         )
     ]
+
+    return require_series("eia", result, labels, _EIA_URL)
 
 
 def collect_nyfed(trade_date):
@@ -102,7 +105,9 @@ def collect_nyfed(trade_date):
                     note="Subject to New York Fed Terms of Use. NYFed does not sanction or endorse republication and has no liability for its use. Observations may be revised.",
                 )
             )
-        return result
+        return require_series(
+            "nyfed", result, (name.upper(), name.upper() + " volume"), url
+        )
 
     return collect_parts(
         "nyfed",

@@ -1,15 +1,25 @@
 """Optional official evidence shared by ticker and market analysis."""
 
+import hashlib
 import json
 import os
 import re
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
+from contextvars import copy_context
 from datetime import datetime
 from itertools import zip_longest
 from zoneinfo import ZoneInfo
 
+from .public_analysis import baseline_overlap_report, build_diagnostics
 from .public_data_common import evidence, number, period_date, series_changes
+from .public_evidence import (
+    SNAPSHOTS,
+    assess_evidence,
+    cited_evidence_report,
+    coverage_report,
+    evidence_id,
+)
 from .public_filings import collect_dart, collect_fsc, collect_sec
 from .public_international import (
     collect_bis,
@@ -20,6 +30,7 @@ from .public_international import (
 )
 from .public_korea import collect_customs, collect_ecos, collect_kosis
 from .public_macro import collect_bea, collect_bls, collect_census, collect_fred, collect_ofr
+from .public_relevance import resolved_identity, route_ticker_rows
 from .public_us import collect_cftc, collect_ecb, collect_eia, collect_nyfed, collect_treasury
 
 PUBLIC_SOURCES = {
@@ -82,7 +93,7 @@ def public_data_for_agent(state, role):
     if not rows:
         return ""
     industry_sources = set()
-    identity = state.get("instrument_identity", {})
+    identity = resolved_identity(state.get("instrument_identity", {}), rows)
     industry = identity.get("industry", "").casefold()
     sector = identity.get("sector", "").casefold()
     if state.get("asset_type", "stock") == "stock":
@@ -127,14 +138,7 @@ def public_data_for_agent(state, role):
     }[role]
     assigned = [row for row in rows if row["source"] in sources]
     if role in {"fundamentals", "ticker_review"}:
-        assigned = [
-            row
-            for row in assigned
-            if row["status"] != "success"
-            or row["source"] not in {"census", "bea", "bls", "eurostat", "customs", "kosis"}
-            or (row["source"] in industry_sources and "sectors" not in row)
-            or (sector and sector in {s.casefold() for s in row.get("sectors", [])})
-        ]
+        assigned = route_ticker_rows(assigned, identity, legacy_sources=industry_sources)
     if role == "fundamentals":
         assigned = [row for row in assigned if row.get("evidence_type") != "filing_excerpt"]
     if role == "news":
@@ -144,8 +148,20 @@ def public_data_for_agent(state, role):
             if row.get("evidence_type") not in {"financial_fact", "derived_financial"}
         ]
     report = render_public_data(assigned, max_chars=28000)
+    if assigned:
+        report = coverage_report(assigned) + "\n\n" + report
+        report += "\n" + baseline_overlap_report(state, assigned)
+    if role in {"ticker_review", "market_review"}:
+        report += "\n" + cited_evidence_report(state, rows)
     if report:
         report += "\nOfficial-evidence analysis workflow: " + _WORKFLOWS[role]
+        report += (
+            "\nCite exact [ev-...] observation IDs for material official-data claims and retain "
+            "those IDs in the analyst report. For a change, cite both endpoint observations or "
+            "a derived record with operand lineage; use get_official_evidence to inspect omitted "
+            "history. Report conflicting, stale and missing inputs explicitly. Collection or "
+            "tool access alone is not evidence that a source supports your conclusion."
+        )
     if role in {"news", "fundamentals", "ticker_review"}:
         if industry_sources & {row["source"] for row in assigned}:
             report += (
@@ -208,11 +224,19 @@ def collect_public_data(trade_date, config, ticker=None, asset_type="stock"):
             status, message = "not_configured", "Set " + ", ".join(missing)
         else:
             try:
-                rows = (
-                    collector(ticker, str(trade_date))
-                    if source in {"sec", "dart", "fsc"}
-                    else collector(str(trade_date))
-                )
+                if source in {"sec", "dart", "fsc"}:
+                    rows = collector(ticker, str(trade_date))
+                else:
+                    # Reuse the same immutable macro/industry snapshot across
+                    # tickers, not issuer facts. Credential changes invalidate it.
+                    credential_digest = hashlib.sha256(json.dumps(
+                        [(key, os.getenv(key, "")) for key in (*keys, "BLS_API_KEY")]
+                    ).encode()).hexdigest()
+                    ttl = float(config.get("public_data_cache_ttl_seconds", 300))
+                    if not 0 <= ttl <= 3600:
+                        raise ValueError("public_data_cache_ttl_seconds must be between 0 and 3600")
+                    cache_key = (source, str(trade_date), collector, credential_digest, ttl)
+                    rows = SNAPSHOTS.collect(cache_key, ttl, lambda: collector(str(trade_date)))
                 if rows:
                     return rows
                 status, message = "empty", "No matching observations or filings returned."
@@ -227,16 +251,11 @@ def collect_public_data(trade_date, config, ticker=None, asset_type="stock"):
     if not selected:
         return {"report": "", "evidence": [], "warnings": []}
     with ThreadPoolExecutor(max_workers=min(4, len(selected))) as pool:
-        batches = list(pool.map(collect, selected))
+        futures = [pool.submit(copy_context().run, collect, source) for source in selected]
+        batches = [future.result() for future in futures]
     rows = [row for batch in batches for row in batch]
-    for row in rows:
-        observed = period_date(row.get("observed_at"))
-        if row["status"] == "success" and observed:
-            row["observation_age_days"] = (day - observed).days
-            threshold = {"D": 14, "W": 28, "M": 100, "Q": 200, "A": 550}.get(row.get("frequency"))
-            if threshold is not None:
-                row["stale"] = row["observation_age_days"] > threshold
-    warnings = [f"{row['source']}: {row['content']}" for row in rows if row["status"] != "success"]
+    rows.extend(build_diagnostics(rows))
+    warnings = assess_evidence(rows, trade_date)
     return {"report": render_public_data(rows), "evidence": rows, "warnings": warnings}
 
 
@@ -299,7 +318,11 @@ def render_public_data(rows, max_chars=0):
                     content = str(row["title"]) + ": " + content
                 if row.get("note"):
                     content += " " + row["note"]
-                recent = [{**row, "content": content}]
+                # Older saved snapshots may predate evidence IDs. Derive the
+                # reference from the original observation before adding display
+                # text, so tool lookups and citation audits resolve the same ID.
+                recent = [{**row, "evidence_id": row.get("evidence_id") or evidence_id(row),
+                           "content": content}]
                 recent.extend(r for r in series if r["status"] != "success")
             else:
                 recent = sorted(
@@ -317,7 +340,8 @@ def render_public_data(rows, max_chars=0):
                         + " […] (excerpt; full collected text is in evidence)"
                     )
                 line = (
-                    f"- **{row['target']}** ({row['status']}): {content}\n"
+                    f"- [{row.get('evidence_id') or evidence_id(row)}] **{row['target']}** ({row['status']}): {content}\n"
+                    + (f"  Relevance: {row['relevance']}. " if row.get("relevance") else "")
                     + (f"  Basis: {row['basis']}. " if row.get("basis") else "")
                     + (
                         "STALE relative to run date; verify availability. "
@@ -361,6 +385,10 @@ def _evidence_priority(row):
     """Core company facts and aggregate signals precede granular series in digests."""
     if row["status"] != "success":
         return -1
+    if row.get("relevance", "").startswith("broad sector"):
+        return 8
+    if row.get("evidence_type") in {"derived_financial", "derived_indicator"}:
+        return 0
     if row.get("metric") in {
         "revenue",
         "operating_cashflow",

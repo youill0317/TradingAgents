@@ -102,7 +102,10 @@ def period_date(period):
     if re.fullmatch(r"\d{4}Q[1-4]", value):
         value = value[:4] + "-" + value[4:]
     if re.fullmatch(r"\d{4}-Q[1-4]", value):
-        return date(int(value[:4]), 3 * int(value[-1]) - 2, 1)
+        try:
+            return date(int(value[:4]), 3 * int(value[-1]) - 2, 1)
+        except ValueError:
+            return None
     if re.fullmatch(r"\d{6}|\d{8}", value):
         value = value[:4] + "-" + value[4:6] + ("-" + value[6:] if len(value) == 8 else "")
     if re.fullmatch(r"\d{4}", value):
@@ -158,6 +161,14 @@ def numeric_rows(
     return result
 
 
+def is_percentage(row):
+    """Percent levels (not percent changes) require percentage-point differences."""
+    unit = str(row.get("unit") or "").strip().casefold()
+    return row.get("kind") == "rate" or unit in {
+        "%", "percent", "percentage", "연%", "연 %", "% per annum", "percent per annum",
+    }
+
+
 def series_changes(rows):
     """Changes use one series/basis; missing calendar periods are not bridged."""
     points = {
@@ -189,14 +200,14 @@ def series_changes(rows):
         unit = latest.get("unit", "")
         unit = (
             "percentage points"
-            if unit.casefold() in {"%", "percent"} or latest.get("kind") == "rate"
+            if is_percentage(latest)
             else unit
         )
         change = f"{label} ({points[previous]['observed_at']}): {delta:+.6g} {unit}"
         if (
             prior > 0
             and latest.get("kind", "level") == "level"
-            and latest.get("unit", "").casefold() not in {"%", "percent"}
+            and not is_percentage(latest)
         ):
             change += f" ({delta / prior * 100:+.3f}%)"
         changes.append(change)

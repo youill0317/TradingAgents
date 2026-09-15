@@ -7,8 +7,6 @@ import zipfile
 from calendar import monthrange
 from datetime import date
 
-from parsel import Selector
-
 from .public_data_common import (
     _request,
     collect_parts,
@@ -18,6 +16,7 @@ from .public_data_common import (
     request_json,
     request_text,
 )
+from .public_financial_metrics import IFRS_METRICS, dart_metric
 
 SEC_CONCEPTS = {
     "revenue": (
@@ -124,9 +123,16 @@ def sec_facts(cik, ticker, trade_date, headers):
                         unit=unit,
                         basis=basis,
                         frequency={"quarter": "Q", "annual": "A"}.get(basis, ""),
+                        refresh_frequency=(
+                            "Q" if any(
+                                p.get("form", "").startswith("10-Q")
+                                and p.get("filed", "9999-12-31") <= trade_date
+                                for p in points
+                            ) else "A"
+                        ),
                         period_start=start,
                         period_end=end,
-                        metric=metric,
+                        metric=IFRS_METRICS.get(metric, metric),
                         concept=tag,
                         accession=point.get("accn"),
                         form=point.get("form"),
@@ -150,70 +156,15 @@ def sec_facts(cik, ticker, trade_date, headers):
 
 
 def derive_financial_metrics(rows, ticker):
-    """Only same-period/currency/basis facts enter ratios; retain operand lineage."""
-    groups = {}
-    for row in rows:
-        if row.get("basis") not in {"quarter", "annual"} or row.get("unit") not in {
-            "USD",
-            "KRW",
-            "EUR",
-            "JPY",
-            "GBP",
-        }:
-            continue
-        key = (row.get("period_start"), row.get("period_end"), row["unit"], row["basis"])
-        metric = row.get("metric")
-        if metric:
-            groups.setdefault(key, {}).setdefault(metric, row)
-    result = []
-    for (start, end, currency, basis), facts in groups.items():
-        for name, left, right, ratio in (
-            ("gross_margin", "gross_profit", "revenue", True),
-            ("operating_margin", "operating_income", "revenue", True),
-            ("net_margin", "net_income", "revenue", True),
-            ("free_cashflow", "operating_cashflow", "capital_expenditure", False),
-        ):
-            if left not in facts or right not in facts:
-                continue
-            a, b = facts[left], facts[right]
-            if a.get("accession") != b.get("accession"):
-                continue  # Do not combine independently restated versions.
-            x, y = number(a["value"]), number(b["value"])
-            if x is None or y is None or (ratio and y <= 0):
-                continue
-            value = x / y * 100 if ratio else x - y
-            unit = "percent" if ratio else currency
-            result.append(
-                evidence(
-                    a["source"],
-                    f"{ticker}/derived/{name}/{basis}/{currency}",
-                    f"Calculated {name}: {value:.6g} {unit}; {basis}. Formula: {left} {'/ ' + right + ' * 100' if ratio else '- ' + right}.",
-                    a["url"],
-                    observed_at=end,
-                    published_at=max(a.get("published_at") or "", b.get("published_at") or "")
-                    or None,
-                    value=value,
-                    unit=unit,
-                    basis=basis,
-                    period_start=start,
-                    period_end=end,
-                    frequency="Q" if basis == "quarter" else "A",
-                    evidence_type="derived_financial",
-                    operands=[
-                        {
-                            "target": r["target"],
-                            "value": r["value"],
-                            "accession": r.get("accession"),
-                        }
-                        for r in (a, b)
-                    ],
-                    point_in_time=a.get("point_in_time", False) and b.get("point_in_time", False),
-                )
-            )
-    return result
+    """Compute common metrics without mixing scopes, periods or conflicting facts."""
+    from .public_financial_metrics import derive_metrics
+
+    return derive_metrics(rows, ticker)
 
 
 def filing_excerpt(source, ticker, text, url, published_at, report_name):
+    from parsel import Selector
+
     selector = Selector(text=text)
     pieces = selector.xpath(
         "//text()[not(ancestor::script) and not(ancestor::style) and not(ancestor::*[local-name()='header'])]"
@@ -331,6 +282,10 @@ def dart_enrichment(corp_code, ticker, trade_date, filings):
                 )
                 end_month = {"11013": 3, "11012": 6, "11014": 9, "11011": 12}[report]
                 end = date(year, end_month, monthrange(year, end_month)[1]).isoformat()
+                start = (
+                    None if period_basis == "instant" else
+                    date(year, end_month - 2 if period_basis == "quarter" else 1, 1).isoformat()
+                )
                 account = row.get("account_id") or row.get("account_nm")
                 if not account:
                     continue
@@ -349,9 +304,15 @@ def dart_enrichment(corp_code, ticker, trade_date, filings):
                         raw_value=row[amount_key],
                         unit=row.get("currency", "KRW"),
                         basis=basis + "/" + period_basis,
+                        period_start=start,
+                        period_end=end,
+                        period_basis=period_basis,
+                        reporting_scope=basis,
+                        refresh_frequency="Q",
                         report_code=report,
                         account_id=row.get("account_id"),
                         account_detail=detail,
+                        metric=dart_metric(row.get("account_id"), detail),
                         title=row.get("account_nm"),
                         frequency="A" if period_basis == "annual" else "Q",
                         statement=statement,
@@ -424,4 +385,5 @@ def dart_enrichment(corp_code, ticker, trade_date, filings):
             )
 
         parts.append((ticker + "/filing excerpt", document))
-    return collect_parts("dart", parts)
+    rows = collect_parts("dart", parts)
+    return rows + derive_financial_metrics(rows, ticker)

@@ -15,6 +15,9 @@ def test_collect_eia_preserves_units_and_filters_future(monkeypatch):
     ]}}
     with patch.object(public_us, "request_json", return_value=payload) as request:
         result = public_us.collect_eia("2025-01-03")
+    missing = [item for item in result if item["status"] != "success"]
+    assert {item["target"] for item in missing} == {"WGTSTUS1", "WDISTUS1"}
+    result = [item for item in result if item["status"] == "success"]
     assert {item["target"] for item in result} == {"WCESTUS1", "WCRFPUS2"}
     assert all(item["observed_at"] == "2025-01-03" for item in result)
     assert any("410 thousand barrels" in item["content"] and item["api_unit"] == "MBBL"

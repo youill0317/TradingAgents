@@ -54,8 +54,9 @@ def _collect_ecos_history(trade_date):
             "0",
         ),
     )
-    records = []
-    for target, stat_code, cycle, start, end, item_code in series:
+    def collect_series(spec):
+        target, stat_code, cycle, start, end, item_code = spec
+        records = []
         rows = _ecos_rows(key, stat_code, cycle, start, end, item_code)
         for row in rows:
             observed = row.get("TIME", "")
@@ -72,12 +73,17 @@ def _collect_ecos_history(trade_date):
                         frequency=cycle,
                         value=number(row.get("DATA_VALUE")),
                         unit=row.get("UNIT_NAME"),
+                        kind="rate" if target == "policy_rate" else "index",
                         point_in_time=False,
                         country="KR",
                         title=row.get("ITEM_NAME1", target),
                     )
                 )
-    return records
+        return records
+
+    return collect_parts(
+        "ecos", [(spec[0], lambda s=spec: collect_series(s)) for spec in series]
+    )
 
 
 def collect_ecos(trade_date):

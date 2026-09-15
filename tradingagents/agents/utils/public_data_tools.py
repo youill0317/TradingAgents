@@ -7,6 +7,7 @@ from langgraph.prebuilt import InjectedState
 
 from tradingagents.dataflows.public_data import render_public_data
 from tradingagents.dataflows.public_data_common import number, period_date
+from tradingagents.dataflows.public_evidence import coverage_report, evidence_id
 
 
 @tool
@@ -20,7 +21,7 @@ def get_official_evidence(
 ) -> str:
     """Inspect collected official series or filing excerpts. Use source='all' to list sources.
 
-    query matches a series ID/title/target. offset and limit paginate matching
+    query matches an exact ev-ID, or a series ID/title/target. offset and limit paginate matching
     series (not observations). observations controls recent numeric history per
     series (1 to 60); use 13 monthly points for a year. No fresh network data or
     missing credentials are fetched. Empty query lists the first matching series.
@@ -30,7 +31,7 @@ def get_official_evidence(
         return "Official evidence was not collected for this run."
     sources = sorted({r["source"] for r in rows})
     if source == "all":
-        return "Collected sources: " + ", ".join(sources)
+        return "Collected sources: " + ", ".join(sources) + "\n" + coverage_report(rows)
     if source not in sources:
         return "Source not collected. Available: " + ", ".join(sources)
     query = query.casefold()
@@ -38,7 +39,8 @@ def get_official_evidence(
         r
         for r in rows
         if r["source"] == source
-        and query in (str(r.get("target", "")) + " " + str(r.get("title", ""))).casefold()
+        and (query == (r.get("evidence_id") or evidence_id(r))
+             or query in (str(r.get("target", "")) + " " + str(r.get("title", ""))).casefold())
     ]
     targets = list(dict.fromkeys(r["target"] for r in matched))
     start, size = max(0, offset), max(1, min(limit, 12))
@@ -49,7 +51,8 @@ def get_official_evidence(
     history = []
     for target in targets[start : start + size]:
         numeric = [
-            r for r in selected_rows if r["target"] == target and number(r.get("value")) is not None
+            r for r in selected_rows if r["target"] == target and r.get("status") == "success"
+            and number(r.get("value")) is not None and period_date(r.get("observed_at"))
         ]
         numeric.sort(key=lambda r: period_date(r.get("observed_at")))
         if numeric:
@@ -57,7 +60,7 @@ def get_official_evidence(
                 target
                 + " (date: value; units/basis as above): "
                 + ", ".join(
-                    f"{r['observed_at']}: {r['value']}"
+                    f"[{r.get('evidence_id') or evidence_id(r)}] {r['observed_at']}: {r['value']}"
                     for r in numeric[-max(1, min(observations, 60)) :]
                 )
             )

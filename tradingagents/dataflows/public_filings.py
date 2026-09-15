@@ -61,7 +61,8 @@ def collect_sec(ticker, trade_date):
         return []
     headers = {"User-Agent": os.environ["SEC_USER_AGENT"]}
     tickers = request_json(_SEC_TICKERS, headers=headers)
-    row = next((row for row in tickers.values() if row["ticker"].upper() == ticker.upper()), None)
+    symbol = re.sub(r"^([A-Z]+)\.([AB])$", r"\1-\2", ticker.upper())
+    row = next((row for row in tickers.values() if row["ticker"].upper() == symbol), None)
     if not row:
         return []
     cik = str(row["cik_str"]).zfill(10)
