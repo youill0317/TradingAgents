@@ -187,7 +187,13 @@ def write_market_report_tree(final_state: dict, save_path) -> Path:
         json.dumps(validation, indent=2, sort_keys=True), encoding="utf-8"
     )
     evidence_records = []
-    for record in final_state.get("global_evidence", []):
+    seen_ids = set()
+    for record in [*final_state.get("global_evidence", []), *final_state.get("public_data_evidence", [])]:
+        reference = record.get("evidence_id")
+        if reference:
+            if reference in seen_ids:
+                continue
+            seen_ids.add(reference)
         content = record.get("content") or ""
         hashed_content = content if isinstance(content, str) else json.dumps(content, ensure_ascii=False, sort_keys=True)
         evidence_records.append({

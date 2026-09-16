@@ -66,6 +66,11 @@ class TestParseRating:
         for r in RATINGS_5_TIER:
             assert parse_rating(f"Rating: {r}") == r
 
+    def test_only_structured_review_status_withholds_rating(self):
+        text = "**Analysis status**: REVIEW_REQUIRED\n**Rating**: Buy"
+        assert parse_rating(text) == "Buy"
+        assert parse_rating(text, analysis_status="REVIEW_REQUIRED") == RATING_REVIEW
+
 
 # ---------------------------------------------------------------------------
 # SignalProcessor: thin adapter over the heuristic

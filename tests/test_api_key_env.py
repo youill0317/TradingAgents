@@ -100,6 +100,7 @@ def test_ensure_api_key_prompts_and_writes_to_env(monkeypatch, tmp_path, cli_uti
     """When key is missing, user-pasted value must be written to .env AND os.environ."""
     monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli_utils, "find_dotenv", lambda **kwargs: "")
 
     fake_prompt = type("P", (), {"ask": staticmethod(lambda: "sk-deepseek-test")})()
     with patch.object(cli_utils.questionary, "password", return_value=fake_prompt):

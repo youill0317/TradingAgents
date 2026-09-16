@@ -24,6 +24,7 @@ def calculated(source, target, rows, value, unit, formula, *, kind="level", titl
         published_at=max(known_dates) if all(known_dates) else None,
         value=value, unit=unit, kind=kind, frequency=last.get("frequency"),
         basis=last.get("basis"), title=title or target, sectors=last.get("sectors", []),
+        industry_groups=last.get("industry_groups", []), hs_code=last.get("hs_code"),
         evidence_type="derived_indicator", operands=[operand(r) for r in rows],
         base_target=last.get("base_target") or last["target"],
         source_tables=sorted({table for row in rows for table in source_tables(row)}),

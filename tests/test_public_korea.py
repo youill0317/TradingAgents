@@ -63,7 +63,9 @@ def test_collect_kosis_selects_industry_production_shipments_inventory(monkeypat
     monkeypatch.setenv("KOSIS_API_KEY", "key")
     captured = {}
     payload = [
-        {"PRD_DE": "202608", "C1": "EC", "C1_NM": "반도체 및 부품", "ITM_ID": "T10", "ITM_NM": "산업생산지수(원지수)", "DT": "142.1", "UNIT_NM": "2020=100", "LST_CHN_DE": "20260901"},
+        {"PRD_DE": "202608", "C1": "EC", "C1_NM": "반도체 및 부품(C261+C262=C26A)", "ITM_ID": "T10", "ITM_NM": "산업생산지수(원지수)", "DT": "142.1", "UNIT_NM": "2020=100", "LST_CHN_DE": "20260901"},
+        {"PRD_DE": "202608", "C1": "FC", "C1_NM": "반도체 제외(C261 제외)", "ITM_ID": "T11", "ITM_NM": "생산자제품 출하지수(원지수)", "DT": "98.0", "UNIT_NM": "2020=100"},
+        {"PRD_DE": "202608", "C1": "ZZ", "C1_NM": "반도체 장비 관련 기타", "ITM_ID": "T12", "ITM_NM": "생산자제품 재고지수(원지수)", "DT": "103.0", "UNIT_NM": "2020=100"},
         {"PRD_DE": "202609", "C1": "EC", "ITM_ID": "T12", "DT": ""},
         {"PRD_DE": "202610", "C1": "EC", "ITM_ID": "T12", "DT": "150.0"},
     ]
@@ -78,9 +80,23 @@ def test_collect_kosis_selects_industry_production_shipments_inventory(monkeypat
     assert captured["tblId"] == "DT_1F02011"
     assert captured["objL1"] == "ALL"
     assert captured["itmId"] == "T10 T11 T12"
-    assert [(row["observed_at"], row["value"]) for row in rows if row["status"] == "success"] == [("202608", 142.1)]
-    assert {row["item_id"] for row in rows if row["status"] != "success"} == {"T11", "T12"}
+    assert [(row["observed_at"], row["value"]) for row in rows if row["status"] == "success"] == [
+        ("202608", 142.1), ("202608", 98.0), ("202608", 103.0),
+    ]
+    assert [(row["item_id"], row["observed_at"], row["industry_code"])
+            for row in rows if row["status"] != "success"] == [("T12", "202609", "EC")]
     assert rows[0]["sectors"] == ["Technology"]
+    assert rows[0]["industry_groups"] == ["semiconductors"]
+    assert rows[1]["sectors"] == rows[1]["industry_groups"] == []
+    assert rows[2]["sectors"] == rows[2]["industry_groups"] == []
+
+
+def test_korean_industry_labels_require_exact_official_classification():
+    assert public_korea.korean_industry_classification("반도체 제조업") == (
+        ["Technology"], ["semiconductors"],
+    )
+    assert public_korea.korean_industry_classification("반도체 제외(C261 제외)") == ([], [])
+    assert public_korea.korean_industry_classification("반도체 장비 관련 기타") == ([], [])
 
 
 def test_provider_body_errors_are_not_treated_as_data(monkeypatch):

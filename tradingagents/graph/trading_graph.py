@@ -605,12 +605,15 @@ class TradingAgentsGraph:
             ticker=company_name,
             trade_date=trade_date,
             final_trade_decision=final_state["final_trade_decision"],
+            analysis_status=final_state.get("analysis_status"),
         )
 
         # Clear checkpoint on successful completion to avoid stale state.
         self.clear_checkpoint_on_success(company_name, trade_date, asset_type)
 
-        return final_state, self.process_signal(final_state["final_trade_decision"])
+        return final_state, self.process_signal(
+            final_state["final_trade_decision"], analysis_status=final_state.get("analysis_status"),
+        )
 
     def _log_state(self, trade_date, final_state):
         """Log the final state to a JSON file."""
@@ -658,6 +661,6 @@ class TradingAgentsGraph:
         with open(log_path, "w", encoding="utf-8") as f:
             json.dump(self.log_states_dict[str(trade_date)], f, indent=4)
 
-    def process_signal(self, full_signal):
+    def process_signal(self, full_signal, *, analysis_status=None):
         """Process a signal to extract the core decision."""
-        return self.signal_processor.process_signal(full_signal)
+        return self.signal_processor.process_signal(full_signal, analysis_status=analysis_status)

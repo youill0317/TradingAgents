@@ -1,6 +1,7 @@
 """Report parity: the shared writer produces the report tree for the CLI and the
 programmatic API alike (#1037)."""
 
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -48,3 +49,28 @@ def test_save_reports_defaults_under_results_dir(tmp_path):
     assert out.exists()
     assert out.parent.parent.name == "reports"  # results_dir/reports/AAPL_<stamp>/...
     assert out.parent.name.startswith("AAPL_")
+
+
+@pytest.mark.parametrize("legacy_state", [False, True])
+def test_market_export_summarizes_warnings_without_losing_evidence(tmp_path, legacy_state):
+    from tradingagents.agents.schemas import MarketScanReport, render_market_scan_report
+    from tradingagents.reporting import write_market_report_tree
+
+    reference = "ev-0123456789abcdef"
+    row = {"source": "fred", "target": "DGS10", "status": "success",
+           "content": "10-year yield", "evidence_id": reference, "value": 4.97}
+    warnings = [f"PUBLIC_STALE:tic:series-{i}:2026-06" for i in range(100)] + ["EIA_NOT_CONFIGURED"]
+    report = MarketScanReport(regime="Rotation", regime_evidence=f"Yield [{reference}]",
+                              sector_view="Energy", warnings=warnings, candidates=[])
+    rendered = render_market_scan_report(report)
+    state = {"public_data_evidence": [row], "global_evidence": [row] if legacy_state else [],
+             "market_scan_result": report.model_dump(), "market_scan_report": rendered,
+             "scan_warnings": warnings}
+    write_market_report_tree(state, tmp_path)
+
+    assert "100 stale series" in rendered and "EIA_NOT_CONFIGURED" in rendered
+    assert "series-99" not in rendered and f"[{reference}]" in rendered
+    assert json.loads((tmp_path / "validation.json").read_text())["warnings"] == warnings
+    assert json.loads((tmp_path / "scan.json").read_text())["warnings"] == warnings
+    saved = [json.loads(line) for line in (tmp_path / "evidence.jsonl").read_text().splitlines()]
+    assert len(saved) == 1 and saved[0]["evidence_id"] == reference and saved[0]["value"] == 4.97

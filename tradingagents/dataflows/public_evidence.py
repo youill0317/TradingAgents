@@ -9,7 +9,7 @@ import hashlib
 import json
 import re
 import time
-from collections import OrderedDict, defaultdict
+from collections import Counter, OrderedDict, defaultdict
 from concurrent.futures import Future
 from datetime import date
 from threading import RLock
@@ -183,6 +183,21 @@ def assess_evidence(rows, trade_date):
         elif row.get("freshness") == "unknown":
             warnings.append(f"PUBLIC_FRESHNESS_UNKNOWN:{row['source']}:{row['target']}")
     return list(dict.fromkeys(warnings))
+
+
+def summarize_warnings(warnings):
+    """Summarize repetitive freshness diagnostics for display; retain raw records."""
+    warnings = list(dict.fromkeys(warnings))
+    stale = Counter(w.split(":", 2)[1] for w in warnings if w.startswith("PUBLIC_STALE:"))
+    result = []
+    for warning in warnings:
+        if warning.startswith("PUBLIC_STALE:"):
+            source = warning.split(":", 2)[1]
+            if source in stale:
+                result.append(f"PUBLIC_STALE:{source}: {stale.pop(source)} stale series; see structured diagnostics.")
+        else:
+            result.append(warning)
+    return result
 
 
 def coverage_report(rows):

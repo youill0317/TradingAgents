@@ -241,6 +241,7 @@ def collect_tic(trade_date):
         "Taiwan",
     }
     result = []
+    expected = set()
     for row in lines[header + 1 :]:
         if len(row) < 18 or row[0].strip() not in countries:
             continue
@@ -254,6 +255,7 @@ def collect_tic(trade_date):
             continue
         for col in range(3, 18):
             metric = lines[header][col]
+            expected.add(f"{row[0].strip()}/{assets[col]}/{metric}")
             result.extend(
                 numeric_rows(
                     "tic",
@@ -269,7 +271,7 @@ def collect_tic(trade_date):
                     note="Net U.S. sales to foreigners >0 means foreign net acquisition. Holdings changes include valuation; country may reflect custody rather than ultimate owner.",
                 )
             )
-    return result
+    return require_series("tic", result, sorted(expected), url)
 
 
 def collect_mof_japan(trade_date):
@@ -345,7 +347,7 @@ def collect_mof_japan(trade_date):
                 continue
             for label, col in zip(labels, expected, strict=True):
                 points[label].append((period, row[col]))
-        return [
+        rows = [
             r
             for label, values in points.items()
             for r in numeric_rows(
@@ -361,6 +363,8 @@ def collect_mof_japan(trade_date):
                 note="Designated major reporting investors, not the entire balance of payments; positive=net acquisition. Current file may revise past observations.",
             )
         ]
+
+        return require_series("mof_japan", rows, [frequency + "/" + label for label in labels], url)
 
     return collect_parts(
         "mof_japan",

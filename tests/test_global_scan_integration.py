@@ -184,6 +184,7 @@ def test_global_collection_reaches_real_graph_and_grounded_candidate(
     assert state["market_scan_result"]["candidates"][0]["ticker"] == "XOM"
     assert state["public_data_report"] == public_report
     assert state["public_data_evidence"] == public_evidence
+    assert not any(r["source"] in {"nyfed", "kosis"} for r in state["global_evidence"])
     with pytest.raises(ValueError, match="No interrupted"):
         graph.scan(sectors=["Energy"], candidate_limit=3, resume=True)
     graph.save_reports(state, tmp_path / "export")

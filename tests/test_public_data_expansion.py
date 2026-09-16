@@ -4,10 +4,6 @@ import io
 import zipfile
 from unittest.mock import Mock
 
-from langchain_core.messages import AIMessage
-from langgraph.graph import END, START, StateGraph
-
-from tradingagents.agents.utils.agent_states import AgentState
 from tradingagents.dataflows import (
     fred,
     public_data,
@@ -15,20 +11,19 @@ from tradingagents.dataflows import (
     public_international,
     public_macro,
 )
+from tradingagents.dataflows.public_analysis import build_diagnostics
 from tradingagents.dataflows.public_data_common import (
     collect_parts,
     evidence,
     numeric_rows,
-    series_changes,
 )
-from tradingagents.graph.market_graph import MarketAnalysisGraph
-from tradingagents.graph.trading_graph import TradingAgentsGraph
+from tradingagents.dataflows.public_digest import render_public_data
 
 
 def test_census_bulk_decodes_units_basis_and_skips_sampling_errors():
     text = """CATEGORIES
 cat_idx,cat_code,cat_desc,cat_indent
-1,34,Computer and electronic products,0
+1,34S,Computer and electronic products,0
 DATA TYPES
 dt_idx,dt_code,dt_desc,dt_unit
 1,NO,New Orders,MLN$
@@ -55,7 +50,34 @@ per_idx,cat_idx,dt_idx,et_idx,geo_idx,is_adj,val
     assert all(r["unit"] == "million USD" and r["basis"] == "seasonally adjusted" for r in rows)
     assert rows[0]["sectors"] == ["Technology"]
     assert rows[0]["published_at"] is None
-    annualized = public_macro.census_bulk_rows(text, "VIP", "2026-09-15", "https://www.census.gov/")
+    # Classification is independent of descriptions and scoped to the program.
+    for program, code, expected in (
+        ("MWTS", "4235", ["Basic Materials"]),
+        ("MWTS", "4247", ["Energy"]),
+        ("MRTS", "4541", ["Consumer Cyclical"]),
+        ("MRTS", "443", ["Consumer Cyclical"]),
+        ("M3ADV", "DXT", []),
+        ("M3ADV", "NXA", []),
+        ("M3ADV", "34S", ["Technology"]),
+        ("MRTS", "34S", []),
+        ("MRTS", "4541999", []),
+        ("RESCONST", "AUTHNOTSTD", ["Real Estate", "Industrials"]),
+        ("RESCONST", "ASTARTS", ["Real Estate", "Industrials"]),
+        ("RESCONST", "UNKNOWN", []),
+    ):
+        payload = text.replace("34S,Computer and electronic products", f"{code},Petroleum excluding computers")
+        classified = public_macro.census_bulk_rows(payload, program, "2026-09-15", "https://www.census.gov/")
+        assert classified[0]["sectors"] == expected, (program, code)
+    annualized = public_macro.census_bulk_rows(
+        text.replace("34S,Computer and electronic products", "A04XX,Health care").replace(
+            "New Orders", "Public construction spending"
+        ),
+        "VIP",
+        "2026-09-15",
+        "https://www.census.gov/",
+    )
+    assert annualized[0]["title"] == "Health care: Public construction spending"
+    assert annualized[0]["sectors"] == ["Healthcare"]
     assert annualized[0]["unit"] == "million USD per year (annualized)"
     assert annualized[0]["basis"] == "seasonally adjusted annual rate"
 
@@ -122,6 +144,11 @@ def test_tic_transactions_are_not_holdings_or_valuation(monkeypatch):
         ("Valuation Change", 10, "flow"),
     ]
     assert "foreign net acquisition" in rows[1]["note"]
+    text = text.replace("100", "")
+    rows = public_international.collect_tic("2026-09-15")
+    gaps = [r for r in rows if r["status"] != "success"]
+    assert len(gaps) == 5 and all(r["target"].endswith("/Holdings") for r in gaps)
+    assert sum(r["status"] == "success" for r in rows) == 10
 
 
 def test_fred_pins_metadata_and_observations_and_retains_partial_failure(monkeypatch):
@@ -152,21 +179,23 @@ def test_fred_pins_metadata_and_observations_and_retains_partial_failure(monkeyp
 
 def test_bea_months_quarters_and_scaling_are_distinct(monkeypatch):
     monkeypatch.setenv("BEA_API_KEY", "SECRET")
-    rows = [
-        {
-            "TimePeriod": period,
-            "DataValue": "1,200",
-            "LineNumber": "4",
-            "LineDescription": "Motor vehicles",
-            "CL_UNIT": "Level",
-            "UNIT_MULT": "9",
-            "Metric_Name": "Current Dollars",
-        }
-        for period in ("2026M4", "2026Q2")
-    ]
-    monkeypatch.setattr(
-        public_macro, "request_json", lambda *a, **k: {"BEAAPI": {"Results": {"Data": rows}}}
-    )
+    def request(url, params):
+        industry = params["datasetname"] == "GDPbyIndustry"
+        rows = [
+            {
+                "TimePeriod": period,
+                "DataValue": "1,200",
+                "Industry" if industry else "LineNumber": "3361MV" if industry else "4",
+                "IndustryDescription" if industry else "LineDescription": "Motor vehicles",
+                "CL_UNIT": "Level",
+                "UNIT_MULT": "9",
+                "Metric_Name": "Current Dollars",
+            }
+            for period in ("2026M4", "2026Q2")
+        ]
+        return {"BEAAPI": {"Results": {"Data": rows}}}
+
+    monkeypatch.setattr(public_macro, "request_json", request)
     result = public_macro.collect_bea("2026-09-15")
     assert len(result) == 6
     assert len({r["target"] for r in result}) == 6
@@ -176,6 +205,17 @@ def test_bea_months_quarters_and_scaling_are_distinct(monkeypatch):
     )
     assert all(r["sectors"] == ["Consumer Cyclical"] for r in result)
     assert "SECRET" not in str(result)
+
+
+def test_bea_sector_tags_use_exact_table_and_item_codes():
+    for table in ("T20305", "T20306"):
+        assert public_macro.bea_sectors("NIPA", table, "19") == ["Consumer Cyclical"]
+        assert public_macro.bea_sectors("NIPA", table, "15") == []
+    assert public_macro.bea_sectors("GDPbyIndustry", "1", "22") == ["Utilities"]
+    assert public_macro.bea_sectors("GDPbyIndustry", "1", "722") == ["Consumer Cyclical"]
+    assert public_macro.bea_sectors("GDPbyIndustry", "1", "325") == []
+    assert public_macro.bea_sectors("GDPbyIndustry", "2", "22") == []
+    assert public_macro.bea_sectors("GDPbyIndustry", "1", "unknown") == []
 
 
 def test_bea_industry_quarter_labels_and_table_units(monkeypatch):
@@ -320,9 +360,9 @@ def test_dart_keeps_consolidation_quarter_and_ytd_bases(monkeypatch):
     assert any(r.get("excerpt_only") for r in rows) and "SECRET" not in str(rows)
 
 
-def test_changes_use_percentage_points_and_matching_calendar_periods():
+def test_digest_displays_derived_change_without_calculating_from_raw_history():
     rows = numeric_rows(
-        "test",
+        "census",
         "rate",
         [("2025-08", 3), ("2026-06", 3.25), ("2026-08", 3.5)],
         "",
@@ -330,68 +370,13 @@ def test_changes_use_percentage_points_and_matching_calendar_periods():
         unit="percent",
         frequency="M",
     )
-    changes = series_changes(rows)
-    assert "year (2025-08): +0.5 percentage points" in changes
-    assert "3 months" not in changes and "(+" not in changes
-    rows[0]["basis"] = "different"
-    assert series_changes(rows) == ""
+    derived = build_diagnostics(rows)
+    digest = render_public_data([*rows, *derived])
 
-
-def test_industry_filters_and_real_tool_nodes_preserve_history():
-    rows = numeric_rows(
-        "census",
-        "M3ADV/computers/orders",
-        [("2025-08", 100), ("2026-08", 125)],
-        "",
-        trade_date="2026-09-15",
-        unit="million USD",
-        frequency="M",
-        sectors=["Technology"],
-    )
-    rows += numeric_rows(
-        "census",
-        "MRTS/food/sales",
-        [("2026-08", 500)],
-        "",
-        trade_date="2026-09-15",
-        unit="million USD",
-        frequency="M",
-        sectors=["Consumer Defensive"],
-    )
-    state = {
-        "public_data_evidence": rows,
-        "instrument_identity": {"sector": "Technology", "industry": "Semiconductors"},
-    }
-    report = public_data.public_data_for_agent(state, "fundamentals")
-    assert "computers/orders" in report and "food/sales" not in report
-    assert "Aggregate industry data" in report
-    state["messages"] = [
-        AIMessage(
-            content="",
-            tool_calls=[
-                {
-                    "id": "official",
-                    "name": "get_official_evidence",
-                    "args": {"source": "census", "query": "computers", "observations": 13},
-                }
-            ],
-        )
-    ]
-    for cls, roles in (
-        (TradingAgentsGraph, ("news", "fundamentals")),
-        (MarketAnalysisGraph, ("macro", "sector")),
-    ):
-        graph = object.__new__(cls)
-        nodes = graph._create_tool_nodes()
-        for role in roles:
-            workflow = StateGraph(AgentState)
-            workflow.add_node("official_tools", nodes[role])
-            workflow.add_edge(START, "official_tools")
-            workflow.add_edge("official_tools", END)
-            result = workflow.compile().invoke(state)["messages"][-1]
-            assert result.status == "success"
-            assert "2025-08: 100" in result.content and "2026-08: 125" in result.content
-            assert "food/sales" not in result.content
+    assert rows[-1]["content"] in digest
+    assert "previous observation" not in digest
+    assert derived[0]["content"] in digest
+    assert all(f"[{operand['evidence_id']}]" in digest for operand in derived[0]["operands"])
 
 
 def test_partial_failure_keeps_good_observation_and_hides_exception_url():
@@ -438,3 +423,36 @@ def test_bounded_digest_rotates_across_census_programs():
         for program in ("M3ADV", "MRTS", "MWTS", "RESCONST", "VIP")
     )
     assert "omitted by prompt budget" in report and "Available table groups" in report
+
+
+def test_ofr_reports_empty_components_without_losing_other_series(monkeypatch):
+    columns = ["OFR FSI", "Credit", "Equity valuation", "Safe assets", "Funding",
+               "Volatility", "United States", "Other advanced economies", "Emerging markets"]
+    text = ",".join(["Date", *columns]) + "\n2026-09-15," + ",".join(["0", "", *["1"] * 7])
+    monkeypatch.setattr(public_macro, "request_text", lambda *a, **k: text)
+    monkeypatch.setattr(public_macro, "request_json", lambda *a, **k: [["2026-09-15", "3.1"]])
+    rows = public_macro.collect_ofr("2026-09-16")
+    assert [r["target"] for r in rows if r["status"] != "success"] == ["Credit"]
+    assert sum(r["status"] == "success" for r in rows) == 9
+
+
+def test_mof_reports_missing_series_in_each_frequency(monkeypatch):
+    def response(url, **kwargs):
+        weekly = url.endswith("week.csv")
+        columns = (3, 6, 10, 11, 14, 17, 21, 22) if weekly else (5, 8, 12, 13, 16, 19, 23, 24)
+        header, row = [""] * 25, [""] * 25
+        header[1:3] = ["Acquisition", "Disposition"]
+        if weekly:
+            row[0] = "2026.9.7~2026.9.13"
+        else:
+            row[0], row[2] = "2026", "Aug"
+        for col in columns:
+            header[col], row[col] = "Net amount", "0"
+        row[columns[0]] = ""
+        return "100 million Yen\n" + ",".join(header) + "\n" + ",".join(row)
+    monkeypatch.setattr(public_international, "request_text", response)
+    rows = public_international.collect_mof_japan("2026-09-16")
+    assert {r["target"] for r in rows if r["status"] != "success"} == {
+        "W/outward/equity", "M/outward/equity",
+    }
+    assert sum(r["status"] == "success" for r in rows) == 14

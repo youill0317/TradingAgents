@@ -87,22 +87,10 @@ def public_data_for_agent(state, role):
         report += (
             "\nCite exact [ev-...] observation IDs for material official-data claims and retain "
             "those IDs in the analyst report. For a change, cite both endpoint observations or "
-            "a derived record with operand lineage; use get_official_evidence to inspect omitted "
+            "a derived record with operand lineage. Use get_official_evidence to inspect omitted "
             "history. Report conflicting, stale and missing inputs explicitly. Collection or "
             "tool access alone is not evidence that a source supports your conclusion."
-            " Address each available core analysis purpose above with cited evidence or an explicit "
-            "reason it is not material. For official numerical comparisons cite both endpoints "
-            "on the same line or a derived observation. Use start_date/end_date and "
-            "observation_offset to inspect older collected history."
-            " A provider_reported_change observation may support its own published growth figure with one ID; "
-            "state its exact comparison basis (e.g. GDP QoQ), not a new change in that growth rate. "
-            "For optional purposes not material to this analysis, write [official-exclude:purpose] followed by "
-            "a specific reason (at least 12 characters). For a selected sector use its exact Sector/purpose key. "
-            "Preserve these declarations in the report; they are recorded reasons, not validated economic conclusions. "
-            "Issuer earnings, cash_flow and balance_sheet cannot be excluded: the final ticker decision must "
-            "retain fresh issuer citations for each available core purpose or requires review. "
-            "For each sector requested or actually screened, address its demand, production and inventory_costs "
-            "with the sector's cited observations or a justified optional exclusion. Missing sector data stay explicit."
+            " Use start_date/end_date and observation_offset to inspect older collected history."
         )
     if role in {"news", "fundamentals", "ticker_review"}:
         if industry_sources & {row["source"] for row in assigned}:

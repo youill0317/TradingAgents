@@ -5,7 +5,7 @@ from collections import defaultdict
 from datetime import datetime
 from itertools import zip_longest
 
-from .public_data_common import number, period_date, series_changes
+from .public_data_common import number, period_date
 from .public_evidence import evidence_id, source_tables
 
 
@@ -63,11 +63,15 @@ def render_public_data(rows, max_chars=0):
                 row = max(
                     numeric, key=lambda r: period_date(r.get("observed_at")) or datetime.min.date()
                 )
-                content = row["content"] + "; " + series_changes(numeric)
+                content = row["content"]
                 if row.get("title"):
                     content = str(row["title"]) + ": " + content
                 if row.get("note"):
                     content += " " + row["note"]
+                if row.get("operands"):
+                    content += " Operands: " + ", ".join(
+                        f"[{operand['evidence_id']}]" for operand in row["operands"]
+                    ) + "."
                 if row.get("provider_reported_change"):
                     content += f" Provider-reported change: {row['change_basis']}; direct release value, not a calculated comparison."
                 if row.get("calculation_gaps"):

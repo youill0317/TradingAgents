@@ -126,7 +126,7 @@ def _required_evidence_warnings(state):
     not a claim of comprehensive regional coverage. Optional gaps remain
     visible without mechanically lowering every unrelated candidate.
     """
-    records = state.get("global_evidence", [])
+    records = [*state.get("global_evidence", []), *state.get("public_data_evidence", [])]
     requirements = (
         ("fred", {"success"}, "MACRO_EVIDENCE_MISSING"),
         ("yfinance", {"success", "partial"}, "GLOBAL_MARKET_EVIDENCE_MISSING"),

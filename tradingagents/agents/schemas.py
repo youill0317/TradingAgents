@@ -519,9 +519,11 @@ class MarketScanReport(BaseModel):
 
 def render_market_scan_report(report: MarketScanReport) -> str:
     """Render a MarketScanReport to the markdown shape the CLI and report tree expect."""
+    from tradingagents.dataflows.public_evidence import summarize_warnings
+
     parts = [
         f"**Status:** **{report.status.value}**",
-        *(["", "## Warnings", "", *[f"- {w}" for w in report.warnings]] if report.warnings else []),
+        *(["", "## Warnings", "", *[f"- {w}" for w in summarize_warnings(report.warnings)]] if report.warnings else []),
         "",
         f"**Market Regime:** **{report.regime.value}**",
         "",

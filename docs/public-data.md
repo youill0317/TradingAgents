@@ -57,8 +57,8 @@ issuer filings. Industry assignment uses resolved business classification and
 row-level sector tags. Ambiguous aggregate statistics stay in the market
 workflow. Korean industry data can corroborate a foreign company's sector
 exposure but are never labeled as that company's revenue or inventory.
-Provider sector tags and ticker routing share English word-start/Korean-stem
-matching; nonresidential (including non-residential) construction is not housing.
+Provider tags use verified codes and explicit classifications. Issuer identity
+text retains conservative word matching when explicit industry groups are absent.
 
 Technical and social analysts keep their existing price/technical and social
 tools. They do not receive the whole official-data catalog.
@@ -69,7 +69,7 @@ schema and their actual LangGraph ToolNodes. It reads the already collected stat
 - `source="all"` lists collected sources.
 - `source="census", query="M3ADV"` finds matching series by target/title.
 - `offset`/`limit` paginate series; `observations` returns 1–60 recent numeric
-  points per series in addition to the trend digest.
+  points per series in addition to the observation digest.
 - `start_date`/`end_date` select an inclusive observation-date window in
   `YYYY-MM-DD` format. `observation_offset` skips newest matching points per
   series; the response provides the next offset or the end-of-history marker.
@@ -98,19 +98,19 @@ filing review, not an assertion that the issuer never reports it. Disabling an
 issuer source does not make its facts mandatory. Status covers selected official
 evidence, not every vendor or every aspect of the investment thesis.
 
-At the final ticker decision, missing numerical citations, unknown IDs and
-uncited official numerical comparisons can also require review when an issuer
-source was selected. `REVIEW_REQUIRED` withholds a tradeable rating: both the
-API signal and stored memory rating become `REVIEW`, even if the provisional
-model prose contains Buy or Hold. The original narrative remains visible.
-Reports export `analysis_quality.json`; state logs retain warnings and evidence.
+Citation checks warn about unknown observation IDs and reports without usable
+numeric citations from their assigned evidence. Warnings can produce `DEGRADED`,
+but citation wording, line breaks and purpose coverage do not withhold a rating.
+Prompts still request evidence for claims and comparison endpoints; a valid ID
+does not prove that the model interpreted it correctly.
 
-Market analyst/final-report citation gaps feed the existing `DEGRADED` status
-and are saved under `validation.json` / `official_data_audit`. Checks include
-known IDs, reference presence on explicitly official numerical statements,
-comparison endpoints or a derived record, and uncited available purposes.
-These are structural checks with conservative text patterns, not semantic proof
-of every claim. A valid ID does not prove that the model interpreted it correctly.
+`REVIEW_REQUIRED` withholds a tradeable rating for missing fresh core issuer
+facts: the API signal and stored memory rating become `REVIEW`, even if the
+model prose contains Buy or Hold. Signal and memory APIs accept the structured
+`analysis_status` explicitly; they do not parse it from report text. Reports
+export `analysis_quality.json`; state logs retain warnings and evidence.
+Market citation warnings use the existing `DEGRADED` status and are saved under
+`validation.json` / `official_data_audit`.
 
 ## Correctness and coverage rules
 
@@ -129,15 +129,16 @@ of every claim. A valid ID does not prove that the model interpreted it correctl
   exclude known inapplicable combinations instead of inventing zero values.
   Selected sources run with at most four source workers. Shared HTTP calls have
   finite timeouts, one transient retry and response-size bounds.
-- Digests compute previous-observation, three-month and year comparisons only
-  when matching dates and reporting bases exist. Rates use percentage points.
-  Net flows/positions do not receive misleading percentage changes from negative
-  bases. Latest observations older than frequency-specific thresholds are marked
+- Digests display collected observations and derived records without recalculating
+  changes. Supported calculations retain endpoint IDs, reject conflicting
+  same-date observations and require matching dates and reporting bases. Rates
+  use percentage points; nonpositive bases do not yield relative growth.
+  Latest observations older than frequency-specific thresholds are marked
   stale (D:14, W:28, M:100, Q:200, A:550 days); these are heuristics, not release
   calendar guarantees. Older issuer periods are marked `comparative_only` when
   newer, fresh same-metric evidence exists in the same issuer/scope/currency and
   accounting standard. They remain available for historical comparisons without
-  degrading collection quality, but cannot substitute for current core citations.
+  degrading collection quality, but cannot satisfy current core fact coverage.
   Missing latest quarterly facts still require review; thresholds are not widened.
 - SEC/DART ratios require the same period, currency, duration basis, reporting
   scope, accounting standard and compatible accession/version lineage.
@@ -187,6 +188,13 @@ the saved evidence. Market scans collect once during their existing global
 precollection. Existing report exports retain `public_data.md` and raw evidence
 (`public_evidence.jsonl` for ticker runs; global evidence for market scans).
 
+Macro/industry snapshots are reused in process for 300 seconds by default.
+`config["public_data_cache_ttl_seconds"]` accepts 0–3600; 0 disables reuse.
+Company facts, errors and partial failures are not cached. Cache keys include
+date, credentials and collector; concurrent callers share an in-flight fetch.
+Returned copies preserve retrieval time and snapshot IDs. This is not a durable
+archive and does not bypass historical collection restrictions.
+
 ## Verify in your environment
 
 ```bash
@@ -195,7 +203,7 @@ python scripts/smoke_public_data.py --sources census,ofr,bis,tic,mof_japan
 python scripts/smoke_public_data.py --sources sec,fred --ticker AAPL
 python scripts/smoke_public_data.py --sources dart,fsc,ecos,customs,kosis --ticker 005930.KS
 python scripts/smoke_public_data.py --sources all --ticker AAPL --output results/public-check.json
-python -m pytest tests/test_public_data*.py tests/test_public_us.py tests/test_public_korea.py tests/test_public_filings.py -q
+python -m pytest tests/test_public*.py -q
 ```
 
 The smoke script loads `.env`, makes no LLM calls, reports per-source status and

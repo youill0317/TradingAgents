@@ -3,7 +3,6 @@
 import math
 import re
 import time
-from calendar import monthrange
 from datetime import date, datetime, timezone
 from xml.etree import ElementTree
 
@@ -167,48 +166,3 @@ def is_percentage(row):
     return row.get("kind") == "rate" or unit in {
         "%", "percent", "percentage", "연%", "연 %", "% per annum", "percent per annum",
     }
-
-
-def series_changes(rows):
-    """Changes use one series/basis; missing calendar periods are not bridged."""
-    points = {
-        period_date(r.get("observed_at")): r
-        for r in rows
-        if number(r.get("value")) is not None and period_date(r.get("observed_at"))
-    }
-    if len(points) < 2:
-        return ""
-    dates = sorted(points)
-    latest = points[dates[-1]]
-    if len({(r.get("unit"), r.get("frequency"), r.get("basis")) for r in points.values()}) != 1:
-        return ""
-    current = float(latest["value"])
-    frequency = latest.get("frequency")
-    comparisons = [("previous observation", dates[-2])]
-    if frequency in {"M", "Q", "A"}:
-        y, m = dates[-1].year, dates[-1].month
-        for label, months in (("3 months", 3), ("year", 12)):
-            index = y * 12 + m - 1 - months
-            year, month = index // 12, index % 12 + 1
-            previous = date(year, month, min(dates[-1].day, monthrange(year, month)[1]))
-            if previous in points:
-                comparisons.append((label, previous))
-    changes = []
-    for label, previous in comparisons:
-        prior = float(points[previous]["value"])
-        delta = current - prior
-        unit = latest.get("unit", "")
-        unit = (
-            "percentage points"
-            if is_percentage(latest)
-            else unit
-        )
-        change = f"{label} ({points[previous]['observed_at']}): {delta:+.6g} {unit}"
-        if (
-            prior > 0
-            and latest.get("kind", "level") == "level"
-            and not is_percentage(latest)
-        ):
-            change += f" ({delta / prior * 100:+.3f}%)"
-        changes.append(change)
-    return "; ".join(changes)

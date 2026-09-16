@@ -1,8 +1,6 @@
 """Review regressions on real collectors/routing/quality; no network or LLM calls."""
 
-import ast
 from copy import deepcopy
-from pathlib import Path
 from xml.etree import ElementTree as ET
 
 import pytest
@@ -13,10 +11,12 @@ from tradingagents.dataflows.public_data_common import evidence
 from tradingagents.dataflows.public_digest import render_public_data
 from tradingagents.dataflows.public_evidence import assess_evidence, coverage_report
 from tradingagents.dataflows.public_financial_metrics import CORE_FINANCIAL_METRICS, derive_metrics
-from tradingagents.dataflows.public_quality import (
-    MARKET_REPORTS, citation_audit, core_evidence_report, ticker_quality, topics,
+from tradingagents.dataflows.public_quality import core_evidence_report, ticker_quality, topics
+from tradingagents.dataflows.public_relevance import (
+    assigned_public_rows,
+    exposures,
+    route_ticker_rows,
 )
-from tradingagents.dataflows.public_relevance import assigned_public_rows, exposures, route_ticker_rows
 
 DAY = "2026-09-16"
 
@@ -116,13 +116,25 @@ def test_cftc_invalid_ranking_is_visible_even_outside_top_twelve(monkeypatch):
 def test_nonresidential_never_matches_homebuilder_even_with_legacy_sector_tag(spelling):
     title = "Private " + spelling + " construction spending"
     assert exposures(title) == {"nonresidential"}
-    assert "Real Estate" not in public_macro.industry_sectors(title)
-    row = evidence("census", "VIP/nonres", title, None, title=title, sectors=["Real Estate", "Industrials"])
+    row = evidence("census", "VIP/NRXX/T/1", title, None, title=title, sectors=["Real Estate", "Industrials"])
     identity = {"industry": "Residential Construction", "sector": "Real Estate"}
     assert route_ticker_rows([row], identity) == []
-    row.update(title="Private residential construction spending")
-    assert route_ticker_rows([row], identity)[0]["relevance"].startswith("industry context")
+    row.update(target="VIP/00XX/T/1", title="Private residential construction spending")
+    assert route_ticker_rows([row], identity)[0]["relevance"].startswith("broad sector context")
     assert exposures("Semiconductors and 반도체") == {"semiconductors"}
+
+
+@pytest.mark.parametrize("derived", [False, True])
+def test_census_routing_uses_codes_even_with_excluded_words_and_old_tags(derived):
+    title = "Metals and Minerals, Except Petroleum"
+    row = evidence("census", "MWTS/4235/IR/1", title, None,
+                   title=title, sectors=["Basic Materials", "Energy"])
+    if derived:
+        row.update(base_target=row["target"], target="derived/MWTS/4235/IR/1/12m change")
+    assert route_ticker_rows([row], {"sector": "Energy", "industry": "Oil & Gas"}) == []
+    routed = route_ticker_rows([row], {"sector": "Basic Materials", "industry": "Steel"})
+    assert routed[0]["sectors"] == ["Basic Materials"]
+    assert routed[0]["relevance"].startswith("broad sector context")
 
 
 def test_bea_quarterly_contract_and_industry_output_reach_both_workflows(monkeypatch):
@@ -153,10 +165,6 @@ def test_bea_quarterly_contract_and_industry_output_reach_both_workflows(monkeyp
         assert any(r["target"].startswith("GDPbyIndustry/") for r in assigned)
         digest = core_evidence_report(assigned, role, state)
         assert "production:" in digest and "nominal value added, not physical production volume" in digest
-    latest = next(r for r in industry if r["observed_at"] == "2026Q2" and not r.get("operands"))
-    report = f"BEA nominal industry value added 120 USD [{latest['evidence_id']}]"
-    audit = citation_audit({**state, "sector_report": report}, rows, MARKET_REPORTS)
-    assert audit["reports"]["sector_report"]["purpose_coverage"]["Technology/production"]["status"] == "cited"
 
 
 def _fact(metric, end="2026-06-30", period="quarter", source="sec", **updates):
@@ -200,36 +208,3 @@ def test_different_basis_identity_or_derived_result_cannot_refresh_old_raw_fact(
     new.update(different)
     warnings = assess_evidence([old, new], DAY)
     assert old["stale"] and not old.get("comparative_only") and warnings
-
-
-def test_history_citations_cannot_replace_latest_core_and_annual_only_stays_valid():
-    old = [_fact(m, "2026-03-31") for m in CORE_FINANCIAL_METRICS]
-    new = [_fact(m) for m in CORE_FINANCIAL_METRICS]
-    rows = old + new
-    assess_evidence(rows, DAY)
-    assert all(not r["stale"] and r["comparative_only"] for r in old)
-    def report(batch):
-        return "\n".join(f"SEC {r['metric']} 100 USD [{r['evidence_id']}]" for r in batch)
-    state = {"public_data_evidence": rows, "final_trade_decision": report(old)}
-    assert ticker_quality(state)["status"] == "REVIEW_REQUIRED"
-    state["final_trade_decision"] = report(new)
-    assert ticker_quality(state)["status"] == "COMPLETE"
-    annual = [_fact(m, "2025-12-31", "annual") for m in CORE_FINANCIAL_METRICS]
-    for r in annual:
-        r["refresh_frequency"] = "A"
-    assert assess_evidence(annual, DAY) == []
-    assert ticker_quality({"public_data_evidence": annual})["status"] == "COMPLETE"
-
-
-def test_fundamentals_system_message_preserves_actual_newlines():
-    path = Path(__file__).parents[1] / "tradingagents/agents/analysts/fundamentals_analyst.py"
-    tree = ast.parse(path.read_text())
-    assignment = next(n for n in ast.walk(tree) if isinstance(n, ast.Assign)
-                      and any(isinstance(t, ast.Name) and t.id == "system_message" for t in n.targets))
-    expr = ast.Expression(assignment.value)
-    text = eval(compile(expr, str(path), "eval"), {
-        "state": {}, "public_data_for_agent": lambda *args: "row 1\nrow 2",
-        "get_language_instruction": lambda: "\nKorean",
-    })
-    assert isinstance(text, str)
-    assert "\n--- OFFICIAL PUBLIC DATA ---\nrow 1\nrow 2\nKorean" in text

@@ -10,9 +10,8 @@ Centralising it here avoids drift between those call sites.
 
 ``extract_rating`` returns ``None`` when no rating can be found, so the graph can
 surface an explicit ``REVIEW`` signal instead of a fabricated ``Hold`` (#1170).
-An explicit REVIEW_REQUIRED analysis status withholds the directional signal.
-``parse_rating`` preserves this as REVIEW in the memory log; other unparseable
-text retains its legacy silent default.
+``parse_rating`` accepts a separate analysis status to withhold the signal when
+issuer evidence is insufficient; prose formatting does not control that status.
 """
 
 from __future__ import annotations
@@ -32,7 +31,6 @@ RATINGS_5_TIER: tuple[str, ...] = (
 RATING_REVIEW = "REVIEW"
 
 _RATING_SET = {r.lower() for r in RATINGS_5_TIER}
-_REVIEW_STATUS_RE = re.compile(r"^\s*\*{0,2}Analysis status\*{0,2}:\s*REVIEW_REQUIRED\b", re.I | re.M)
 
 # Matches "Rating: X" / "rating - X" / "Rating: **X**" — tolerates markdown
 # bold wrappers and either a colon or hyphen separator.
@@ -45,7 +43,7 @@ _RATING_WORD_RE = re.compile(
 
 
 def extract_rating(text: str) -> str | None:
-    """Extract a 5-tier rating, or ``None`` when absent or withheld for review.
+    """Extract a 5-tier rating, or ``None`` when absent.
 
     Two-pass strategy on the NFKC-normalized text (so fullwidth punctuation like
     ``Rating：Overweight`` is matched the same as ASCII):
@@ -55,8 +53,6 @@ def extract_rating(text: str) -> str | None:
     if not text:
         return None
     norm = unicodedata.normalize("NFKC", text)
-    if _REVIEW_STATUS_RE.search(norm):
-        return None
 
     for line in norm.splitlines():
         m = _RATING_LABEL_RE.search(line)
@@ -70,15 +66,15 @@ def extract_rating(text: str) -> str | None:
     return None
 
 
-def parse_rating(text: str, default: str = "Hold") -> str:
-    """Extract a rating, preserving explicit REVIEW before the legacy default.
+def parse_rating(text: str, default: str = "Hold", *, analysis_status: str | None = None) -> str:
+    """Extract a rating, honoring structured review status before the default.
 
     Legacy convenience wrapper: it always returns a rating string, so an
     unparseable decision silently becomes ``default`` (``Hold``). Callers that
     must distinguish "no rating" from a real Hold should use
     :func:`extract_rating` (or the graph's REVIEW-surfacing signal) instead.
     """
-    if text and _REVIEW_STATUS_RE.search(unicodedata.normalize("NFKC", text)):
+    if analysis_status == "REVIEW_REQUIRED":
         return RATING_REVIEW
     rating = extract_rating(text)
     return rating if rating is not None else default

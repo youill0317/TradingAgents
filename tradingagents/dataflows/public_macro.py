@@ -11,7 +11,8 @@ import zipfile
 from datetime import date, datetime, timedelta
 
 from .public_data_common import _request, collect_parts, numeric_rows, request_json, request_text
-from .public_industry import matches_industry
+from .public_evidence import require_series
+from .public_industry import census_sectors
 
 # Existing FRED transport supports arbitrary IDs and ALFRED vintages. These are
 # additional mandatory evidence when fred is selected, rather than LLM guesses.
@@ -96,7 +97,7 @@ def collect_ofr(trade_date):
         )
         if not data or not set(columns).issubset(data[0]):
             raise ValueError("OFR FSI schema changed")
-        return [
+        rows = [
             row
             for col in columns
             for row in numeric_rows(
@@ -111,6 +112,7 @@ def collect_ofr(trade_date):
                 note="FSI is published with a two-business-day lag; revisions are possible.",
             )
         ]
+        return require_series("ofr", rows, columns, url)
 
     def repo():
         endpoint = "https://data.financialresearch.gov/v1/series/timeseries"
@@ -222,33 +224,6 @@ CENSUS_UNITS = {
 }
 
 
-def industry_sectors(label):
-    """Conservative exposure tags; ambiguous aggregate totals stay macro-only."""
-    label = label.casefold()
-    terms = {
-        "Technology": ("computer", "semiconductor", "electronic", "software"),
-        "Industrials": ("machinery", "aircraft", "transportation", "construction", "industrial"),
-        "Consumer Cyclical": (
-            "motor vehicle",
-            "automobile",
-            "furniture",
-            "clothing",
-            "apparel",
-            "department store",
-            "restaurant",
-        ),
-        "Consumer Defensive": ("food", "beverage", "grocery", "tobacco"),
-        "Healthcare": ("health", "hospital", "pharma", "medical"),
-        "Basic Materials": ("metal", "chemical", "paper", "wood", "mining"),
-        "Energy": ("petroleum", "coal", "oil and gas", "gasoline"),
-        "Utilities": ("electric power", "water supply", "sewage"),
-        "Real Estate": ("residential", "housing", "real estate"),
-        "Financial Services": ("finance", "insurance"),
-        "Communication Services": ("telecommunication", "broadcast", "motion picture"),
-    }
-    return [sector for sector, words in terms.items() if matches_industry(label, words)]
-
-
 def census_bulk_rows(text, program, trade_date, url):
     """Read the provider's dictionaries before decoding cells in its bulk CSV."""
     tables = {}
@@ -295,9 +270,7 @@ def census_bulk_rows(text, program, trade_date, url):
             basis = "seasonally adjusted annual rate"
             unit += " per year (annualized)"
         target = f"{program}/{category['cat_code']}/{metric['dt_code']}/{row['is_adj']}"
-        sectors = industry_sectors(category["cat_desc"])
-        if program == "RESCONST":
-            sectors = ["Real Estate", "Industrials"]
+        sectors = census_sectors(program, category["cat_code"])
         result.extend(
             numeric_rows(
                 "census",
@@ -337,6 +310,81 @@ def collect_census(trade_date):
         return census_bulk_rows(text, name, trade_date, url)
 
     return collect_parts("census", [(k, lambda key=k: program(key)) for k in CENSUS_PROGRAMS])
+
+
+# Published rows: https://apps.bea.gov/scb/issues/2020/01-january/pdf/0120-selected-nipa-tables.pdf
+# Industry codes: https://www.bea.gov/sites/default/files/2023-10/BEA-Industry-and-Commodity-Codes-and-NAICS-Concordance.xlsx
+_BEA_NIPA_SECTORS = {
+    "4": ("Consumer Cyclical",),
+    "5": ("Consumer Cyclical",),
+    "6": ("Consumer Cyclical",),
+    "9": ("Consumer Defensive",),
+    "10": ("Consumer Cyclical",),
+    "11": ("Energy",),
+    "16": ("Healthcare",),
+    "17": ("Industrials",),
+    "18": ("Consumer Cyclical",),
+    "19": ("Consumer Cyclical",),
+    "20": ("Financial Services",),
+}
+_BEA_INDUSTRY_SECTORS = {
+    "211": ("Energy",),
+    "22": ("Utilities",),
+    "23": ("Industrials",),
+    "311FT": ("Consumer Defensive",),
+    "315AL": ("Consumer Cyclical",),
+    "321": ("Basic Materials",),
+    "322": ("Basic Materials",),
+    "324": ("Energy",),
+    "326": ("Basic Materials",),
+    "327": ("Basic Materials",),
+    "331": ("Basic Materials",),
+    "332": ("Industrials",),
+    "333": ("Industrials",),
+    "334": ("Technology",),
+    "3361MV": ("Consumer Cyclical",),
+    "3364OT": ("Industrials",),
+    "337": ("Consumer Cyclical",),
+    "441": ("Consumer Cyclical",),
+    "445": ("Consumer Defensive",),
+    "481": ("Industrials",),
+    "482": ("Industrials",),
+    "483": ("Industrials",),
+    "484": ("Industrials",),
+    "485": ("Industrials",),
+    "486": ("Energy",),
+    "487OS": ("Industrials",),
+    "493": ("Industrials",),
+    "512": ("Communication Services",),
+    "513": ("Communication Services",),
+    "521CI": ("Financial Services",),
+    "523": ("Financial Services",),
+    "524": ("Financial Services",),
+    "525": ("Financial Services",),
+    "5415": ("Technology",),
+    "561": ("Industrials",),
+    "562": ("Industrials",),
+    "621": ("Healthcare",),
+    "622": ("Healthcare",),
+    "623": ("Healthcare",),
+    "624": ("Healthcare",),
+    "711AS": ("Consumer Cyclical",),
+    "713": ("Consumer Cyclical",),
+    "72": ("Consumer Cyclical",),
+    "721": ("Consumer Cyclical",),
+    "722": ("Consumer Cyclical",),
+    "HS": ("Real Estate",),
+    "ORE": ("Real Estate",),
+}
+
+
+def bea_sectors(dataset, table, item):
+    """Return sector context only for exact published BEA table/item codes."""
+    if dataset == "NIPA" and table in {"T20305", "T20306"}:
+        return list(_BEA_NIPA_SECTORS.get(str(item), ()))
+    if dataset == "GDPbyIndustry" and table == "1":
+        return list(_BEA_INDUSTRY_SECTORS.get(str(item), ()))
+    return []
 
 
 def collect_bea(trade_date):
@@ -410,7 +458,11 @@ def collect_bea(trade_date):
                         frequency=frequency,
                         country="US",
                         title=title,
-                        sectors=industry_sectors(title),
+                        sectors=bea_sectors(
+                            dataset,
+                            selector.get("TableName", selector.get("TableID")),
+                            item,
+                        ),
                         kind="level",
                         basis=row.get("Metric_Name", row.get("METRIC_NAME", unit)),
                         dimensions={

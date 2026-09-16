@@ -14,7 +14,7 @@ from tradingagents.dataflows import (
     public_us,
 )
 from tradingagents.dataflows.public_analysis import build_diagnostics
-from tradingagents.dataflows.public_data_common import evidence, series_changes
+from tradingagents.dataflows.public_data_common import evidence
 from tradingagents.dataflows.public_evidence import (
     SnapshotCache,
     assess_evidence,
@@ -61,13 +61,6 @@ def test_ecos_cpi_failure_preserves_policy_and_key_snapshot(monkeypatch):
     assert [r["target"] for r in rows if r["status"] != "success"] == ["consumer_prices"]
     assert "test-secret" not in str(rows)
     assert rows[0]["kind"] == "rate"
-
-
-@pytest.mark.parametrize("unit", ["연%", "연 %", "percent", "%", "Percent per Annum"])
-def test_rates_use_percentage_points_without_relative_change(unit):
-    text = series_changes([obs(value=3, day="2026-09-01", unit=unit),
-                           obs(value=2.75, day="2026-09-02", unit=unit)])
-    assert "-0.25 percentage points" in text and "-8.333%" not in text
 
 
 def test_eia_partial_response_reports_each_missing_series(monkeypatch):
@@ -142,6 +135,29 @@ def test_fsc_fallback_routes_semiconductors_but_not_software():
     assert identity["classification_source"].startswith("FSC")
     # Do not overwrite resolved Yahoo identity or infer one sector for a conglomerate.
     assert resolved_identity({"industry": "Software"}, []) == {"industry": "Software"}
+    unknown = resolved_identity({}, [evidence("fsc", "TEST", {
+        "sicNm": "분류 미상", "enpMainBizNm": "반도체 및 기계 제외",
+    }, None)])
+    assert unknown["industry_groups"] == [] and "sector" not in unknown
+    assert not route_ticker_rows([trade], unknown)
+
+
+def test_provider_classification_survives_titles_and_derived_changes():
+    rows = [obs("bls", "WPSFD4131", value, day, unit="index", frequency="M",
+                sectors=["Industrials", "Consumer Cyclical"], title="PPI less foods and energy")
+            for day, value in (("2026-07", 100), ("2026-08", 110))]
+    derived = build_diagnostics(rows)
+    assert derived
+    assert not route_ticker_rows(rows + derived, {"sector": "Consumer Defensive", "industry": "Packaged Foods"})
+    assert route_ticker_rows(rows + derived, {"sector": "Industrials", "industry": "Machinery"})
+
+    trade = [obs("customs", "HS8542-US/expDlr", value, day, unit="USD", frequency="M",
+                 sectors=["Technology"], hs_code="8542", title="Provider description")
+             for day, value in (("2026-07", 100), ("2026-08", 110))]
+    derived_trade = build_diagnostics(trade)
+    assert derived_trade and all(r["hs_code"] == "8542" for r in derived_trade)
+    assert not route_ticker_rows(derived_trade, {"sector": "Technology", "industry": "Software"})
+    assert route_ticker_rows(derived_trade, {"sector": "Technology", "industry": "Semiconductors"})
 
 
 def test_broad_context_cap_counts_series_not_observations():

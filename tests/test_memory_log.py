@@ -864,12 +864,19 @@ class TestLegacyRemoval:
         with pytest.raises(TypeError):
             create_portfolio_manager(mock_llm, memory=MagicMock())
 
-    def test_full_pipeline_no_regression(self, tmp_path):
+    @pytest.mark.parametrize(("analysis_status", "expected"), [
+        (None, "Buy"),
+        ("REVIEW_REQUIRED", "REVIEW"),
+    ])
+    def test_full_pipeline_no_regression(self, tmp_path, analysis_status, expected):
         """propagate() completes and stores the decision after the redesign."""
         import functools
 
+        from tradingagents.graph.signal_processing import SignalProcessor
+
         fake_state = {
             "final_trade_decision": "Rating: Buy\nBuy NVDA.",
+            "analysis_status": analysis_status,
             "company_of_interest": "NVDA",
             "trade_date": "2026-01-10",
             "market_report": "",
@@ -897,14 +904,17 @@ class TestLegacyRemoval:
         mock_graph.graph.invoke.return_value = fake_state
         mock_graph.propagator.create_initial_state.return_value = fake_state
         mock_graph.propagator.get_graph_args.return_value = {}
-        mock_graph.signal_processor.process_signal.return_value = "Buy"
+        mock_graph.signal_processor = SignalProcessor()
+        mock_graph.process_signal = functools.partial(TradingAgentsGraph.process_signal, mock_graph)
         # Bind the real _run_graph so propagate's call to self._run_graph executes
         # the actual write path instead of the auto-MagicMock.
         mock_graph._run_graph = functools.partial(
             TradingAgentsGraph._run_graph, mock_graph
         )
-        TradingAgentsGraph.propagate(mock_graph, "NVDA", "2026-01-10")
+        _, signal = TradingAgentsGraph.propagate(mock_graph, "NVDA", "2026-01-10")
         entries = mock_graph.memory_log.load_entries()
         assert len(entries) == 1
         assert entries[0]["ticker"] == "NVDA"
+        assert entries[0]["rating"] == expected
         assert entries[0]["pending"] is True
+        assert signal == expected

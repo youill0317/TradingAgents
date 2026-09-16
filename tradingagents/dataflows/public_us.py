@@ -3,7 +3,14 @@
 import os
 from datetime import date, timedelta
 
-from .public_data_common import collect_parts, failure, number, numeric_rows, request_json, request_text
+from .public_data_common import (
+    collect_parts,
+    failure,
+    number,
+    numeric_rows,
+    request_json,
+    request_text,
+)
 from .public_evidence import require_series
 
 _EIA_URL = "https://api.eia.gov/v2/petroleum/sum/sndw/data/"

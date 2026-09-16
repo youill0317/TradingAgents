@@ -1,4 +1,4 @@
-"""Boundary regressions from the second official-data review; no live services."""
+"""Essential end-to-end quality and financial-data regressions."""
 
 import io
 import json
@@ -18,8 +18,7 @@ from tradingagents.agents.utils.public_data_tools import get_official_evidence
 from tradingagents.agents.utils.rating import parse_rating
 from tradingagents.dataflows import public_financials, public_international, public_korea, public_us
 from tradingagents.dataflows.public_analysis import build_diagnostics
-from tradingagents.dataflows.public_data import public_data_for_agent
-from tradingagents.dataflows.public_data_common import evidence, failure, series_changes
+from tradingagents.dataflows.public_data_common import evidence, failure
 from tradingagents.dataflows.public_evidence import assess_evidence, evidence_id
 from tradingagents.dataflows.public_financial_metrics import CORE_FINANCIAL_METRICS, derive_metrics
 from tradingagents.dataflows.public_quality import (
@@ -79,30 +78,8 @@ def test_annual_derived_refresh_inherits_actual_reporting_cadence(cadence, stale
     assert all(r["stale"] is stale and r["refresh_frequency"] == cadence for r in [*rows, *derived])
 
 
-def test_old_observation_window_and_paging_work_in_both_real_tool_nodes():
-    rows = [obs("nyfed", "SOFR", 3, (date(2025, 1, 1) + timedelta(days=n)).isoformat()) for n in range(300)]
-    state = {"public_data_evidence": rows, "messages": [AIMessage(content="", tool_calls=[{
-        "id": "history", "name": "get_official_evidence", "args": {
-            "source": "nyfed", "query": "SOFR", "start_date": "2025-01-01", "end_date": "2025-01-10",
-            "observations": 5, "observation_offset": 5,
-        },
-    }])]}
-    for cls, role in ((TradingAgentsGraph, "news"), (MarketAnalysisGraph, "macro")):
-        graph = object.__new__(cls)
-        workflow = StateGraph(AgentState)
-        workflow.add_node("lookup", graph._create_tool_nodes()[role])
-        workflow.add_edge(START, "lookup")
-        workflow.add_edge("lookup", END)
-        message = workflow.compile().invoke(state)["messages"][-1]
-        assert message.status == "success"
-        assert all(evidence_id(row) in message.content for row in rows[:5])
-        assert all(evidence_id(row) not in message.content for row in rows[5:])
-        assert "end of history" in message.content
-    assert "Invalid date range" in get_official_evidence.func("nyfed", state, start_date="2025-02-01", end_date="2025-01-01")
-
-
 @pytest.mark.parametrize("source", ["ecos", "kosis"])
-def test_lagged_monthly_release_retains_yoy_despite_intermediate_gaps(monkeypatch, source):
+def test_monthly_collectors_request_enough_history_for_annual_comparisons(monkeypatch, source):
     monkeypatch.setenv("ECOS_API_KEY", "test")
     monkeypatch.setenv("KOSIS_API_KEY", "test")
     periods = [("202507", 100), ("202601", 105), ("202607", 110)]
@@ -117,15 +94,42 @@ def test_lagged_monthly_release_retains_yoy_despite_intermediate_gaps(monkeypatc
             return {"StatisticSearch": {"row": [{"TIME": period, "DATA_VALUE": value, "UNIT_NAME": "2020=100"}
                                                 for period, value in periods if period >= start]}}
         starts.append(params["startPrdDe"])
-        return [{"PRD_DE": period, "C1": "EC", "C1_NM": "반도체", "ITM_ID": "T10", "ITM_NM": "생산", "UNIT_NM": "2020=100", "DT": value}
+        return [{"PRD_DE": period, "C1": "EC", "C1_NM": "반도체", "ITM_ID": "T10",
+                 "ITM_NM": "생산", "UNIT_NM": "2020=100", "DT": value}
                 for period, value in periods if period >= params["startPrdDe"]]
 
     monkeypatch.setattr(public_korea, "request_json", request)
-    rows = public_korea._collect_ecos_history("2026-09-16") if source == "ecos" else public_korea.collect_kosis("2026-09-16")
-    monthly = [r for r in rows if r.get("frequency") == "M"]
+    rows = (public_korea._collect_ecos_history("2026-09-16") if source == "ecos"
+            else public_korea.collect_kosis("2026-09-16"))
     assert starts == ["202309"]
-    assert "year (202507): +10" in series_changes(monthly)
-    assert "3 months" not in series_changes(monthly)
+    assert {row["observed_at"] for row in rows if row.get("frequency") == "M" and row["status"] == "success"} == {
+        "202507", "202601", "202607",
+    }
+
+
+def test_old_observation_window_and_paging_work_in_both_real_tool_nodes():
+    rows = [obs("nyfed", "SOFR", 3, (date(2025, 1, 1) + timedelta(days=n)).isoformat()) for n in range(300)]
+    state = {"public_data_evidence": rows, "messages": [AIMessage(content="", tool_calls=[{
+        "id": "history", "name": "get_official_evidence", "args": {
+            "source": "nyfed", "query": "SOFR", "start_date": "2025-01-01", "end_date": "2025-01-10",
+            "observations": 5, "observation_offset": 5,
+        },
+    }])]}
+    for cls, role in ((TradingAgentsGraph, "news"), (TradingAgentsGraph, "fundamentals"),
+                      (MarketAnalysisGraph, "macro"), (MarketAnalysisGraph, "sector")):
+        graph = object.__new__(cls)
+        workflow = StateGraph(AgentState)
+        workflow.add_node("lookup", graph._create_tool_nodes()[role])
+        workflow.add_edge(START, "lookup")
+        workflow.add_edge("lookup", END)
+        message = workflow.compile().invoke(state)["messages"][-1]
+        assert message.status == "success"
+        assert all(evidence_id(row) in message.content for row in rows[:5])
+        assert all(evidence_id(row) not in message.content for row in rows[5:])
+        assert "end of history" in message.content
+    assert "Invalid date range" in get_official_evidence.func(
+        "nyfed", state, start_date="2025-02-01", end_date="2025-01-01"
+    )
 
 
 @pytest.mark.parametrize("source,missing_count", [("ecb", 2), ("oecd", 13), ("bis", 2), ("eurostat", 4)])
@@ -148,9 +152,9 @@ def test_multiseries_collectors_expose_partial_coverage_and_retain_zero(monkeypa
         monkeypatch.setattr(public_international, "EUROSTAT_QUERIES", {"sts_inpr_m": {}})
         monkeypatch.setattr(public_international, "request_json", lambda *a, **k: payload)
         rows = public_international.collect_eurostat("2026-09-16")
-    assert [r["value"] for r in rows if r["status"] == "success"] == [0]
-    missing = [r for r in rows if r["status"] == "empty"]
-    assert len(missing) == missing_count and all(r["coverage_gap"] for r in missing)
+    assert [row["value"] for row in rows if row["status"] == "success"] == [0]
+    missing = [row for row in rows if row["status"] == "empty"]
+    assert len(missing) == missing_count and all(row["coverage_gap"] for row in missing)
 
 
 def test_dart_reads_periodic_and_material_event_instead_of_latest_minor_filing(monkeypatch):
@@ -206,21 +210,41 @@ def test_industry_changes_require_exact_period_basis_and_match_nominal_real():
     assert not any("nominal-real" in r["target"] for r in build_diagnostics(rows))
 
 
-def test_core_purpose_digest_precedes_large_source_tables_and_flags_uncited_claims():
-    rows = [obs("fred", target, 3, "2026-09-01") for target in ("WALCL", "NFCI", "INDPRO", "T10YIE")]
-    rows += [obs("census", f"bulk/{n}", 100, "2026-08", unit="USD", title="Retail sales " + "detail " * 100) for n in range(40)]
-    digest = public_data_for_agent({"public_data_evidence": rows}, "macro")
-    core = digest.split("Official coverage")[0]
-    assert all(evidence_id(row) in core for row in rows[:4])
-    audit = citation_audit({"macro_report": "FRED activity increased 3%."}, rows, MARKET_REPORTS)
-    assert any("UNCITED_OFFICIAL_NUMBER" in w for w in audit["warnings"])
-    assert audit["reports"]["macro_report"]["uncited_topics"]
-    audit = citation_audit({"macro_report": f"FRED rose 3% [{evidence_id(rows[2])}] [ev-0000000000000000]"}, rows, MARKET_REPORTS)
-    assert any("COMPARISON_ENDPOINTS_UNVERIFIED" in w for w in audit["warnings"])
-    assert any("UNKNOWN_IDS" in w for w in audit["warnings"])
+def test_id_audit_is_independent_of_prose_and_line_layout():
+    row = obs("fred", "WALCL", 100)
+    ref = evidence_id(row)
+    clean = citation_audit({"macro_report": f"FRED assets 100 USD.\n[{ref}]"}, [row], MARKET_REPORTS)
+    assert clean["warnings"] == []
+    assert clean["reports"]["macro_report"]["issues"] == []
+    assert citation_audit({"macro_report": f"FRED assets 100 USD {ref}"}, [row], MARKET_REPORTS)["warnings"] == []
+
+    unknown = citation_audit(
+        {"macro_report": "[ev-0000000000000000]\n100% without source-specific syntax"},
+        [row],
+        MARKET_REPORTS,
+    )
+    issues = unknown["reports"]["macro_report"]["issues"]
+    assert issues[0] == "NO_NUMERIC_CITATIONS"
+    assert issues[1].startswith("UNKNOWN_IDS:")
+
+    truncated = ref[:-1]
+    malformed = citation_audit({"macro_report": f"100 USD [{truncated}]"}, [row], MARKET_REPORTS)
+    assert malformed["reports"]["macro_report"]["issues"] == [
+        "NO_NUMERIC_CITATIONS", f"UNKNOWN_IDS:{truncated}",
+    ]
 
 
-def test_ticker_core_gap_is_separate_from_optional_failures_and_blocks_signal(tmp_path):
+def test_quality_does_not_duplicate_assessed_gap_and_stale_warnings():
+    stale = obs("fred", "WALCL", 100, "2024-01-01")
+    gap = failure("ecb", "MLFR", "Missing policy rate", status="empty")
+    rows = [stale, gap]
+    assessed = assess_evidence(rows, "2026-09-16")
+    quality = ticker_quality({"public_data_evidence": rows, "public_data_warnings": assessed})
+    assert assessed == quality["warnings"]
+    assert not any(w.startswith(("OFFICIAL_GAP:", "OFFICIAL_STALE:")) for w in quality["warnings"])
+
+
+def test_missing_core_metric_requires_structured_review_signal(tmp_path):
     rows = [fact(metric, 100) for metric in CORE_FINANCIAL_METRICS]
     optional = failure("ecb", "MLFR", "Missing optional policy rate", status="empty")
     assert ticker_quality({"public_data_evidence": [*rows, optional]})["status"] == "DEGRADED"
@@ -238,29 +262,63 @@ def test_ticker_core_gap_is_separate_from_optional_failures_and_blocks_signal(tm
     final = workflow.compile().invoke(state)
     assert final["analysis_status"] == "REVIEW_REQUIRED"
     assert final["public_data_quality"]["missing_core_metrics"] == ["operating_cashflow"]
-    assert SignalProcessor().process_signal(final["final_trade_decision"]) == "REVIEW"
-    assert parse_rating(final["final_trade_decision"]) == "REVIEW"
+    assert SignalProcessor().process_signal(final["final_trade_decision"]) == "Buy"
+    assert SignalProcessor().process_signal(
+        final["final_trade_decision"], analysis_status=final["analysis_status"]
+    ) == "REVIEW"
+    assert parse_rating(final["final_trade_decision"], analysis_status=final["analysis_status"]) == "REVIEW"
     report = write_report_tree(final, "TEST", tmp_path)
     assert "REVIEW_REQUIRED" in report.read_text()
     assert json.loads((tmp_path / "analysis_quality.json").read_text()) == final["public_data_quality"]
 
 
-def test_market_citation_audit_affects_status_and_export(monkeypatch, tmp_path):
+def test_market_audit_warning_affects_status_and_export(monkeypatch, tmp_path):
     rows = [obs("fred", "WALCL", 100)]
     final, _ = market_run(monkeypatch, public_data_evidence=rows)
     assert final["scan_status"] == "DEGRADED"
-    assert any("NO_NUMERIC_CITATIONS" in w for w in final["scan_warnings"])
-    assert "market_scan_report" in final["public_data_quality"]["reports"]
+    assert any("NO_NUMERIC_CITATIONS" in warning for warning in final["scan_warnings"])
     write_market_report_tree(final, tmp_path)
     assert json.loads((tmp_path / "validation.json").read_text())["official_data_audit"] == final["public_data_quality"]
 
 
-def test_citation_coverage_uses_the_same_role_and_industry_routing_as_prompts():
+def test_citation_ids_use_the_same_role_and_industry_routing_as_prompts():
     row = fact("revenue", 100)
-    unrelated = obs("customs", "HS8542-US/expDlr", 200, frequency="M", title="Integrated circuits exports", hs_code="8542", sectors=["Technology"])
+    unrelated = obs("customs", "HS8542-US/expDlr", 200, frequency="M",
+                    title="Integrated circuits exports", hs_code="8542", sectors=["Technology"])
     state = {"instrument_identity": {"sector": "Technology", "industry": "Software"},
              "fundamentals_report": f"SEC revenue 100 USD [{evidence_id(row)}]",
              "news_report": "Company filing event."}
     audit = citation_audit(state, [row, unrelated], TICKER_REPORTS)
     assert audit["warnings"] == []
     assert "news_report" not in audit["reports"]
+
+
+@pytest.mark.parametrize("rows", [
+    [evidence("fsc", "identity", {"sicNm": "반도체 제조업"}, None)],
+    [obs("fred", "WALCL", 100)],
+])
+def test_unknown_citations_are_checked_without_role_numeric_evidence(rows):
+    audit = citation_audit(
+        {"fundamentals_report": "[ev-0000000000000000]"}, rows, TICKER_REPORTS,
+    )
+    assert audit["reports"]["fundamentals_report"]["issues"] == [
+        "UNKNOWN_IDS:ev-0000000000000000",
+    ]
+    known = citation_audit(
+        {"fundamentals_report": f"[{evidence_id(rows[0])}]"}, rows, TICKER_REPORTS,
+    )
+    assert known["warnings"] == []
+
+
+def test_sector_citation_scope_does_not_change_after_screening():
+    rows = [obs("census", "M3ADV/34S/VS/1", 100, sectors=["Technology"]),
+            obs("eia", "oil", 50, sectors=["Energy"])]
+    state = {"sector_report": f"[{evidence_id(rows[0])}]"}
+    before = citation_audit(state, rows, MARKET_REPORTS)
+    state["screen_evidence"] = "## Equity screen\n### Energy (1 match)"
+    assert citation_audit(state, rows, MARKET_REPORTS) == before
+    assert before["warnings"] == []
+    state["requested_sectors"] = ["Energy"]
+    assert citation_audit(state, rows, MARKET_REPORTS)["reports"]["sector_report"]["issues"] == [
+        "NO_NUMERIC_CITATIONS",
+    ]

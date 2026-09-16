@@ -263,7 +263,6 @@ class MarketAnalysisGraph:
                     public = collect_public_data(str(trade_date), self.config)
                     initial_state.update(public_data_report=public["report"],
                                          public_data_evidence=public["evidence"])
-                    initial_state["global_evidence"].extend(public["evidence"])
                     initial_state["data_warnings"].extend(public["warnings"])
                     if on_progress:
                         on_progress("Computing market participation and sector trends")

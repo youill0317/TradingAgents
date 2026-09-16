@@ -2,7 +2,8 @@
 
 from collections import defaultdict
 
-from .public_industry import matches_industry
+from .public_industry import census_sectors, matches_industry
+from .public_korea import korean_industry_classification
 
 _MACRO_SOURCES = {
     "ecos",
@@ -42,12 +43,6 @@ _EXPOSURES = {
     "nonresidential": ("nonresidential", "commercial construction"),
     "food": ("food", "grocery", "beverage", "식료", "음료"),
 }
-_SECTORS = {
-    "semiconductors": "Technology", "hardware": "Technology", "software": "Technology",
-    "vehicles": "Consumer Cyclical", "pharmaceuticals": "Healthcare",
-    "petroleum": "Energy", "metals": "Basic Materials", "chemicals": "Basic Materials",
-    "machinery": "Industrials", "food": "Consumer Defensive",
-}
 _HS = {"8542": "semiconductors", "8703": "vehicles", "8507": "batteries",
        "3004": "pharmaceuticals", "2710": "petroleum", "7208": "metals"}
 _INDUSTRY_SOURCES = {"census", "bea", "bls", "eurostat", "customs", "kosis", "eia"}
@@ -62,22 +57,27 @@ def resolved_identity(identity, rows):
     """Use FSC classifications only when an existing industry field is absent.
 
     Multiple business lines do not get coerced to a single inferred sector.
-    An official label is used for routing; it is not a revenue-exposure estimate.
+    Only exact official industry labels classify a business; free-form business
+    descriptions remain descriptive and never imply product exposure.
     """
     result = dict(identity or {})
     if result.get("industry"):
         return result
     labels = []
+    classifications = []
     for row in rows:
         content = row.get("content")
         if row.get("source") != "fsc" or row.get("status") != "success" or not isinstance(content, dict):
             continue
         labels.extend(str(content[key]) for key in ("sicNm", "enpMainBizNm") if content.get(key))
+        if content.get("sicNm"):
+            classifications.append(korean_industry_classification(content["sicNm"]))
     if labels:
         label = " / ".join(dict.fromkeys(labels))
         result["industry"] = label
         result["classification_source"] = "FSC official business description"
-        sectors = {_SECTORS[group] for group in exposures(label) if group in _SECTORS}
+        result["industry_groups"] = sorted({group for _, groups in classifications for group in groups})
+        sectors = {sector for sectors, _ in classifications for sector in sectors}
         if not result.get("sector") and len(sectors) == 1:
             result["sector"] = sectors.pop()
     return result
@@ -92,7 +92,7 @@ def route_ticker_rows(rows, identity, *, legacy_sources=()):
     """
     sector = str(identity.get("sector") or "").casefold()
     industry = str(identity.get("industry") or "")
-    company_groups = exposures(industry)
+    company_groups = set(identity["industry_groups"]) if "industry_groups" in identity else exposures(industry)
     broad = defaultdict(set)
     result = []
     for row in rows:
@@ -105,15 +105,22 @@ def route_ticker_rows(rows, identity, *, legacy_sources=()):
             item["relevance"] = "issuer evidence" if source in {"sec", "dart", "fsc"} else "macro context"
             result.append(item)
             continue
-        title = str(row.get("title") or row.get("target") or "")
-        row_groups = exposures(title)
+        # Provider classifiers own industry meaning. A report title (including
+        # exclusions such as "less foods") must not override that classification.
+        row_groups = set(row.get("industry_groups", []))
+        if source == "census":
+            # Code tags provide broad sector context, not a title-derived claim
+            # of issuer exposure. Recompute for cached rows and derived series too.
+            parts = (row.get("base_target") or row["target"]).split("/")
+            item["sectors"] = census_sectors(parts[0], parts[1]) if len(parts) > 1 else []
+            row_groups = set()
         if str(row.get("hs_code", "")) in _HS:
             row_groups = {_HS[row["hs_code"]]}
         matching = bool(company_groups & row_groups)
         if source == "eia":
             # Fuel costs can transmit to these industries without implying that
             # petroleum inventory describes the company's own balance sheet.
-            matching = matching or sector == "energy" or industry.casefold() in {
+            matching = matching or sector == "energy" or "industry_groups" not in identity and industry.casefold() in {
                 "airlines", "marine shipping", "integrated freight & logistics",
                 "chemicals", "specialty chemicals",
             }
@@ -122,7 +129,7 @@ def route_ticker_rows(rows, identity, *, legacy_sources=()):
             item["routing_reason"] = f"Industry classification: {industry}"
         elif company_groups and row_groups:
             continue
-        elif sector and sector in {s.casefold() for s in row.get("sectors", [])}:
+        elif sector and sector in {s.casefold() for s in item.get("sectors", [])}:
             # Limit SERIES, not the number of historical observations.
             if row["target"] not in broad[source]:
                 if len(broad[source]) >= 2:
@@ -171,7 +178,7 @@ def assigned_public_rows(state, role):
     rows = state.get("public_data_evidence", [])
     industry_sources = set()
     identity = resolved_identity(state.get("instrument_identity", {}), rows)
-    industry = identity.get("industry", "").casefold()
+    industry = identity.get("industry", "").casefold() if "industry_groups" not in identity else ""
     sector = identity.get("sector", "").casefold()
     if state.get("asset_type", "stock") == "stock":
         if sector in {"energy", "utilities"} or industry in {
@@ -182,7 +189,7 @@ def assigned_public_rows(state, role):
             "specialty chemicals",
         }:
             industry_sources.add("eia")
-        if "semiconductor" in industry or industry in {
+        if {"semiconductors", "hardware"}.intersection(identity.get("industry_groups", [])) or "semiconductor" in industry or industry in {
             "electronic components",
             "consumer electronics",
             "computer hardware",
@@ -215,7 +222,8 @@ def assigned_public_rows(state, role):
     }[role]
     assigned = [row for row in rows if row["source"] in sources]
     if role == "sector":
-        focus = {s.casefold() for s in selected_public_sectors(state)}
+        # The authoring/audit scope is fixed by the request, not later screen output.
+        focus = {s.casefold() for s in state.get("requested_sectors") or []}
         if focus:
             # Keep untagged aggregates and explicit collection failures visible;
             # don't inject successful detailed observations for other sectors.

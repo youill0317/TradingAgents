@@ -19,6 +19,23 @@ ECOS_URL = "https://ecos.bok.or.kr/api/StatisticSearch"
 CUSTOMS_URL = "https://apis.data.go.kr/1220000/nitemtrade/getNitemtradeList"
 KOSIS_URL = "https://kosis.kr/openapi/Param/statisticsParameterData.do"
 KOSIS_ITEMS = ("T10", "T11", "T12")
+# Verified from the public DT_1F02011 statHtmlContent metadata on 2026-09-16:
+# https://kosis.kr/statHtml/statHtml.do?orgId=101&tblId=DT_1F02011
+# C1 is this table's "기타분류별" hierarchy, not a reusable KSIC code.
+_KOSIS_INDUSTRIES = {
+    ("DT_1F02011", "3"): ("사무회계·통신기기·반도체(C26A, C263, C264)", ("Technology",), ("semiconductors",)),
+    ("DT_1F02011", "3C"): ("사무회계·통신기기·반도체(C26A, C263, C264)", ("Technology",), ("semiconductors",)),
+    ("DT_1F02011", "A"): ("영상음향(C264+C265=C26B)", ("Technology",), ()),
+    ("DT_1F02011", "AC"): ("영상음향(C264+C265=C26B)", ("Technology",), ()),
+    ("DT_1F02011", "E"): ("반도체 및 부품(C261+C262=C26A)", ("Technology",), ("semiconductors",)),
+    ("DT_1F02011", "EC"): ("반도체 및 부품(C261+C262=C26A)", ("Technology",), ("semiconductors",)),
+}
+_KOREAN_INDUSTRY_LABELS = {
+    " ".join(label.split()): (sectors, groups)
+    for label, sectors, groups in _KOSIS_INDUSTRIES.values()
+}
+# Exact official hierarchy label documented by KOSIS for the semiconductor path.
+_KOREAN_INDUSTRY_LABELS["반도체 제조업"] = (("Technology",), ("semiconductors",))
 CUSTOMS_FIELDS = (
     ("expDlr", "exports FOB", "USD"), ("impDlr", "imports CIF", "USD"),
     ("balPayments", "trade balance", "USD"),
@@ -277,13 +294,16 @@ def collect_kosis(trade_date):
         if not params["startPrdDe"] <= period <= end or row.get("ITM_ID") not in KOSIS_ITEMS:
             continue
         value = row.get("DT")
+        _, sectors, industry_groups = _KOSIS_INDUSTRIES.get(
+            ("DT_1F02011", row.get("C1")), (None, (), ())
+        )
         if number(value) is None:
             records.append(failure(
                 "kosis", f"{row.get('C1', 'unknown')}-{row['ITM_ID']}",
                 "Requested item was returned without a numeric value; applicability is unverified, not zero.",
                 status="empty", url=KOSIS_URL, observed_at=period, coverage_gap=True,
                 table_id="DT_1F02011", item_id=row["ITM_ID"], industry_code=row.get("C1"),
-                sectors=korean_industry_sectors(row.get("C1_NM", "")),
+                sectors=list(sectors), industry_groups=list(industry_groups),
             ))
             continue
         records.append(
@@ -305,7 +325,7 @@ def collect_kosis(trade_date):
                 last_changed_at=row.get("LST_CHN_DE"),
                 frequency="M",
                 country="KR",
-                sectors=korean_industry_sectors(row.get("C1_NM", "")),
+                sectors=list(sectors), industry_groups=list(industry_groups),
             )
         )
     # At least one usable observation for each explicitly requested indicator.
@@ -317,14 +337,7 @@ def collect_kosis(trade_date):
     )
 
 
-def korean_industry_sectors(label):
-    mapping = {
-        "Technology": ("반도체", "전자", "컴퓨터", "통신"),
-        "Healthcare": ("의약", "의료"),
-        "Consumer Cyclical": ("자동차", "가구", "의복", "섬유"),
-        "Consumer Defensive": ("식료", "음료", "담배"),
-        "Industrials": ("기계", "전기장비", "운송장비"),
-        "Basic Materials": ("화학", "금속", "철강", "고무", "플라스틱", "목재", "종이"),
-        "Energy": ("석유", "연료"),
-    }
-    return [sector for sector, terms in mapping.items() if any(term in label for term in terms)]
+def korean_industry_classification(label):
+    """Classify an exact verified official label; unknown/free prose stays untagged."""
+    sectors, groups = _KOREAN_INDUSTRY_LABELS.get(" ".join(str(label or "").split()), ((), ()))
+    return list(sectors), list(groups)
