@@ -135,6 +135,34 @@ def route_ticker_rows(rows, identity, *, legacy_sources=()):
     return result
 
 
+_MARKET_SECTORS = (
+    "Technology", "Healthcare", "Financial Services", "Consumer Cyclical",
+    "Consumer Defensive", "Industrials", "Energy", "Utilities", "Real Estate",
+    "Basic Materials", "Communication Services",
+)
+
+
+def selected_public_sectors(state):
+    """Use requested sectors or captured raw screens, never model-authored prose."""
+    canonical = {s.casefold(): s for s in _MARKET_SECTORS}
+    requested = state.get("requested_sectors") or []
+    if requested:
+        return list(dict.fromkeys(canonical[s.casefold()] for s in requested
+                                  if isinstance(s, str) and s.casefold() in canonical))
+    found, in_screen = [], False
+    for line in str(state.get("screen_evidence") or "").splitlines():
+        line = line.strip()
+        if line.startswith("## Equity screen"):
+            in_screen = True
+        elif line.startswith("## "):
+            in_screen = False
+        elif in_screen and line.startswith("### "):
+            name = line[4:].split(" (", 1)[0].strip().casefold()
+            if name in canonical and canonical[name] not in found:
+                found.append(canonical[name])
+    return found
+
+
 def assigned_public_rows(state, role):
     """One routing contract for prompts and citation/coverage checks."""
     rows = state.get("public_data_evidence", [])
@@ -183,6 +211,14 @@ def assigned_public_rows(state, role):
         "market_review": _MACRO_SOURCES | _SECTOR_SOURCES,
     }[role]
     assigned = [row for row in rows if row["source"] in sources]
+    if role == "sector":
+        focus = {s.casefold() for s in selected_public_sectors(state)}
+        if focus:
+            # Keep untagged aggregates and explicit collection failures visible;
+            # don't inject successful detailed observations for other sectors.
+            assigned = [r for r in assigned if r.get("status") != "success"
+                        or not r.get("sectors")
+                        or focus.intersection(s.casefold() for s in r["sectors"])]
     if role in {"fundamentals", "ticker_review"}:
         assigned = route_ticker_rows(assigned, identity, legacy_sources=industry_sources)
     if role == "fundamentals":

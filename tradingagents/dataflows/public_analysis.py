@@ -5,7 +5,7 @@ from collections import defaultdict
 from datetime import date
 
 from .public_data_common import evidence, is_percentage, number, period_date
-from .public_evidence import evidence_id
+from .public_evidence import evidence_id, source_tables
 
 
 def operand(row):
@@ -25,6 +25,8 @@ def calculated(source, target, rows, value, unit, formula, *, kind="level", titl
         value=value, unit=unit, kind=kind, frequency=last.get("frequency"),
         basis=last.get("basis"), title=title or target, sectors=last.get("sectors", []),
         evidence_type="derived_indicator", operands=[operand(r) for r in rows],
+        base_target=last.get("base_target") or last["target"],
+        source_tables=sorted({table for row in rows for table in source_tables(row)}),
         point_in_time=all(r.get("point_in_time", False) for r in rows),
         note="Calculated from aligned observations, not an independent provider release or causal forecast.",
     )

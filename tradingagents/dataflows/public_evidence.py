@@ -41,6 +41,22 @@ def evidence_id(row):
     return "ev-" + hashlib.sha256(payload.encode()).hexdigest()[:16]
 
 
+def source_tables(row):
+    """Original table families, including pre-lineage saved derived observations."""
+    explicit = row.get("source_tables")
+    if isinstance(explicit, (list, tuple)) and explicit:
+        return tuple(sorted({str(table) for table in explicit if table}))
+    target = str(row.get("base_target") or row.get("target", ""))
+    if target.startswith("derived/"):
+        target = target[len("derived/"):]
+    parts = target.split("/")
+    if row.get("source") == "bea":
+        if parts[0] == "nominal-real":
+            return ("NIPA/T20305", "NIPA/T20306")
+        return ("/".join(parts[:2]),)
+    return (str(row.get("table_id") or parts[0]),)
+
+
 def require_series(source, rows, expected, url=None):
     """Retain successes and explicitly represent each missing requested series."""
     found = {row["target"] for row in rows if row.get("status") == "success"
@@ -64,7 +80,9 @@ def require_dimensions(source, rows, expected, url=None):
     result = list(rows)
     good = [r for r in rows if r.get("status") == "success" and number(r.get("value")) is not None]
     for label, dimensions in expected.items():
-        if not any(all(r.get(k) == v for k, v in dimensions.items()) for r in good):
+        explicit_gap = any(r.get("status") != "success" and
+                           all(r.get(k) == v for k, v in dimensions.items()) for r in rows)
+        if not explicit_gap and not any(all(r.get(k) == v for k, v in dimensions.items()) for r in good):
             result.append(failure(
                 source, label, "Requested item returned no usable observations; applicability is unverified.",
                 status="empty", url=url, coverage_gap=True, **dimensions,
@@ -101,7 +119,8 @@ def assess_evidence(rows, trade_date):
     for row in rows:
         row["evidence_id"] = evidence_id(row)
         if row.get("status") != "success":
-            warnings.append(f"{row['source']}: {row['content']}")
+            detail = f"{row['target']}: " if row.get("coverage_gap") else ""
+            warnings.append(f"{row['source']}: {detail}{row['content']}")
             continue
         if number(row.get("value")) is None:
             continue

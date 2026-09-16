@@ -187,8 +187,10 @@ def collect_eurostat(trade_date):
                     title=payload.get("label"),
                     sectors=EUROSTAT_SECTORS.get(name, ()),
                     basis=dims.get("s_adj"),
-                        dimensions=dims,
-                        table_id=name,
+                    dimensions=dims,
+                    table_id=name,
+                    provider_reported_change=unit_code == "CLV_PCH_PRE" and dims.get("freq") == "Q",
+                    change_basis="quarter_on_quarter" if unit_code == "CLV_PCH_PRE" and dims.get("freq") == "Q" else None,
                     provider_updated_at=payload.get("updated"),
                     kind="rate" if "PC" in unit_code else "level",
                 )

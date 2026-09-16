@@ -21,7 +21,25 @@ IFRS_METRICS = {
 }
 _FLOW_METRICS = {"revenue", "gross_profit", "operating_income", "net_income",
                  "operating_cashflow", "capital_expenditure"}
-_CURRENCIES = {"USD", "KRW", "EUR", "JPY", "GBP"}
+# ISO 4217 monetary units, including historical codes retained in issuer facts.
+# Maintenance reference: SIX ISO 4217 currency lists; metals/test/no-currency
+# units are excluded. Codes identify units, not an FX conversion or live tender list.
+_CURRENCIES = frozenset((
+    "AED AFN ALL AMD ANG AOA ARS AUD AWG AZN BAM BBD BDT BGN BHD BIF BMD BND "
+    "BOB BOV BRL BSD BTN BWP BYN BZD CAD CDF CHE CHF CHW CLF CLP CNY COP COU "
+    "CRC CUC CUP CVE CZK DJF DKK DOP DZD EGP ERN ETB EUR FJD FKP GBP GEL GHS "
+    "GIP GMD GNF GTQ GYD HKD HNL HRK HTG HUF IDR ILS INR IQD IRR ISK JMD JOD "
+    "JPY KES KGS KHR KMF KPW KRW KWD KYD KZT LAK LBP LKR LRD LSL LYD MAD MDL "
+    "MGA MKD MMK MNT MOP MRU MUR MVR MWK MXN MXV MYR MZN NAD NGN NIO NOK NPR "
+    "NZD OMR PAB PEN PGK PHP PKR PLN PYG QAR RON RSD RUB RWF SAR SBD SCR SDG "
+    "SEK SGD SHP SLE SLL SOS SRD SSP STN SVC SYP SZL THB TJS TMT TND TOP TRY "
+    "TTD TWD TZS UAH UGX USD USN UYI UYU UYW UZS VED VES VND VUV WST XAF XCD "
+    "XCG XDR XOF XPF XSU XUA YER ZAR ZMW ZWG ZWL "
+).split())
+_MONETARY_METRICS = _FLOW_METRICS | {
+    "cash", "assets", "liabilities", "equity", "inventory", "receivables",
+    "current_portion_long_term_debt", "long_term_debt_noncurrent",
+}
 CORE_FINANCIAL_METRICS = ("revenue", "net_income", "operating_cashflow", "assets", "liabilities")
 
 
@@ -204,13 +222,30 @@ def _year_changes(rows, ticker):
 
 
 def derive_metrics(rows, ticker):
-    facts = []
+    facts, unit_gaps = [], {}
     for row in rows:
         if row.get("status") != "success" or row.get("evidence_type") != "financial_fact":
             continue
         r = _normal(row)
         value = number(r.get("value"))
-        if r.get("unit") not in _CURRENCIES or value is None or not r.get("period_end") or not r["version_key"]:
+        if r.get("unit") not in _CURRENCIES:
+            if r.get("metric") in _MONETARY_METRICS and value is not None:
+                # Shares/EPS remain raw facts, not failed monetary calculations.
+                message = f"Monetary calculation unavailable: unsupported unit {r.get('unit')!r}; no unit or FX conversion was inferred."
+                row["calculation_gaps"] = list(dict.fromkeys([*row.get("calculation_gaps", []), message]))
+                key = (r["source"], r["target"], str(r.get("unit")))
+                previous = unit_gaps.get(key)
+                if previous is None or str(r.get("observed_at") or "") > str(previous.get("observed_at") or ""):
+                    unit_gaps[key] = failure(
+                        r["source"], r["target"] + "/calculation-unit", message,
+                        status="unsupported", url=r.get("url"), metric=r["metric"],
+                        evidence_type="calculation_gap", coverage_gap=True,
+                        reason_code="UNSUPPORTED_MONETARY_UNIT", unsupported_unit=r.get("unit"),
+                        observed_at=r.get("observed_at"), published_at=r.get("published_at"),
+                        operands=[operand(row)],
+                    )
+            continue
+        if value is None or not r.get("period_end") or not r["version_key"]:
             continue
         r["value"] = value
         facts.append(r)
@@ -261,4 +296,4 @@ def derive_metrics(rows, ticker):
     for row in rows:
         if evidence_id(row) in gaps:
             row["calculation_gaps"] = [gaps[evidence_id(row)]]
-    return [*quarters, *ttm, *ratios, *changes]
+    return [*quarters, *ttm, *ratios, *changes, *unit_gaps.values()]

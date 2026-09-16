@@ -46,7 +46,7 @@ def test_collect_customs_uses_latest_finalized_month_and_keeps_zero(monkeypatch)
     assert len(good) == 5
     assert good[0]["target"] == "HS8542-US/expDlr"
     assert good[0]["value"] == 0
-    assert len(rows) == 28  # Five valid measures; 23 mismatched product/country responses are explicit gaps.
+    assert len(rows) == 5 + 23 * 5  # Missing responses now expose each requested measure.
     assert rows[0]["export_valuation"] == "FOB"
     assert rows[0]["import_valuation"] == "CIF"
     assert {call["cntyCd"] for call in calls} == {"US", "CN", "JP", "VN"}
@@ -72,7 +72,8 @@ def test_collect_kosis_selects_industry_production_shipments_inventory(monkeypat
     assert captured["tblId"] == "DT_1F02011"
     assert captured["objL1"] == "ALL"
     assert captured["itmId"] == "T10 T11 T12"
-    assert [(row["observed_at"], row["value"]) for row in rows] == [("202608", 142.1)]
+    assert [(row["observed_at"], row["value"]) for row in rows if row["status"] == "success"] == [("202608", 142.1)]
+    assert {row["item_id"] for row in rows if row["status"] != "success"} == {"T11", "T12"}
     assert rows[0]["sectors"] == ["Technology"]
 
 

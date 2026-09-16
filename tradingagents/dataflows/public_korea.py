@@ -7,15 +7,23 @@ from datetime import date, datetime, timedelta
 from .public_data_common import (
     collect_parts,
     evidence,
+    failure,
     number,
     numeric_rows,
     request_json,
     request_xml,
 )
+from .public_evidence import require_dimensions, require_series
 
 ECOS_URL = "https://ecos.bok.or.kr/api/StatisticSearch"
 CUSTOMS_URL = "https://apis.data.go.kr/1220000/nitemtrade/getNitemtradeList"
 KOSIS_URL = "https://kosis.kr/openapi/Param/statisticsParameterData.do"
+KOSIS_ITEMS = ("T10", "T11", "T12")
+CUSTOMS_FIELDS = (
+    ("expDlr", "exports FOB", "USD"), ("impDlr", "imports CIF", "USD"),
+    ("balPayments", "trade balance", "USD"),
+    ("expWgt", "export weight", "kg"), ("impWgt", "import weight", "kg"),
+)
 
 
 def _month_offset(day, months):
@@ -163,13 +171,16 @@ def collect_customs(trade_date):
                 reported_country and reported_country != country
             ):
                 continue
-            for field, label, unit in (
-                ("expDlr", "exports FOB", "USD"),
-                ("impDlr", "imports CIF", "USD"),
-                ("balPayments", "trade balance", "USD"),
-                ("expWgt", "export weight", "kg"),
-                ("impWgt", "import weight", "kg"),
-            ):
+            for field, label, unit in CUSTOMS_FIELDS:
+                if number(item.findtext(field)) is None:
+                    result.append(failure(
+                        "customs", f"HS{hs_code}-{country}/{field}",
+                        "Requested trade field is missing or nonnumeric in a returned month; not a reported zero.",
+                        status="empty", url=CUSTOMS_URL, observed_at=period,
+                        coverage_gap=True, field_id=field, hs_code=hs_code, country_code=country,
+                        unit=unit, frequency="M", sectors=CUSTOMS_PRODUCTS[hs_code][1],
+                    ))
+                    continue
                 result.extend(
                     numeric_rows(
                         "customs",
@@ -184,12 +195,17 @@ def collect_customs(trade_date):
                         title=f"Korea {CUSTOMS_PRODUCTS[hs_code][0]} {label} with {country}",
                         kind="flow" if field == "balPayments" else "level",
                         hs_code=hs_code,
+                        field_id=field,
                         country_code=country,
                         export_valuation="FOB",
                         import_valuation="CIF",
                     )
                 )
-        return result
+        return require_series(
+            "customs", result,
+            [f"HS{hs_code}-{country}/{field}" for field, _, _ in CUSTOMS_FIELDS],
+            CUSTOMS_URL,
+        )
 
     return collect_parts(
         "customs",
@@ -213,7 +229,7 @@ def collect_kosis(trade_date):
         "orgId": "101",
         "tblId": "DT_1F02011",
         "objL1": "ALL",
-        "itmId": "T10 T11 T12",
+        "itmId": " ".join(KOSIS_ITEMS),
         "prdSe": "M",
         # Publication lag must not remove the latest observation's YoY endpoint.
         "startPrdDe": _month_offset(day, -36).strftime("%Y%m"),
@@ -227,10 +243,17 @@ def collect_kosis(trade_date):
     records = []
     for row in payload:
         period = row.get("PRD_DE", "")
-        if not period or period > end:
+        if not params["startPrdDe"] <= period <= end or row.get("ITM_ID") not in KOSIS_ITEMS:
             continue
         value = row.get("DT")
         if number(value) is None:
+            records.append(failure(
+                "kosis", f"{row.get('C1', 'unknown')}-{row['ITM_ID']}",
+                "Requested item was returned without a numeric value; applicability is unverified, not zero.",
+                status="empty", url=KOSIS_URL, observed_at=period, coverage_gap=True,
+                table_id="DT_1F02011", item_id=row["ITM_ID"], industry_code=row.get("C1"),
+                sectors=korean_industry_sectors(row.get("C1_NM", "")),
+            ))
             continue
         records.append(
             evidence(
@@ -254,7 +277,13 @@ def collect_kosis(trade_date):
                 sectors=korean_industry_sectors(row.get("C1_NM", "")),
             )
         )
-    return records
+    # At least one usable observation for each explicitly requested indicator.
+    # Do not assume all industry/item combinations are structurally available.
+    return require_dimensions(
+        "kosis", records,
+        {f"DT_1F02011/coverage/{item}": {"table_id": "DT_1F02011", "item_id": item}
+         for item in KOSIS_ITEMS}, KOSIS_URL,
+    )
 
 
 def korean_industry_sectors(label):
