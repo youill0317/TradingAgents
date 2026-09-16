@@ -11,6 +11,7 @@ import zipfile
 from datetime import date, datetime, timedelta
 
 from .public_data_common import _request, collect_parts, numeric_rows, request_json, request_text
+from .public_industry import matches_industry
 
 # Existing FRED transport supports arbitrary IDs and ALFRED vintages. These are
 # additional mandatory evidence when fred is selected, rather than LLM guesses.
@@ -245,7 +246,7 @@ def industry_sectors(label):
         "Financial Services": ("finance", "insurance"),
         "Communication Services": ("telecommunication", "broadcast", "motion picture"),
     }
-    return [sector for sector, words in terms.items() if any(word in label for word in words)]
+    return [sector for sector, words in terms.items() if matches_industry(label, words)]
 
 
 def census_bulk_rows(text, program, trade_date, url):
@@ -351,7 +352,8 @@ def collect_bea(trade_date):
                 "method": "GetData",
                 "datasetname": dataset,
                 "Year": ",".join(str(y) for y in range(year - 2, year + 1)),
-                "Frequency": "Q" if dataset == "GDPbyIndustry" else "M,Q",
+                # T20305/T20306 are quarterly/annual tables, not monthly PCE.
+                "Frequency": "Q",
                 "ResultFormat": "JSON",
                 **selector,
             },
@@ -423,7 +425,10 @@ def collect_bea(trade_date):
                             if k in row
                         },
                         provider_notes=entry.get("Notes", []),
-                        note="Aggregate industry/consumption accounts, not issuer revenue. Quarterly/monthly levels are seasonally adjusted annual rates. Chain-dollar components are not additive.",
+                        note=("Aggregate accounts, not issuer revenue. Quarterly levels are seasonally adjusted annual rates. "
+                              + ("Nominal industry value added is not physical production volume."
+                                 if dataset == "GDPbyIndustry" else
+                                 "Chain-dollar components are not additive.")),
                     )
                 )
         return rows

@@ -2,6 +2,8 @@
 
 from collections import defaultdict
 
+from .public_industry import matches_industry
+
 _MACRO_SOURCES = {
     "ecos",
     "nyfed",
@@ -37,6 +39,7 @@ _EXPOSURES = {
     "chemicals": ("chemical", "화학"),
     "machinery": ("machinery", "industrial machinery", "기계"),
     "housing": ("residential", "homebuild", "housing", "주택"),
+    "nonresidential": ("nonresidential", "commercial construction"),
     "food": ("food", "grocery", "beverage", "식료", "음료"),
 }
 _SECTORS = {
@@ -52,7 +55,7 @@ _INDUSTRY_SOURCES = {"census", "bea", "bls", "eurostat", "customs", "kosis", "ei
 
 def exposures(text):
     text = str(text or "").casefold()
-    return {group for group, terms in _EXPOSURES.items() if any(term in text for term in terms)}
+    return {group for group, terms in _EXPOSURES.items() if matches_industry(text, terms)}
 
 
 def resolved_identity(identity, rows):

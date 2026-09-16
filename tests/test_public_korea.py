@@ -46,11 +46,17 @@ def test_collect_customs_uses_latest_finalized_month_and_keeps_zero(monkeypatch)
     assert len(good) == 5
     assert good[0]["target"] == "HS8542-US/expDlr"
     assert good[0]["value"] == 0
-    assert len(rows) == 5 + 23 * 5  # Missing responses now expose each requested measure.
-    assert rows[0]["export_valuation"] == "FOB"
-    assert rows[0]["import_valuation"] == "CIF"
+    gaps = {r["target"] for r in rows if r["status"] == "empty"}
+    assert "HS8542-US/coverage/202507" in gaps
+    assert "HS8542-CN/expDlr" in gaps
+    assert all(r.get("observed_at", "202607") <= "202607" for r in rows if r.get("observed_at"))
+    assert good[0]["export_valuation"] == "FOB"
+    assert good[0]["import_valuation"] == "CIF"
     assert {call["cntyCd"] for call in calls} == {"US", "CN", "JP", "VN"}
-    assert all(call["endYymm"] == "202607" for call in calls)
+    assert len(calls) == 48
+    assert {(call["strtYymm"], call["endYymm"]) for call in calls} == {
+        ("202507", "202606"), ("202607", "202607"),
+    }
 
 
 def test_collect_kosis_selects_industry_production_shipments_inventory(monkeypatch):

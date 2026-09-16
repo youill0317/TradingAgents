@@ -98,6 +98,8 @@ def render_public_data(rows, max_chars=0):
                     + (f"  Relevance: {row['relevance']}. " if row.get("relevance") else "")
                     + (f"  Basis: {row['basis']}. " if row.get("basis") else "")
                     + (
+                        "Historical comparison; newer same-metric evidence is available. "
+                        if row.get("comparative_only") else
                         "STALE relative to run date; verify availability. "
                         if row.get("stale")
                         else ""

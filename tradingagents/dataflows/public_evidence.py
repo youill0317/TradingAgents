@@ -111,6 +111,36 @@ def refresh_frequency(row):
     return None
 
 
+def _mark_comparative_financials(rows):
+    """Older bases are history only when a newer, fresh same-metric result exists.
+
+    Do not widen the quarterly freshness threshold. A missing recent quarter,
+    different issuer/scope/currency, or newer ratio cannot refresh a raw fact.
+    Keep the original stale flag so old comparisons cannot satisfy current core
+    citations; the display/coverage label distinguishes history from a gap.
+    """
+    groups = defaultdict(list)
+    for row in rows:
+        row.pop("comparative_only", None)
+        if (row.get("source") not in {"sec", "dart"}
+                or row.get("evidence_type") not in {"financial_fact", "derived_financial"}
+                or row.get("status") != "success" or not row.get("metric")
+                or number(row.get("value")) is None or not period_date(row.get("observed_at"))):
+            continue
+        basis_scope = str(row.get("basis") or "").split("/", 1)[0]
+        scope = row.get("reporting_scope") or (basis_scope if basis_scope in {"CFS", "OFS"} else "issuer")
+        key = (row["source"], row["target"].split("/", 1)[0], row["metric"], row.get("unit"),
+               scope, row.get("accounting_standard"), row["evidence_type"])
+        groups[key].append(row)
+    for batch in groups.values():
+        newest = max(period_date(r["observed_at"]) for r in batch)
+        if not any(period_date(r["observed_at"]) == newest and r.get("freshness") == "current" for r in batch):
+            continue
+        for row in batch:
+            if period_date(row["observed_at"]) < newest:
+                row.update(comparative_only=True, freshness="historical_comparison")
+
+
 def assess_evidence(rows, trade_date):
     """Assign stable IDs and warn on latest-series quality, not old history rows."""
     day = date.fromisoformat(str(trade_date))
@@ -144,7 +174,10 @@ def assess_evidence(rows, trade_date):
         key = (row["source"], row["target"], row.get("unit"), row.get("basis"))
         if key not in latest or observed > period_date(latest[key]["observed_at"]):
             latest[key] = row
+    _mark_comparative_financials(rows)
     for row in latest.values():
+        if row.get("comparative_only"):
+            continue
         if row.get("stale"):
             warnings.append(f"PUBLIC_STALE:{row['source']}:{row['target']}:{row['observed_at']}")
         elif row.get("freshness") == "unknown":
@@ -166,7 +199,7 @@ def coverage_report(rows):
             if key not in latest or (period_date(row.get("observed_at")) or date.min) > (period_date(latest[key].get("observed_at")) or date.min):
                 latest[key] = row
     for row in latest.values():
-        if row.get("stale"):
+        if row.get("stale") and not row.get("comparative_only"):
             sources[row["source"]]["stale"].add(row["target"])
     return "Official coverage (a successful source does not imply all requested series succeeded):\n" + "\n".join(
         f"- {source}: {len(group['series'])} numerical series; "

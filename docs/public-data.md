@@ -23,12 +23,12 @@ source links. Most macro series retain about two years; exact bounds are below.
 | `cftc` | Asset-manager net, leveraged-money net and open interest in financial futures | 100 days, up to 3,000 provider rows; 12 largest markets by latest open interest | None |
 | `ecb` | Deposit facility, main refinancing and marginal lending rates | Daily, 800 days | None |
 | `ecos` | Policy-rate and CPI histories plus the 100 key-statistics snapshot | Rate 45 days, CPI from 36 months before run month; latest snapshot for other indicators | `ECOS_API_KEY` |
-| `customs` | Korean exports/imports by value and weight, and balance: HS 8542, 8703, 8507, 3004, 2710, 7208; partners US, China, Japan, Vietnam | 13 months with conservative monthly cutoff; 24 independent product/partner requests | `DATA_GO_KR_API_KEY` |
+| `customs` | Korean exports/imports by value and weight, and balance: HS 8542, 8703, 8507, 3004, 2710, 7208; partners US, China, Japan, Vietnam | 13 months with conservative monthly cutoff; 24 product/partner combinations, each split into 12-month and 1-month requests (48 calls) | `DATA_GO_KR_API_KEY` |
 | `kosis` | Industry production, shipment and inventory indexes from DT_1F02011, all industry categories | From 36 months before run month, allowing for publication lag; item IDs T10/T11/T12 | `KOSIS_API_KEY` |
 | `fred` | Fed assets/reserves/reverse repos; C&I lending standards and demand; NFCI/STLFSI4; nominal/real yields, breakeven, industrial production, capacity, bank business loans, broad dollar | 16 series, 800 days, metadata and observations pinned to ALFRED vintage | `FRED_API_KEY` |
 | `ofr` | Financial Stress Index, five risk components, three regional contributions, term DVP repo rate | 400 days | None |
 | `census` | Durable goods orders/shipments/inventories; retail and wholesale sales/inventories/ratios; residential construction; construction spending | M3ADV/MRTS/MWTS/RESCONST/VIP official bulk files, last 800 days, national series | None; uses official bulk downloads |
-| `bea` | Nominal and real consumption by product, industry value added | NIPA T20305/T20306 and GDPbyIndustry table 1; current and two preceding years | `BEA_API_KEY` |
+| `bea` | Nominal and real consumption by product, industry value added | Quarterly NIPA T20305/T20306 and GDPbyIndustry table 1; current and two preceding years | `BEA_API_KEY` |
 | `bls` | Hourly earnings; manufacturing, construction, retail and health/education employment; job openings, quits rate; final-demand PPI and finished-goods PPI excluding food/energy | Nine monthly series, current and two preceding years, excluding M13 annual averages | Optional `BLS_API_KEY` for expanded quota |
 | `oecd` | Amplitude-adjusted composite leading indicators | 800 days; US, UK, China, Japan, Korea, India, Germany, France, Italy, Spain, Canada, Australia, Brazil, Mexico | None |
 | `eurostat` | Industrial, retail-volume and construction indexes; real GDP quarterly change; unemployment | About 800 days; fixed EA20 composition, Germany, France, Italy, Spain | None |
@@ -57,6 +57,8 @@ issuer filings. Industry assignment uses resolved business classification and
 row-level sector tags. Ambiguous aggregate statistics stay in the market
 workflow. Korean industry data can corroborate a foreign company's sector
 exposure but are never labeled as that company's revenue or inventory.
+Provider sector tags and ticker routing share English word-start/Korean-stem
+matching; nonresidential (including non-residential) construction is not housing.
 
 Technical and social analysts keep their existing price/technical and social
 tools. They do not receive the whole official-data catalog.
@@ -132,7 +134,11 @@ of every claim. A valid ID does not prove that the model interpreted it correctl
   Net flows/positions do not receive misleading percentage changes from negative
   bases. Latest observations older than frequency-specific thresholds are marked
   stale (D:14, W:28, M:100, Q:200, A:550 days); these are heuristics, not release
-  calendar guarantees.
+  calendar guarantees. Older issuer periods are marked `comparative_only` when
+  newer, fresh same-metric evidence exists in the same issuer/scope/currency and
+  accounting standard. They remain available for historical comparisons without
+  degrading collection quality, but cannot substitute for current core citations.
+  Missing latest quarterly facts still require review; thresholds are not widened.
 - SEC/DART ratios require the same period, currency, duration basis, reporting
   scope, accounting standard and compatible accession/version lineage.
   Supported IFRS facts are retained even when US-GAAP tags coexist. Standards
@@ -158,11 +164,18 @@ of every claim. A valid ID does not prove that the model interpreted it correctl
   Adjusted series are preferred when available; unadjusted-only series retain
   their basis. Some construction series are annualized; do not interpret them as
   one month's actual units or dollars. BEA levels preserve scaling, metric names
-  and provider notes; chained-dollar components are not additive.
+  and provider notes; chained-dollar components are not additive. The selected
+  NIPA tables are requested at quarterly frequency, not assumed monthly. BEA
+  GDPbyIndustry table 1 is assigned to the production/output analysis purpose by
+  table ID; its nominal value added is not physical production volume. Derived
+  observations keep the same purpose via their original table lineage.
 - Customs exports are FOB and imports CIF. BIS credit is a stock. TIC explicitly
   separates holdings, net transactions and valuation changes. Japan MOF is a
   designated-investor sample, not all balance-of-payments flows. CFTC positions
-  are dated futures positions, not today's capital flows.
+  are dated futures positions, not today's capital flows. CFTC metrics are parsed
+  independently, retain valid long/short components, and expose missing legs and
+  invalid open-interest ranking inputs. Customs windows preserve partial success,
+  distinguish missing months from zero, and deduplicate identical returned cells.
 - Prompt digests have a weighted per-source text budget so a daily series or large table
   cannot dominate. Census/BEA rotate across table groups; issuer financials receive
   extra space. Omitted counts and failure coverage are visible. Full

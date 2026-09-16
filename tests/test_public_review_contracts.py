@@ -207,13 +207,17 @@ def test_customs_partial_month_keeps_other_fields_and_older_success(monkeypatch)
     </items></response>"""
     monkeypatch.setattr(public_korea, "request_xml", lambda *a, **k: ElementTree.fromstring(xml))
     rows = public_korea.collect_customs(DAY)
-    missing = [r for r in rows if r["status"] != "success"]
+    missing = [r for r in rows if r["status"] != "success" and r.get("field_id")]
     assert len(missing) == 4 and all(r["field_id"] == "expWgt" for r in missing)
     assert all(r["observed_at"] == "202608" for r in missing)
     assert all(r["value"] == 0 for r in rows if r["status"] == "success" and r["field_id"] == "expDlr")
-    assert len(assess_evidence(rows, DAY)) == 4
+    assert len(assess_evidence(rows, DAY)) == 4 + 4 * 11  # Partial fields plus missing historical months.
+    assert len([r for r in rows if r["status"] == "success"]) == 4 * 9
     monkeypatch.setattr(public_korea, "request_xml", lambda *a, **k: ElementTree.fromstring("<r><resultCode>00</resultCode></r>"))
-    assert len(public_korea.collect_customs(DAY)) == 4 * 5
+    empty = public_korea.collect_customs(DAY)
+    assert all(r["status"] == "empty" for r in empty)
+    assert len({r["target"] for r in empty if "/coverage/" not in r["target"]}) == 4 * 5
+    assert len([r for r in empty if "/coverage/" in r["target"]]) == 4 * 13
 
 
 def test_derived_table_lineage_survives_summary_budget_and_legacy_snapshots():

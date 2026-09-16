@@ -3,7 +3,7 @@
 import os
 from datetime import date, timedelta
 
-from .public_data_common import collect_parts, numeric_rows, request_json, request_text
+from .public_data_common import collect_parts, failure, number, numeric_rows, request_json, request_text
 from .public_evidence import require_series
 
 _EIA_URL = "https://api.eia.gov/v2/petroleum/sum/sndw/data/"
@@ -145,47 +145,68 @@ def collect_cftc(trade_date):
         raise ValueError("CFTC returned no usable observations")
 
     observed = max(row["report_date_as_yyyy_mm_dd"][:10] for row in rows)
+    def contracts(raw):
+        value = number(raw)
+        return int(value) if value is not None and value >= 0 and value.is_integer() else None
+
+    latest_rows = [row for row in rows if row["report_date_as_yyyy_mm_dd"][:10] == observed]
     leaders = sorted(
-        [row for row in rows if row["report_date_as_yyyy_mm_dd"][:10] == observed],
-        key=lambda row: int(row.get("open_interest_all") or 0),
+        latest_rows,
+        key=lambda row: contracts(row.get("open_interest_all")) or 0,
         reverse=True,
     )[:12]
     markets = {row["market_and_exchange_names"] for row in leaders}
     rows = [row for row in rows if row.get("market_and_exchange_names") in markets]
+    specs = (
+        ("asset manager net", ("asset_mgr_positions_long", "asset_mgr_positions_short")),
+        ("leveraged money net", ("lev_money_positions_long", "lev_money_positions_short")),
+        ("open interest", ("open_interest_all",)),
+    )
     result = []
+    # Bad ranking input is a coverage gap even when that market fell outside
+    # the bounded top-12 selection. It must not abort or silently bias the scan.
+    for row in latest_rows:
+        if contracts(row.get("open_interest_all")) is None:
+            result.append(failure(
+                "cftc", str(row.get("market_and_exchange_names") or "unknown") + "/selection",
+                "Latest open interest is unavailable; top-market selection may be incomplete.",
+                status="empty", url=_CFTC_URL, observed_at=observed, coverage_gap=True,
+            ))
     for row in rows:
-        try:
-            asset_net = int(row["asset_mgr_positions_long"]) - int(row["asset_mgr_positions_short"])
-            leveraged_net = int(row["lev_money_positions_long"]) - int(
-                row["lev_money_positions_short"]
-            )
-            open_interest = int(row["open_interest_all"])
-        except (KeyError, TypeError, ValueError):
-            continue
         market = row.get("market_and_exchange_names")
-        if market:
-            for metric, value in (
-                ("asset manager net", asset_net),
-                ("leveraged money net", leveraged_net),
-                ("open interest", open_interest),
-            ):
-                result.extend(
-                    numeric_rows(
-                        "cftc",
-                        market + "/" + metric,
-                        [(row["report_date_as_yyyy_mm_dd"][:10], value)],
-                        _CFTC_URL,
-                        trade_date=trade_date,
-                        unit="contracts",
-                        frequency="W",
-                        kind="position",
-                        contract_units=row.get("contract_units"),
-                        note="TFF futures-only positions as of Tuesday; normally released Friday. Positions do not measure current-day flows.",
-                    )
-                )
-    if not result:
-        raise ValueError("CFTC returned no usable observations")
-    return result
+        if not market:
+            continue
+        for metric, fields in specs:
+            components = {field: contracts(row.get(field)) for field in fields}
+            metadata = {
+                "contract_units": row.get("contract_units"),
+                "position_components": components,
+            }
+            # Parse each metric independently; a missing long/short leg cannot
+            # erase another participant's positions or valid open interest.
+            if any(value is None for value in components.values()):
+                result.append(failure(
+                    "cftc", market + "/" + metric,
+                    "Requested position field is missing or invalid; not a reported zero.",
+                    status="empty", url=_CFTC_URL,
+                    observed_at=row["report_date_as_yyyy_mm_dd"][:10],
+                    coverage_gap=True, unit="contracts", frequency="W", **metadata,
+                ))
+                continue
+            values = list(components.values())
+            value = values[0] - values[1] if len(values) == 2 else values[0]
+            result.extend(numeric_rows(
+                "cftc", market + "/" + metric,
+                [(row["report_date_as_yyyy_mm_dd"][:10], value)], _CFTC_URL,
+                trade_date=trade_date, unit="contracts", frequency="W", kind="position",
+                **metadata,
+                note="TFF futures-only positions as of Tuesday; normally released Friday. Positions do not measure current-day flows.",
+            ))
+    return require_series(
+        "cftc", result,
+        [market + "/" + metric for market in sorted(markets) if market for metric, _ in specs],
+        _CFTC_URL,
+    )
 
 
 def collect_treasury(trade_date):

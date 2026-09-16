@@ -145,13 +145,17 @@ def collect_customs(trade_date):
     end_month = _month_offset(day, -1 if day.day >= 15 else -2)
     start_month = _month_offset(end_month, -12)
 
-    def product(country, hs_code):
+    # Thirteen observations are needed for YoY, but each API request may cover
+    # at most one year. Disjoint windows retain both endpoints without duplicates.
+    windows = ((start_month, _month_offset(end_month, -1)), (end_month, end_month))
+
+    def window(country, hs_code, first, last):
         root = request_xml(
             CUSTOMS_URL,
             params={
                 "serviceKey": os.environ["DATA_GO_KR_API_KEY"],
-                "strtYymm": start_month.strftime("%Y%m"),
-                "endYymm": end_month.strftime("%Y%m"),
+                "strtYymm": first.strftime("%Y%m"),
+                "endYymm": last.strftime("%Y%m"),
                 "hsSgn": hs_code,
                 "cntyCd": country,
             },
@@ -164,7 +168,7 @@ def collect_customs(trade_date):
             if not re.fullmatch(r"\d{4}\.\d{2}", raw_period):
                 continue
             period = raw_period.replace(".", "")
-            if not start_month.strftime("%Y%m") <= period <= end_month.strftime("%Y%m"):
+            if not first.strftime("%Y%m") <= period <= last.strftime("%Y%m"):
                 continue
             reported_hs, reported_country = item.findtext("hsCd"), item.findtext("statCd")
             if (reported_hs and not reported_hs.startswith(hs_code)) or (
@@ -201,11 +205,38 @@ def collect_customs(trade_date):
                         import_valuation="CIF",
                     )
                 )
+        # Preserve identical duplicate cells only once; conflicting observations
+        # remain separate so downstream comparison checks can expose ambiguity.
+        unique = {}
+        for row in result:
+            key = (row["target"], row.get("observed_at"), row["status"], row.get("value"))
+            unique.setdefault(key, row)
+        result = list(unique.values())
+        # Each window is checked independently: an older successful window must
+        # not conceal an empty latest-month response.
+        present = {r.get("observed_at") for r in result}
+        for offset in range((last.year - first.year) * 12 + last.month - first.month + 1):
+            period = _month_offset(first, offset).strftime("%Y%m")
+            if period not in present:
+                result.append(failure(
+                    "customs", f"HS{hs_code}-{country}/coverage/{period}",
+                    "Requested month returned no observations; not a reported zero.",
+                    status="empty", url=CUSTOMS_URL, observed_at=period,
+                    coverage_gap=True, hs_code=hs_code, country_code=country,
+                    frequency="M", sectors=CUSTOMS_PRODUCTS[hs_code][1],
+                ))
         return require_series(
             "customs", result,
             [f"HS{hs_code}-{country}/{field}" for field, _, _ in CUSTOMS_FIELDS],
             CUSTOMS_URL,
         )
+
+    def product(country, hs_code):
+        return collect_parts("customs", [
+            (f"HS{hs_code}-{country}/{first:%Y%m}-{last:%Y%m}",
+             lambda first=first, last=last: window(country, hs_code, first, last))
+            for first, last in windows
+        ])
 
     return collect_parts(
         "customs",

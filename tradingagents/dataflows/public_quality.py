@@ -51,6 +51,14 @@ def topics(row):
         if metric in {"assets", "liabilities", "cash", "equity", "inventory", "receivables", "liabilities_to_assets", "long_term_debt_less_cash"}:
             found.add("balance_sheet")
         return found
+    # Table contracts, not words in the industry name, establish analytical
+    # purpose. GDPbyIndustry table 1 is nominal value added, NOT output volume.
+    # Derived observations retain base_target, so the same routing applies.
+    if source == "bea":
+        if target.startswith("GDPbyIndustry/1/"):
+            return {"activity", "production"}
+        if target.startswith(("NIPA/T20305/", "NIPA/T20306/")):
+            return {"activity", "demand"}
     if source in {"nyfed", "treasury", "ecb"} or source == "fred" and target in {"WALCL", "WRESBAL", "RRPONTSYD", "DGS2", "DGS10"} or source == "ecos" and target == "policy_rate":
         found.add("liquidity")
     if source in {"ofr", "bis"} or source == "fred" and target in {"NFCI", "STLFSI4", "DRTSCILM", "DRTSCIS", "DRSDCILM", "BUSLOANS"}:
@@ -103,7 +111,7 @@ def core_evidence_report(rows, role, state=None):
     lines = ["Core official evidence by analysis purpose (availability is not proof of use):"]
     for topic in role_topics(role):
         candidates = sorted(groups[topic], key=lambda r: (
-            bool(r.get("stale")), r["target"] not in _CORE_SERIES and r.get("metric") not in CORE_FINANCIAL_METRICS,
+            bool(r.get("stale") or r.get("comparative_only")), r["target"] not in _CORE_SERIES and r.get("metric") not in CORE_FINANCIAL_METRICS,
             -(period_date(r.get("observed_at")) or date.min).toordinal(),
             r.get("evidence_type") not in {"derived_financial", "derived_indicator"},
             r["source"], r["target"],
@@ -128,6 +136,10 @@ def core_evidence_report(rows, role, state=None):
             f"{r.get('basis') or 'basis unspecified'}; {r.get('freshness', 'unknown')}"
             for r in selected
         ))
+    if role in {"fundamentals", "ticker_review", "sector", "market_review"}:
+        lines.append("The production purpose includes industry output/value added on its native basis. "
+                     "BEA GDPbyIndustry table 1 is nominal value added, not physical production volume; "
+                     "do not infer real volume growth from its current-dollar change.")
     if role in {"sector", "market_review"}:
         lines.append(sector_core_report(rows, state or {}))
     if role in {"fundamentals", "ticker_review"}:
@@ -298,7 +310,8 @@ def citation_audit(state, rows, fields):
         if role == "ticker_review":
             issuer_available = available.intersection(_ISSUER)
             for topic in sorted(issuer_available):
-                if not any(not by_id[ref].get("stale") for ref in cited_by_topic.get(topic, ())):
+                if not any(not by_id[ref].get("stale") and not by_id[ref].get("comparative_only")
+                           for ref in cited_by_topic.get(topic, ())):
                     uncited_core.append(topic)
             if uncited_core:
                 issues.append("ISSUER_PURPOSE_UNVERIFIED:" + ",".join(uncited_core))
@@ -323,13 +336,14 @@ def ticker_quality(state):
         return {"status": "NOT_ASSESSED", "warnings": [], "missing_core_metrics": [], "citation_audit": {}}
     issuer = {r["source"] for r in rows} & {"sec", "dart"}
     fresh = {r.get("metric") for r in latest_series(rows) if r["source"] in issuer
-             and r.get("evidence_type") == "financial_fact" and not r.get("stale")
+             and r.get("evidence_type") == "financial_fact" and not r.get("stale") and not r.get("comparative_only")
              and period_date(r.get("observed_at"))}
     missing = sorted(set(CORE_FINANCIAL_METRICS) - fresh) if issuer else []
     warnings = list(state.get("public_data_warnings", []))
     warnings.extend(f"OFFICIAL_GAP:{r['source']}:{r['target']}:{r['status']}" for r in rows
                     if r.get("status") not in {"success", "not_applicable"})
-    warnings.extend(f"OFFICIAL_STALE:{r['source']}:{r['target']}" for r in latest_series(rows) if r.get("stale"))
+    warnings.extend(f"OFFICIAL_STALE:{r['source']}:{r['target']}" for r in latest_series(rows)
+                    if r.get("stale") and not r.get("comparative_only"))
     warnings.extend(f"ISSUER_CORE_UNAVAILABLE:{metric}" for metric in missing)
     audit = citation_audit(state, rows, TICKER_REPORTS)
     warnings.extend(audit["warnings"])
