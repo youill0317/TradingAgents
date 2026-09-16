@@ -497,7 +497,13 @@ class TradingAgentsGraph:
                 state["trade_date"], self.config,
                 ticker=state["company_of_interest"], asset_type=state.get("asset_type", "stock"),
             )
-            state.update(public_data_report=public["report"], public_data_evidence=public["evidence"])
+            state.update(public_data_report=public["report"], public_data_evidence=public["evidence"],
+                         public_data_warnings=public["warnings"])
+            if public["evidence"]:
+                from tradingagents.dataflows.public_quality import ticker_quality
+
+                quality = ticker_quality(state)
+                state.update(public_data_quality=quality, analysis_status=quality["status"])
         return state
 
     def end_checkpoint(self):
@@ -636,6 +642,10 @@ class TradingAgentsGraph:
             },
             "investment_plan": final_state["investment_plan"],
             "final_trade_decision": final_state["final_trade_decision"],
+            "analysis_status": final_state.get("analysis_status"),
+            "public_data_quality": final_state.get("public_data_quality", {}),
+            "public_data_warnings": final_state.get("public_data_warnings", []),
+            "public_data_evidence": final_state.get("public_data_evidence", []),
         }
 
         # Save to file. Reject ticker values that would escape the

@@ -17,6 +17,14 @@ def write_report_tree(final_state: dict, ticker: str, save_path) -> Path:
     save_path = Path(save_path)
     save_path.mkdir(parents=True, exist_ok=True)
     sections = []
+    if final_state.get("public_data_quality"):
+        from tradingagents.dataflows.public_quality import render_quality
+
+        quality = final_state["public_data_quality"]
+        (save_path / "analysis_quality.json").write_text(
+            json.dumps(quality, ensure_ascii=False, indent=2), encoding="utf-8",
+        )
+        sections.append("## Analysis Quality\n\n" + render_quality(quality))
     if final_state.get("public_data_report"):
         (save_path / "public_data.md").write_text(final_state["public_data_report"], encoding="utf-8")
         sections.append(f"## Official Public Data\n\n{final_state['public_data_report']}")
@@ -166,6 +174,7 @@ def write_market_report_tree(final_state: dict, save_path) -> Path:
     validation = {
         "status": final_state.get("scan_status") or "INCOMPLETE",
         "warnings": final_state.get("scan_warnings") or [],
+        "official_data_audit": final_state.get("public_data_quality", {}),
         "required_reports": {
             key: bool(final_state.get(key))
             for key in ("macro_report", "sector_report", "market_scan_report")

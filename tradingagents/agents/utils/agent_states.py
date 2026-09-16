@@ -61,6 +61,9 @@ class AgentState(MessagesState):
     fundamentals_report: Annotated[str, "Report from the Fundamentals Researcher"]
     public_data_report: Annotated[str, "Collected official public data report"]
     public_data_evidence: Annotated[list[dict], "Public-data collection outcomes and provenance"]
+    public_data_warnings: Annotated[list[str], "Official collection and freshness warnings"]
+    public_data_quality: Annotated[dict, "Official core coverage and structural citation audit"]
+    analysis_status: Annotated[str, "Official-evidence quality, separate from directional rating"]
     instrument_identity: Annotated[dict, "Resolved business classification for public-data relevance"]
 
     # researcher team discussion step

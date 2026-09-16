@@ -261,4 +261,4 @@ def collect_ecb(trade_date):
                 note="ECB policy rates; observation dates are not policy announcement times.",
             )
         )
-    return result
+    return require_series("ecb", result, ("DFR", "MRR_FR", "MLFR"), url)

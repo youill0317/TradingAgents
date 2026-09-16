@@ -128,6 +128,7 @@ def test_sec_refresh_frequency_follows_reporting_cadence_not_balance_basis(monke
     ]}}}}}
     monkeypatch.setattr(public_financials, "request_json", lambda *a, **k: payload)
     rows = public_financials.sec_facts("1", "TEST", "2026-09-16", {})
+    rows = [r for r in rows if r.get("evidence_type") == "financial_fact"]
     assert all(r["refresh_frequency"] == "Q" and r["basis"] == "instant" for r in rows)
 
 
@@ -202,7 +203,7 @@ def test_ttm_rejects_calendar_gap_and_capex_unknown_sign():
         ("2025-01-01", "2025-03-31"), ("2025-04-01", "2025-06-30"),
         ("2025-10-01", "2025-12-31"), ("2026-01-01", "2026-03-31"),
     )]
-    assert not derive_metrics(rows, "TEST")
+    assert not any(r["period_basis"] == "TTM" for r in derive_metrics(rows, "TEST"))
     assert not derive_metrics([fact("operating_cashflow", 10), fact("capital_expenditure", -2)], "TEST")
 
 
@@ -221,9 +222,10 @@ def test_securities_flow_sums_exclude_holdings_valuation_and_gaps():
     rows = [obs("tic", metric, 10, f"2026-{month:02}", unit="million USD", frequency="M", metric=metric)
             for metric in ("Holdings", "Net U.S. Sales", "Valuation Change") for month in (5, 6, 7)]
     out = build_diagnostics(rows)
+    out = [r for r in out if "net transactions" in r["target"]]
     assert len(out) == 1 and out[0]["value"] == 30 and "Net U.S. Sales" in out[0]["target"]
     rows = [r for r in rows if r["observed_at"] != "2026-06"]
-    assert not build_diagnostics(rows)
+    assert not any("net transactions" in r["target"] for r in build_diagnostics(rows))
 
 
 def test_reference_identity_and_audit_do_not_claim_unseen_evidence():

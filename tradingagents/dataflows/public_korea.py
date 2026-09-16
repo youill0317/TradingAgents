@@ -49,7 +49,7 @@ def _collect_ecos_history(trade_date):
             "consumer_prices",
             "901Y009",
             "M",
-            _month_offset(day, -12).strftime("%Y%m"),
+            _month_offset(day, -36).strftime("%Y%m"),
             day.strftime("%Y%m"),
             "0",
         ),
@@ -215,7 +215,8 @@ def collect_kosis(trade_date):
         "objL1": "ALL",
         "itmId": "T10 T11 T12",
         "prdSe": "M",
-        "startPrdDe": _month_offset(day, -12).strftime("%Y%m"),
+        # Publication lag must not remove the latest observation's YoY endpoint.
+        "startPrdDe": _month_offset(day, -36).strftime("%Y%m"),
         "endPrdDe": end,
     }
     payload = request_json(KOSIS_URL, params=params)

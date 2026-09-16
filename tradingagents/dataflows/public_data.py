@@ -30,7 +30,8 @@ from .public_international import (
 )
 from .public_korea import collect_customs, collect_ecos, collect_kosis
 from .public_macro import collect_bea, collect_bls, collect_census, collect_fred, collect_ofr
-from .public_relevance import resolved_identity, route_ticker_rows
+from .public_quality import core_evidence_report, render_quality
+from .public_relevance import assigned_public_rows
 from .public_us import collect_cftc, collect_ecb, collect_eia, collect_nyfed, collect_treasury
 
 PUBLIC_SOURCES = {
@@ -57,26 +58,6 @@ PUBLIC_SOURCES = {
     "mof_japan": (collect_mof_japan, ()),
 }
 
-_MACRO_SOURCES = {
-    "ecos",
-    "nyfed",
-    "treasury",
-    "ecb",
-    "cftc",
-    "eia",
-    "fred",
-    "ofr",
-    "census",
-    "bea",
-    "bls",
-    "oecd",
-    "eurostat",
-    "bis",
-    "tic",
-    "mof_japan",
-}
-_SECTOR_SOURCES = {"eia", "customs", "kosis", "cftc", "census", "bea", "bls", "eurostat"}
-
 _WORKFLOWS = {
     "news": "Separate dated filing events and actual document excerpts from macro context. Explain the catalyst, transmission to the business, and what remains unverified. An excerpt does not establish that a full filing was reviewed.",
     "fundamentals": "Start with SEC/DART issuer facts: revenue, margins, cash generation, balance sheet and financing. Compare matching periods, currencies and consolidated/standalone bases only. Then test demand, orders, shipments and inventories against the company's verified industry exposure. Aggregate industry data are corroboration, not issuer results. Identify conflicts with vendor financials and use filing dates to explain restatements.",
@@ -92,67 +73,17 @@ def public_data_for_agent(state, role):
     rows = state.get("public_data_evidence", [])
     if not rows:
         return ""
-    industry_sources = set()
-    identity = resolved_identity(state.get("instrument_identity", {}), rows)
+    assigned, identity, industry_sources = assigned_public_rows(state, role)
     industry = identity.get("industry", "").casefold()
     sector = identity.get("sector", "").casefold()
-    if state.get("asset_type", "stock") == "stock":
-        if sector in {"energy", "utilities"} or industry in {
-            "airlines",
-            "marine shipping",
-            "integrated freight & logistics",
-            "chemicals",
-            "specialty chemicals",
-        }:
-            industry_sources.add("eia")
-        if "semiconductor" in industry or industry in {
-            "electronic components",
-            "consumer electronics",
-            "computer hardware",
-            "electronic equipment & parts",
-        }:
-            industry_sources.update({"customs", "kosis"})
-    news = {"sec", "dart", "ecos", "nyfed", "treasury", "ecb", "fred", "ofr"} | (
-        industry_sources & {"eia"}
-    )
-    # New industry feeds carry row-level sector tags, so only matching series
-    # are assigned to a company's fundamental analysis.
-    fundamentals = {
-        "sec",
-        "dart",
-        "fsc",
-        "customs",
-        "kosis",
-        "census",
-        "bea",
-        "bls",
-        "eurostat",
-    } | industry_sources
-    sources = {
-        "news": news,
-        "fundamentals": fundamentals,
-        "macro": _MACRO_SOURCES,
-        "sector": _SECTOR_SOURCES,
-        "ticker_review": news | fundamentals | {"cftc", "oecd", "bis", "tic", "mof_japan"},
-        "market_review": _MACRO_SOURCES | _SECTOR_SOURCES,
-    }[role]
-    assigned = [row for row in rows if row["source"] in sources]
-    if role in {"fundamentals", "ticker_review"}:
-        assigned = route_ticker_rows(assigned, identity, legacy_sources=industry_sources)
-    if role == "fundamentals":
-        assigned = [row for row in assigned if row.get("evidence_type") != "filing_excerpt"]
-    if role == "news":
-        assigned = [
-            row
-            for row in assigned
-            if row.get("evidence_type") not in {"financial_fact", "derived_financial"}
-        ]
     report = render_public_data(assigned, max_chars=28000)
     if assigned:
-        report = coverage_report(assigned) + "\n\n" + report
+        report = core_evidence_report(assigned, role) + "\n\n" + coverage_report(assigned) + "\n\n" + report
         report += "\n" + baseline_overlap_report(state, assigned)
     if role in {"ticker_review", "market_review"}:
         report += "\n" + cited_evidence_report(state, rows)
+    if role == "ticker_review" and state.get("public_data_quality"):
+        report += "\n" + render_quality(state["public_data_quality"])
     if report:
         report += "\nOfficial-evidence analysis workflow: " + _WORKFLOWS[role]
         report += (
@@ -161,6 +92,10 @@ def public_data_for_agent(state, role):
             "a derived record with operand lineage; use get_official_evidence to inspect omitted "
             "history. Report conflicting, stale and missing inputs explicitly. Collection or "
             "tool access alone is not evidence that a source supports your conclusion."
+            " Address each available core analysis purpose above with cited evidence or an explicit "
+            "reason it is not material. For official numerical comparisons cite both endpoints "
+            "on the same line or a derived observation. Use start_date/end_date and "
+            "observation_offset to inspect older collected history."
         )
     if role in {"news", "fundamentals", "ticker_review"}:
         if industry_sources & {row["source"] for row in assigned}:
@@ -318,6 +253,8 @@ def render_public_data(rows, max_chars=0):
                     content = str(row["title"]) + ": " + content
                 if row.get("note"):
                     content += " " + row["note"]
+                if row.get("calculation_gaps"):
+                    content += " " + " ".join(row["calculation_gaps"])
                 # Older saved snapshots may predate evidence IDs. Derive the
                 # reference from the original observation before adding display
                 # text, so tool lookups and citation audits resolve the same ID.

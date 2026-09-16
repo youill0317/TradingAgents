@@ -9,6 +9,7 @@ from datetime import date, timedelta
 from xml.etree import ElementTree as ET
 
 from .public_data_common import collect_parts, numeric_rows, period_date, request_json, request_text
+from .public_evidence import require_dimensions, require_series
 
 COUNTRIES = {
     "USA",
@@ -70,7 +71,7 @@ def collect_oecd(trade_date):
                 note="Signals growth-cycle turning points; subject to revisions, not a stock-price forecast.",
             )
         )
-    return result
+    return require_series("oecd", result, [f"CLI/{country}" for country in sorted(COUNTRIES)], url)
 
 
 def collect_bis(trade_date):
@@ -107,7 +108,7 @@ def collect_bis(trade_date):
                 note="Quarterly credit stock, not current-day capital flow; publication lag and revisions apply.",
             )
         )
-    return result
+    return require_series("bis", result, ("GLI/USD", "GLI/EUR", "GLI/JPY"), url)
 
 
 EUROSTAT_QUERIES = {
@@ -122,6 +123,7 @@ EUROSTAT_SECTORS = {
     "sts_trtu_m": ("Consumer Cyclical", "Consumer Defensive"),
     "sts_copr_m": ("Real Estate", "Industrials"),
 }
+EUROSTAT_COUNTRIES = ("EA20", "DE", "FR", "IT", "ES")
 
 
 def jsonstat_rows(payload):
@@ -159,7 +161,7 @@ def collect_eurostat(trade_date):
             url,
             params={
                 "lang": "en",
-                "geo": ["EA20", "DE", "FR", "IT", "ES"],
+                "geo": list(EUROSTAT_COUNTRIES),
                 "sinceTimePeriod": start[:4] + "-Q1" if name == "namq_10_gdp" else start,
                 **query,
             },
@@ -185,12 +187,17 @@ def collect_eurostat(trade_date):
                     title=payload.get("label"),
                     sectors=EUROSTAT_SECTORS.get(name, ()),
                     basis=dims.get("s_adj"),
-                    dimensions=dims,
+                        dimensions=dims,
+                        table_id=name,
                     provider_updated_at=payload.get("updated"),
                     kind="rate" if "PC" in unit_code else "level",
                 )
             )
-        return result
+        return require_dimensions(
+            "eurostat", result,
+            {f"{name}/coverage/{country}": {"country": country, "table_id": name}
+             for country in EUROSTAT_COUNTRIES}, url,
+        )
 
     return collect_parts(
         "eurostat",

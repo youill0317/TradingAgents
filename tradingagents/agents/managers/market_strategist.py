@@ -25,6 +25,7 @@ from tradingagents.agents.utils.structured import (
     invoke_structured_required,
 )
 from tradingagents.dataflows.public_data import public_data_for_agent
+from tradingagents.dataflows.public_quality import MARKET_REPORTS, citation_audit
 
 logger = logging.getLogger(__name__)
 
@@ -150,6 +151,8 @@ def create_market_strategist(llm, stage="final"):
         screen_evidence = state.get("screen_evidence", "")
         limit = state.get("candidate_limit", 10)
         data_warnings = [*state.get("data_warnings", []), *_required_evidence_warnings(state)]
+        official_audit = citation_audit(state, state.get("public_data_evidence", []), MARKET_REPORTS)
+        data_warnings.extend(official_audit["warnings"])
         if not screen_evidence:
             data_warnings.append("SCREEN_EVIDENCE_MISSING")
         if not macro_report.strip():
@@ -249,6 +252,12 @@ Connect global conditions and geopolitical transmission channels to US sectors a
                         or len(responses) != len(expected)
                         or any(not r.rationale.strip() for r in responses)):
                     data_warnings.append("MARKET_REVIEW_RESOLUTION_MISSING")
+            if stage == "final":
+                official_audit = citation_audit(
+                    {**state, "market_scan_report": render_market_scan_report(report)},
+                    state.get("public_data_evidence", []), MARKET_REPORTS,
+                )
+                data_warnings.extend(official_audit["warnings"])
             warnings = list(dict.fromkeys([*data_warnings, *report.warnings]))
             required_failures = {
                 "SCREEN_EVIDENCE_MISSING", "SECTOR_DATA_UNAVAILABLE",
@@ -283,6 +292,7 @@ Connect global conditions and geopolitical transmission channels to US sectors a
                     "market_draft_result": report.model_dump(mode="json")}
 
         return {
+            "public_data_quality": official_audit,
             "market_scan_report": render_market_scan_report(report),
             "market_scan_result": report.model_dump(mode="json"),
             "scan_status": report.status.value,

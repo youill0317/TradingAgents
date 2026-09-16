@@ -53,6 +53,25 @@ def require_series(source, rows, expected, url=None):
     ]]
 
 
+def require_dimensions(source, rows, expected, url=None):
+    """Check a declared request universe, not just whether any row succeeded.
+
+    ``expected`` maps diagnostic labels to required dimension values. Absence
+    is a coverage gap, never a zero or an inferred not-applicable observation.
+    Providers must exclude structurally inapplicable combinations from this
+    request specification rather than guessing applicability from a null cell.
+    """
+    result = list(rows)
+    good = [r for r in rows if r.get("status") == "success" and number(r.get("value")) is not None]
+    for label, dimensions in expected.items():
+        if not any(all(r.get(k) == v for k, v in dimensions.items()) for r in good):
+            result.append(failure(
+                source, label, "Requested item returned no usable observations; applicability is unverified.",
+                status="empty", url=url, coverage_gap=True, **dimensions,
+            ))
+    return result
+
+
 def refresh_frequency(row):
     explicit = row.get("refresh_frequency") or row.get("frequency")
     if explicit in _THRESHOLDS:
@@ -147,6 +166,8 @@ def cited_evidence_report(state, rows, max_chars=8000):
                      for key in _REPORT_FIELDS)
     requested = list(dict.fromkeys(_REFERENCE.findall(text)))
     if not requested:
+        if any(state.get(key) for key in _REPORT_FIELDS) and any(number(r.get("value")) is not None for r in rows):
+            return "NO_OFFICIAL_CITATIONS: upstream reports contain no exact official observation IDs. Numerical use and analytical coverage remain unverified."
         return ""
     by_id = {row.get("evidence_id") or evidence_id(row): row for row in rows}
     missing = [key for key in requested if key not in by_id]

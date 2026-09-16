@@ -21,12 +21,15 @@ from tradingagents.agents.utils.structured import (
     invoke_structured_or_freetext,
 )
 from tradingagents.dataflows.public_data import public_data_for_agent
+from tradingagents.dataflows.public_quality import render_quality, ticker_quality
 
 
 def create_portfolio_manager(llm):
     structured_llm = bind_structured(llm, PortfolioDecision, "Portfolio Manager")
 
     def portfolio_manager_node(state) -> dict:
+        if state.get("public_data_evidence"):
+            state = {**state, "public_data_quality": ticker_quality(state)}
         instrument_context = get_instrument_context_from_state(state)
 
         history = state["risk_debate_state"]["history"]
@@ -68,6 +71,8 @@ def create_portfolio_manager(llm):
 
 Ground every conclusion in specific evidence from the analysts. Commit to a directional call only when the evidence clearly supports one; choose Hold when the case is balanced, materially conflicting, ambiguous, or insufficient to justify changing exposure, rather than forcing a direction to appear decisive. Weigh the analysts on their merits, independent of speaking order.
 
+Data sufficiency is separate from that rating: if core issuer facts are unavailable, explicitly state that the assessment requires review. Do not describe missing evidence as a balanced or neutral investment case. Retain exact official observation IDs in your numerical reasoning and cite both endpoints for comparisons.
+
 {NO_EXTERNAL_TOOLS}{get_language_instruction()}"""
 
         final_trade_decision = invoke_structured_or_freetext(
@@ -77,6 +82,12 @@ Ground every conclusion in specific evidence from the analysts. Commit to a dire
             render_pm_decision,
             "Portfolio Manager",
         )
+
+        quality_update = {}
+        if state.get("public_data_evidence"):
+            quality = ticker_quality({**state, "final_trade_decision": final_trade_decision})
+            quality_update = {"public_data_quality": quality, "analysis_status": quality["status"]}
+            final_trade_decision = render_quality(quality) + "\n\n" + final_trade_decision
 
         new_risk_debate_state = {
             "judge_decision": final_trade_decision,
@@ -92,6 +103,7 @@ Ground every conclusion in specific evidence from the analysts. Commit to a dire
         }
 
         return {
+            **quality_update,
             "risk_debate_state": new_risk_debate_state,
             "final_trade_decision": final_trade_decision,
         }

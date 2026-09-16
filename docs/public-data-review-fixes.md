@@ -1,6 +1,39 @@
 # Official-data review fixes
 
-Baseline: `data-sources`, commit `0845af41aeeb5cca28cdf22c69a80c9d5e4e66bc`.
+Original patch baseline: `data-sources`, commit `0845af41aeeb5cca28cdf22c69a80c9d5e4e66bc`.
+Follow-up review baseline: `24f09823828d0b60b266ce4f78ddce73ce9ee9ab`.
+
+## Follow-up review fixes
+
+The five concrete follow-up findings are addressed: mixed SEC taxonomies no
+longer suppress IFRS facts; saved observation history supports date windows and
+observation paging; ECOS/KOSIS monthly windows cover 36 preceding months;
+derived freshness inherits reporting cadence; and ECB/OECD/BIS/Eurostat partial
+coverage produces individual gaps.
+
+The follow-up also adds separate DART periodic/material-event documents,
+purpose-based core evidence, fiscal growth/cash-conversion/limited-debt measures,
+comparable industry changes and nominal-real consumption growth gaps. Ticker
+quality is distinct from the directional rating and can withhold it as REVIEW;
+market citation gaps affect the existing degraded status. The role/industry
+assignment used for prompts and citation coverage is shared, so irrelevant
+industry inputs do not create spurious citation obligations.
+
+See `public-data.md` for the output fields, query parameters and exact boundaries.
+The scope exclusions below still apply: no exhaustive exposure ontology, full
+net-debt model, causal turning-point model or semantic proof of all LLM claims
+is implied by these targeted corrections.
+
+Follow-up validation in the full repository: **876 tests and 77 subtests passed**
+with `python -m pytest -q -m 'not integration'`. One optional Bedrock dependency
+test was skipped and one live integration test was deselected. Ruff and patch
+whitespace checks passed. The new regression file is
+`tests/test_public_review_followup.py`; it exercises both actual LangGraph
+ToolNode families, final ticker review status/signal/export, market degradation
+and export, and the collector/calculation boundary cases from this review.
+One unauthenticated ECB CSV response was inspected to confirm the three native
+rate identifiers. This does not establish live coverage for all providers or
+authenticated API/paid-LLM end-to-end behavior.
 
 ## Changes
 
@@ -97,7 +130,7 @@ isolated harness with some dependency stubs. After recovering it into the full
 repository, the declared development dependencies were installed and the actual
 LangGraph ToolNodes exercised with mocked provider/LLM responses.
 
-Repository validation after application and the legacy-snapshot reference fix:
+Original patch validation after application and the legacy-snapshot reference fix:
 
 - `859 passed`, plus `77 subtests passed`, for the non-live repository suite.
 - One optional Bedrock test skipped because `langchain_aws` was not installed;

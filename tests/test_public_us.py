@@ -74,6 +74,8 @@ def test_collect_ecb_parses_sdmx_csv_and_filters_future():
     text = "PROVIDER_FM_ID,TIME_PERIOD,OBS_VALUE,TITLE,UNIT_MULT\nDFR,2025-01-03,3.0,Deposit rate,0\nMRR_FR,2025-01-03,3.15,Main refinancing rate,0\nDFR,2025-01-04,9.0,Deposit rate,0\n"
     with patch.object(public_us, "request_text", return_value=text):
         rows = public_us.collect_ecb("2025-01-03")
+    assert [(r["target"], r["status"]) for r in rows if r["status"] != "success"] == [("MLFR", "empty")]
+    rows = [r for r in rows if r["status"] == "success"]
     assert len(rows) == 2
     assert {r["target"] for r in rows} == {"DFR", "MRR_FR"}
     assert all(r["observed_at"] == "2025-01-03" and r["unit"] == "percent" for r in rows)

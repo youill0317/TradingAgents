@@ -16,7 +16,7 @@ from .public_data_common import (
     request_json,
     request_text,
 )
-from .public_financial_metrics import IFRS_METRICS, dart_metric
+from .public_financial_metrics import IFRS_METRICS, dart_metric, financial_coverage
 
 SEC_CONCEPTS = {
     "revenue": (
@@ -46,28 +46,20 @@ def sec_facts(cik, ticker, trade_date, headers):
     url = f"https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json"
     facts = request_json(url, headers=headers).get("facts", {})
     taxonomy = facts.get("us-gaap", {})
-    # IFRS concepts have different semantics; retain their native names separately.
+    # Taxonomies can coexist (e.g. US-GAAP shares plus IFRS operating facts).
+    # Keep native concepts and accounting standards; calculations never combine
+    # standards merely because their normalized metric names match.
     selected = [
         (metric, "us-gaap", tag)
         for metric, tags in SEC_CONCEPTS.items()
         for tag in tags
         if tag in taxonomy
     ]
-    if not selected:
-        selected = [
-            (tag, "ifrs-full", tag)
-            for tag in (
-                "Revenue",
-                "ProfitLoss",
-                "Assets",
-                "Liabilities",
-                "Equity",
-                "CashAndCashEquivalents",
-                "CashFlowsFromUsedInOperatingActivities",
-                "Inventories",
-            )
-            if tag in facts.get("ifrs-full", {})
-        ]
+    selected.extend(
+        (metric, "ifrs-full", tag)
+        for tag, metric in IFRS_METRICS.items()
+        if tag in facts.get("ifrs-full", {})
+    )
     result = []
     for metric, namespace, tag in selected:
         concept = facts[namespace][tag]
@@ -134,6 +126,7 @@ def sec_facts(cik, ticker, trade_date, headers):
                         period_end=end,
                         metric=IFRS_METRICS.get(metric, metric),
                         concept=tag,
+                        accounting_standard=namespace,
                         accession=point.get("accn"),
                         form=point.get("form"),
                         point_in_time=True,
@@ -152,7 +145,7 @@ def sec_facts(cik, ticker, trade_date, headers):
                 status="empty",
             )
         ]
-    return result + derive_financial_metrics(result, ticker)
+    return result + derive_financial_metrics(result, ticker) + financial_coverage(result, "sec", ticker)
 
 
 def derive_financial_metrics(rows, ticker):
@@ -313,6 +306,7 @@ def dart_enrichment(corp_code, ticker, trade_date, filings):
                         account_id=row.get("account_id"),
                         account_detail=detail,
                         metric=dart_metric(row.get("account_id"), detail),
+                        accounting_standard="ifrs-full",
                         title=row.get("account_nm"),
                         frequency="A" if period_basis == "annual" else "Q",
                         statement=statement,
@@ -359,10 +353,21 @@ def dart_enrichment(corp_code, ticker, trade_date, filings):
         parts.append((f"{year}/{report}", lambda y=year, r=report: financials(y, r)))
         if len(parts) >= 8:
             break
-    if filings:
-        selected = max(filings, key=lambda r: r.get("published_at", ""))
+    periodic = ("사업보고서", "반기보고서", "분기보고서")
+    material = ("주요사항보고서", "주요경영사항", "공정공시", "영업(잠정)실적",
+                "영업실적", "유상증자", "전환사채", "합병", "영업양수", "영업양도")
+    ordered = sorted(filings, key=lambda r: r.get("published_at", ""), reverse=True)
+    documents = []
+    for group, labels in (("periodic", periodic), ("material_event", material)):
+        selected = next((r for r in ordered
+                         if any(label in r["content"].get("report_name", "") for label in labels)
+                         and (group == "periodic" or not any(
+                             label in r["content"].get("report_name", "") for label in periodic))), None)
+        if selected:
+            documents.append((group, selected))
 
-        def document():
+    for group, selected in documents:
+        def document(selected=selected, group=group):
             receipt = selected["content"]["receipt_number"]
             response = _request(
                 "https://opendart.fss.or.kr/api/document.xml",
@@ -375,7 +380,7 @@ def dart_enrichment(corp_code, ticker, trade_date, filings):
                 if not members or sum(m.file_size for m in members) > 25_000_000:
                     raise ValueError("DART document archive exceeds bound")
                 text = archive.read(max(members, key=lambda m: m.file_size)).decode("utf-8")
-            return filing_excerpt(
+            rows = filing_excerpt(
                 "dart",
                 ticker,
                 text,
@@ -383,7 +388,10 @@ def dart_enrichment(corp_code, ticker, trade_date, filings):
                 selected["published_at"],
                 selected["content"]["report_name"],
             )
+            for row in rows:
+                row["document_role"] = group
+            return rows
 
-        parts.append((ticker + "/filing excerpt", document))
+        parts.append((ticker + "/filing excerpt/" + group, document))
     rows = collect_parts("dart", parts)
-    return rows + derive_financial_metrics(rows, ticker)
+    return rows + derive_financial_metrics(rows, ticker) + financial_coverage(rows, "dart", ticker)

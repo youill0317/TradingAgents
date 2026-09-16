@@ -14,17 +14,17 @@ source links. Most macro series retain about two years; exact bounds are below.
 
 | ID | Collected scope | History / limits | Credential |
 | --- | --- | --- | --- |
-| `sec` | Recent 10-K/Q, 8-K, 20-F/40-F/6-K and supported amendments; standard US-GAAP financial concepts with IFRS fallback; same-period margins/FCF; periodic/event filing excerpts | Current submissions page; facts within 1,100 days, up to 16 periods per concept/unit; one periodic and one event document, excerpts capped at 12,000 characters each | Real identifying `SEC_USER_AGENT` |
-| `dart` | Recent and periodic filings, corrections; complete single-company financial accounts, CFS with OFS fallback; document excerpt | Two bounded 100-filing lists over 1,100 days; up to eight fiscal reports; latest document excerpt | `DART_API_KEY` |
+| `sec` | Recent 10-K/Q, 8-K, 20-F/40-F/6-K and supported amendments; US-GAAP and IFRS facts with separate accounting standards; margins/FCF, fiscal YoY comparisons and cash conversion; periodic/event filing excerpts | Current submissions page; facts within 1,100 days, up to 16 periods per concept/unit; one periodic and one event document, excerpts capped at 12,000 characters each | Real identifying `SEC_USER_AGENT` |
+| `dart` | Recent and periodic filings, corrections; complete single-company financial accounts, CFS with OFS fallback; standard-concept calculations; periodic/material-event excerpts | Two bounded 100-filing lists over 1,100 days; up to eight fiscal reports; latest periodic report and latest recognized material event, independently | `DART_API_KEY` |
 | `fsc` | Corporate outline and business identifiers, matched through DART registration number | Current identity snapshot | `DART_API_KEY` + `DATA_GO_KR_API_KEY` |
 | `eia` | Commercial crude stocks, crude production, gasoline stocks, distillate stocks | Weekly, 800 days | `EIA_API_KEY` |
 | `nyfed` | SOFR, EFFR, OBFR rates and transaction volumes | Last 300 observations per rate, filtered to analysis date | None |
 | `treasury` | TGA closing balance from the Daily Treasury Statement | Last 400 daily records | None |
 | `cftc` | Asset-manager net, leveraged-money net and open interest in financial futures | 100 days, up to 3,000 provider rows; 12 largest markets by latest open interest | None |
 | `ecb` | Deposit facility, main refinancing and marginal lending rates | Daily, 800 days | None |
-| `ecos` | Policy-rate and CPI histories plus the 100 key-statistics snapshot | Rate 45 days, CPI 13 months; latest snapshot for other indicators | `ECOS_API_KEY` |
+| `ecos` | Policy-rate and CPI histories plus the 100 key-statistics snapshot | Rate 45 days, CPI from 36 months before run month; latest snapshot for other indicators | `ECOS_API_KEY` |
 | `customs` | Korean exports/imports by value and weight, and balance: HS 8542, 8703, 8507, 3004, 2710, 7208; partners US, China, Japan, Vietnam | 13 months with conservative monthly cutoff; 24 independent product/partner requests | `DATA_GO_KR_API_KEY` |
-| `kosis` | Industry production, shipment and inventory indexes from DT_1F02011, all industry categories | 13 months; item IDs T10/T11/T12 | `KOSIS_API_KEY` |
+| `kosis` | Industry production, shipment and inventory indexes from DT_1F02011, all industry categories | From 36 months before run month, allowing for publication lag; item IDs T10/T11/T12 | `KOSIS_API_KEY` |
 | `fred` | Fed assets/reserves/reverse repos; C&I lending standards and demand; NFCI/STLFSI4; nominal/real yields, breakeven, industrial production, capacity, bank business loans, broad dollar | 16 series, 800 days, metadata and observations pinned to ALFRED vintage | `FRED_API_KEY` |
 | `ofr` | Financial Stress Index, five risk components, three regional contributions, term DVP repo rate | 400 days | None |
 | `census` | Durable goods orders/shipments/inventories; retail and wholesale sales/inventories/ratios; residential construction; construction spending | M3ADV/MRTS/MWTS/RESCONST/VIP official bulk files, last 800 days, national series | None; uses official bulk downloads |
@@ -68,10 +68,47 @@ schema and their actual LangGraph ToolNodes. It reads the already collected stat
 - `source="census", query="M3ADV"` finds matching series by target/title.
 - `offset`/`limit` paginate series; `observations` returns 1–60 recent numeric
   points per series in addition to the trend digest.
+- `start_date`/`end_date` select an inclusive observation-date window in
+  `YYYY-MM-DD` format. `observation_offset` skips newest matching points per
+  series; the response provides the next offset or the end-of-history marker.
+  The digest uses the same selected page, so newer values cannot leak into a
+  requested older window. Bounds concern observation dates, not publication dates.
 - SEC/DART document excerpts are searchable as `query="filing excerpt"`.
 
-Market analysts retain their existing seven-round tool budget. Reviewers receive
+Market analysts retain their existing tool-round budget. Reviewers receive
 role-specific digests and upstream reports; they do not receive a new tool loop.
+
+## Core evidence and analysis quality
+
+Before the source digests, each role receives a bounded purpose-based bundle:
+issuer earnings/cash flow/balance sheet, macro liquidity/credit/activity/prices
+and labour/cross-border transactions, or industry demand/production/inventory
+and costs. Explicit core series and source diversity prevent a large table from
+crowding out the purpose's other inputs. Missing purposes remain visible.
+Prompts and citation audits share the same role/industry routing function.
+
+Ticker state preserves `public_data_warnings`, `public_data_quality` and
+`analysis_status`. If an applicable SEC/DART source was selected, the core facts
+are revenue, net income, operating cash flow, assets and liabilities. Missing
+or stale core facts produce `REVIEW_REQUIRED`; optional macro-source failures
+alone produce `DEGRADED`. An unavailable standard concept is a gap requiring
+filing review, not an assertion that the issuer never reports it. Disabling an
+issuer source does not make its facts mandatory. Status covers selected official
+evidence, not every vendor or every aspect of the investment thesis.
+
+At the final ticker decision, missing numerical citations, unknown IDs and
+uncited official numerical comparisons can also require review when an issuer
+source was selected. `REVIEW_REQUIRED` withholds a tradeable rating: both the
+API signal and stored memory rating become `REVIEW`, even if the provisional
+model prose contains Buy or Hold. The original narrative remains visible.
+Reports export `analysis_quality.json`; state logs retain warnings and evidence.
+
+Market analyst/final-report citation gaps feed the existing `DEGRADED` status
+and are saved under `validation.json` / `official_data_audit`. Checks include
+known IDs, reference presence on explicitly official numerical statements,
+comparison endpoints or a derived record, and uncited available purposes.
+These are structural checks with conservative text patterns, not semantic proof
+of every claim. A valid ID does not prove that the model interpreted it correctly.
 
 ## Correctness and coverage rules
 
@@ -84,6 +121,10 @@ role-specific digests and upstream reports; they do not receive a new tool loop.
   missing credentials, empty tables and unsupported coverage remain evidence
   records. Exception messages/credential-bearing URLs are not exported.
 - Each multi-table collector preserves successful series when another fails.
+  ECB policy rates, OECD requested countries, BIS native currencies and each
+  Eurostat table's requested geographies are checked individually for missing
+  observations. Missing is not inferred to mean not-applicable; request specs
+  exclude known inapplicable combinations instead of inventing zero values.
   Selected sources run with at most four source workers. Shared HTTP calls have
   finite timeouts, one transient retry and response-size bounds.
 - Digests compute previous-observation, three-month and year comparisons only
@@ -92,9 +133,22 @@ role-specific digests and upstream reports; they do not receive a new tool loop.
   bases. Latest observations older than frequency-specific thresholds are marked
   stale (D:14, W:28, M:100, Q:200, A:550 days); these are heuristics, not release
   calendar guarantees.
-- SEC ratios require the same period, currency, duration basis and accession.
+- SEC/DART ratios require the same period, currency, duration basis, reporting
+  scope, accounting standard and compatible accession/version lineage.
+  Supported IFRS facts are retained even when US-GAAP tags coexist. Standards
+  are never merged solely by a normalized metric name. Derived freshness
+  inherits the operands' reporting cadence, including annual-only issuers.
   CFO minus capex is labeled as a calculated FCF measure. Unsupported custom
   taxonomy facts may require reading the filing.
+- Fiscal YoY growth compares like fiscal periods (including a bounded 52/53-week
+  calendar tolerance); nonpositive bases do not yield misleading percentages.
+  Cash conversion is operating cash flow / positive net income. The limited
+  long-term-debt-less-cash measure requires both current and noncurrent portions;
+  it is explicitly not exhaustive net debt or a bank capital model.
+- Industry/credit/holdings histories yield exact-calendar changes with endpoint
+  IDs and missing-comparison reasons. Matching BEA nominal/real consumption
+  growth yields a percentage-point gap, not an exact price deflator. Unrelated
+  industry indexes are not divided into invented inventory-month measures.
 - DART separates consolidated/standalone, instant/quarter/annual and each YTD
   duration. Custom account names and member details remain distinct. Non-calendar
   fiscal reporting disables numeric extraction until a calendar is verified;

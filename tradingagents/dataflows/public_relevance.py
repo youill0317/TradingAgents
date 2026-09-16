@@ -2,6 +2,27 @@
 
 from collections import defaultdict
 
+_MACRO_SOURCES = {
+    "ecos",
+    "nyfed",
+    "treasury",
+    "ecb",
+    "cftc",
+    "eia",
+    "fred",
+    "ofr",
+    "census",
+    "bea",
+    "bls",
+    "oecd",
+    "eurostat",
+    "bis",
+    "tic",
+    "mof_japan",
+}
+_SECTOR_SOURCES = {"eia", "customs", "kosis", "cftc", "census", "bea", "bls", "eurostat"}
+
+
 # Deliberately small and inspectable. Unknown classifications remain unknown.
 _EXPOSURES = {
     "semiconductors": ("semiconductor", "integrated circuit", "반도체"),
@@ -112,3 +133,64 @@ def route_ticker_rows(rows, identity, *, legacy_sources=()):
             continue
         result.append(item)
     return result
+
+
+def assigned_public_rows(state, role):
+    """One routing contract for prompts and citation/coverage checks."""
+    rows = state.get("public_data_evidence", [])
+    industry_sources = set()
+    identity = resolved_identity(state.get("instrument_identity", {}), rows)
+    industry = identity.get("industry", "").casefold()
+    sector = identity.get("sector", "").casefold()
+    if state.get("asset_type", "stock") == "stock":
+        if sector in {"energy", "utilities"} or industry in {
+            "airlines",
+            "marine shipping",
+            "integrated freight & logistics",
+            "chemicals",
+            "specialty chemicals",
+        }:
+            industry_sources.add("eia")
+        if "semiconductor" in industry or industry in {
+            "electronic components",
+            "consumer electronics",
+            "computer hardware",
+            "electronic equipment & parts",
+        }:
+            industry_sources.update({"customs", "kosis"})
+    news = {"sec", "dart", "ecos", "nyfed", "treasury", "ecb", "fred", "ofr"} | (
+        industry_sources & {"eia"}
+    )
+    # New industry feeds carry row-level sector tags, so only matching series
+    # are assigned to a company's fundamental analysis.
+    fundamentals = {
+        "sec",
+        "dart",
+        "fsc",
+        "customs",
+        "kosis",
+        "census",
+        "bea",
+        "bls",
+        "eurostat",
+    } | industry_sources
+    sources = {
+        "news": news,
+        "fundamentals": fundamentals,
+        "macro": _MACRO_SOURCES,
+        "sector": _SECTOR_SOURCES,
+        "ticker_review": news | fundamentals | {"cftc", "oecd", "bis", "tic", "mof_japan"},
+        "market_review": _MACRO_SOURCES | _SECTOR_SOURCES,
+    }[role]
+    assigned = [row for row in rows if row["source"] in sources]
+    if role in {"fundamentals", "ticker_review"}:
+        assigned = route_ticker_rows(assigned, identity, legacy_sources=industry_sources)
+    if role == "fundamentals":
+        assigned = [row for row in assigned if row.get("evidence_type") != "filing_excerpt"]
+    if role == "news":
+        assigned = [
+            row
+            for row in assigned
+            if row.get("evidence_type") not in {"financial_fact", "derived_financial"}
+        ]
+    return assigned, identity, industry_sources

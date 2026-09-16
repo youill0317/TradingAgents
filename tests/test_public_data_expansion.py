@@ -84,6 +84,8 @@ def test_bis_keeps_native_currency_levels_separate(monkeypatch):
     )
     monkeypatch.setattr(public_international, "request_text", lambda *a, **k: text)
     rows = public_international.collect_bis("2026-09-15")
+    assert [(r["target"], r["status"]) for r in rows if r["status"] != "success"] == [("GLI/JPY", "empty")]
+    rows = [r for r in rows if r["status"] == "success"]
     assert [(r["target"], r["unit"], r["value"]) for r in rows] == [
         ("GLI/USD", "USD; scale 10^6", 100),
         ("GLI/EUR", "EUR; scale 10^6", 200),
@@ -245,11 +247,11 @@ def test_sec_facts_exclude_future_restatements_and_do_not_mix_ytd(monkeypatch):
     }
     monkeypatch.setattr(public_financials, "request_json", lambda *a, **k: payload)
     rows = public_financials.sec_facts("0000000001", "TEST", "2025-06-01", {})
-    assert max(r["value"] for r in rows) == 100
+    assert max(r["value"] for r in rows if r.get("evidence_type") == "financial_fact") == 100
     margin = next(r for r in rows if "/net_margin/" in r["target"])
     assert margin["value"] == 20 and margin["unit"] == "percent"
     assert all("/free_cashflow/" not in r["target"] for r in rows)
-    assert all(r["published_at"] <= "2025-06-01" for r in rows)
+    assert all(r["published_at"] <= "2025-06-01" for r in rows if r.get("published_at"))
     assert margin["operands"][0]["accession"] == "original"
 
 
@@ -315,7 +317,7 @@ def test_dart_keeps_consolidation_quarter_and_ytd_bases(monkeypatch):
     ]
     assert all(r["observed_at"] == "2026-06-30" for r in facts)
     assert calls[0]["reprt_code"] == "11012"
-    assert rows[-1]["excerpt_only"] and "SECRET" not in str(rows)
+    assert any(r.get("excerpt_only") for r in rows) and "SECRET" not in str(rows)
 
 
 def test_changes_use_percentage_points_and_matching_calendar_periods():

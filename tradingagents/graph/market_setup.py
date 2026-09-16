@@ -61,6 +61,7 @@ class MarketState(MessagesState):
     global_evidence: Annotated[list[dict], "Per-source collection outcomes and provenance"]
     public_data_report: Annotated[str, "Collected official public data report"]
     public_data_evidence: Annotated[list[dict], "Public-data collection outcomes and provenance"]
+    public_data_quality: Annotated[dict, "Structural official citation and purpose coverage audit"]
     sector_evidence: Annotated[str, "Raw US sector performance collected before analysis"]
     market_scan_result: Annotated[dict, "Validated final structured result"]
     macro_tool_rounds: Annotated[int, "Macro analyst invocation count"]
