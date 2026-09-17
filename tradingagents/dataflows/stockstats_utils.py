@@ -1,5 +1,6 @@
 import logging
 import os
+import threading
 import time
 from typing import Annotated
 
@@ -8,6 +9,7 @@ import yfinance as yf
 from stockstats import wrap
 from yfinance.exceptions import YFRateLimitError
 
+from .retry import retry_call
 from .config import get_config
 from .symbol_utils import NoMarketDataError, normalize_symbol
 from .utils import safe_ticker_component
@@ -25,24 +27,19 @@ MAX_OHLCV_STALE_DAYS = 10
 # at all (weekend, holiday) cannot trigger a download on every call.
 OHLCV_CACHE_TTL_SECONDS = 900
 
+_YF_CACHE_LOCK = threading.Lock()
 
-def yf_retry(func, max_retries=3, base_delay=2.0):
-    """Execute a yfinance call with exponential backoff on rate limits.
 
-    yfinance raises YFRateLimitError on HTTP 429 responses but does not
-    retry them internally. This wrapper adds retry logic specifically
-    for rate limits. Other exceptions propagate immediately.
-    """
-    for attempt in range(max_retries + 1):
-        try:
-            return func()
-        except YFRateLimitError:
-            if attempt < max_retries:
-                delay = base_delay * (2 ** attempt)
-                logger.warning(f"Yahoo Finance rate limited, retrying in {delay:.0f}s (attempt {attempt + 1}/{max_retries})")
-                time.sleep(delay)
-            else:
-                raise
+def yf_retry(func, max_retries=1, base_delay=2.0):
+    """Retry surfaced transient SDK failures using the shared provider policy."""
+    # yfinance lazily opens SQLite caches without an initialization lock.
+    # Only initialization is serialized; network requests remain concurrent.
+    with _YF_CACHE_LOCK:
+        yf.cache.get_tz_cache().initialise()
+        yf.cache.get_cookie_cache().initialise()
+        yf.cache.get_isin_cache().initialise()
+    return retry_call(func, "yahoo-finance", attempts=max_retries + 1,
+                      base_delay=base_delay, rate_limit_errors=(YFRateLimitError,))
 
 
 def _ensure_date_column(data: pd.DataFrame) -> pd.DataFrame:
@@ -312,4 +309,4 @@ class StockstatsUtils:
             indicator_value = matching_rows[indicator].values[0]
             return indicator_value
         else:
-            return "N/A: Not a trading day (weekend or holiday)"
+            return "N/A: No price bar available for this date; market session status is unverified"

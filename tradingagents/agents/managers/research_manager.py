@@ -47,6 +47,9 @@ Commit to a directional stance only when the debate's strongest arguments clearl
 **Relevant Public Data Evidence:**
 {public_data_for_agent(state, "ticker_review")}
 
+Collected sentiment source evidence (unverified opinions are not facts):
+{state.get("sentiment_evidence", "")}
+
 {NO_EXTERNAL_TOOLS}""" + get_language_instruction()
 
         investment_plan = invoke_structured_or_freetext(

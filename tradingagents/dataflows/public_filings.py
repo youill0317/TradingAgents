@@ -8,7 +8,7 @@ from datetime import date, datetime, timedelta
 from xml.etree import ElementTree
 from zoneinfo import ZoneInfo
 
-import requests
+from .retry import request_get
 
 from tradingagents.dataflows.public_data_common import collect_parts, evidence, request_json
 from tradingagents.dataflows.public_financials import dart_enrichment, sec_enrichment
@@ -29,8 +29,7 @@ def _kr_stock_code(ticker):
 
 
 def _dart_identity(stock_code, key):
-    response = requests.get(_DART_CORP_CODES, params={"crtfc_key": key}, timeout=15)
-    response.raise_for_status()
+    response = request_get(_DART_CORP_CODES, params={"crtfc_key": key}, timeout=15)
     try:
         with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
             root = ElementTree.fromstring(archive.read(archive.namelist()[0]))

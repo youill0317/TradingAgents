@@ -114,6 +114,9 @@ def write_report_tree(final_state: dict, ticker: str, save_path) -> Path:
                     for row in final_state["public_data_evidence"]), encoding="utf-8",
         )
 
+    if final_state.get("sentiment_evidence"):
+        (save_path / "sentiment_evidence.md").write_text(final_state["sentiment_evidence"], encoding="utf-8")
+
     # Write consolidated report
     header = f"# Trading Analysis Report: {ticker}\n\nGenerated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
     (save_path / "complete_report.md").write_text(header + "\n\n".join(sections), encoding="utf-8")

@@ -208,3 +208,40 @@ def test_different_basis_identity_or_derived_result_cannot_refresh_old_raw_fact(
     new.update(different)
     warnings = assess_evidence([old, new], DAY)
     assert old["stale"] and not old.get("comparative_only") and warnings
+
+
+@pytest.mark.parametrize('change', [None, 'issuer', 'scope', 'statement', 'account', 'detail',
+                                   'unit', 'derived', 'stale', 'missing', 'future'])
+def test_unmapped_accounts_use_full_raw_identity_for_comparisons(change):
+    def raw(end, period):
+        return evidence('dart', f'TEST/CFS/IS/dart_OtherGains/-/{period}', 'Other gains', None,
+                        value=100, observed_at=end, unit='KRW', metric=None,
+                        basis=f'CFS/{period}', period_basis=period, refresh_frequency='Q',
+                        evidence_type='financial_fact', accounting_standard='ifrs-full')
+    old = raw('2025-12-31', 'annual')
+    new = raw('2026-06-30', 'half-year YTD')
+    positions = {'issuer': 0, 'scope': 1, 'statement': 2, 'account': 3, 'detail': 4}
+    if change in positions:
+        parts = new['target'].split('/')
+        parts[positions[change]] = 'different'
+        new['target'] = '/'.join(parts)
+    elif change == 'unit':
+        new['unit'] = 'USD'
+    elif change == 'derived':
+        new['evidence_type'] = 'derived_financial'
+    elif change == 'stale':
+        new['observed_at'] = '2026-01-01'
+    elif change == 'missing':
+        new['status'] = 'empty'
+    elif change == 'future':
+        new['observed_at'] = '2027-06-30'
+    warnings = assess_evidence([old, new], DAY)
+    assert old['stale']  # Comparison data never becomes a current fact.
+    assert bool(old.get('comparative_only')) is (change is None)
+    assert any(w.startswith('PUBLIC_STALE:dart:TEST/') for w in warnings) is (change is not None)
+    if change is None:
+        assert old['freshness'] == 'historical_comparison'
+        assert 'Historical comparison' in render_public_data([old])
+        # Reassessment must restore the warning when the newer evidence disappears.
+        assert assess_evidence([old], DAY)
+        assert old['freshness'] == 'stale' and not old.get('comparative_only')

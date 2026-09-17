@@ -4,8 +4,10 @@ import io
 import os
 import re
 import zipfile
+from collections import defaultdict
 from calendar import monthrange
 from datetime import date
+from xml.etree import ElementTree
 
 from .public_data_common import (
     _request,
@@ -223,6 +225,33 @@ def sec_enrichment(cik, ticker, trade_date, headers, filings):
     return collect_parts("sec", parts)
 
 
+def _dart_component_ids(content):
+    """Resolve exact filing labels to unambiguous standard XBRL members."""
+    link = "{http://www.xbrl.org/2003/linkbase}"
+    xlink = "{http://www.w3.org/1999/xlink}"
+    candidates = defaultdict(set)
+    with zipfile.ZipFile(io.BytesIO(content)) as archive:
+        members = [m for m in archive.infolist() if m.filename.endswith("_lab-ko.xml")]
+        if not members or sum(m.file_size for m in members) > 25_000_000:
+            raise ValueError("DART XBRL labels unavailable or exceed bound")
+        for member in members:
+            root = ElementTree.fromstring(archive.read(member))
+            for group in root.iter(link + "labelLink"):
+                locators = {r.get(xlink + "label"): r.get(xlink + "href", "").split("#")[-1]
+                            for r in group.findall(link + "loc")}
+                labels = defaultdict(list)
+                for label in group.findall(link + "label"):
+                    labels[label.get(xlink + "label")].append(label.text)
+                for arc in group.findall(link + "labelArc"):
+                    concept = locators.get(arc.get(xlink + "from"), "")
+                    if not concept.startswith(("ifrs-full_", "ifrs_", "dart_")) or not concept.endswith("Member"):
+                        continue
+                    for label in labels[arc.get(xlink + "to")]:
+                        if label:
+                            candidates[label].add(concept)
+    return {label: next(iter(ids)) for label, ids in candidates.items() if len(ids) == 1}
+
+
 def dart_enrichment(corp_code, ticker, trade_date, filings):
     key = os.environ["DART_API_KEY"]
     url = "https://opendart.fss.or.kr/api/fnlttSinglAcntAll.json"
@@ -316,6 +345,24 @@ def dart_enrichment(corp_code, ticker, trade_date, filings):
                         note="Current DART response checked against receipt date; historical restatement archive not guaranteed.",
                     )
                 )
+        # SCE detail paths are presentation labels, not stable account IDs.
+        # Resolve their leaf members from that filing; keep unknown labels intact.
+        components = defaultdict(list)
+        for row in result:
+            if row["statement"] == "SCE" and "|" in row["account_detail"]:
+                components[row["accession"]].append(row)
+        for receipt, rows in components.items():
+            try:
+                response = _request("https://opendart.fss.or.kr/api/fnlttXbrl.xml", params={
+                    "crtfc_key": key, "rcept_no": receipt, "reprt_code": report})
+                identities = _dart_component_ids(response.content)
+                for row in rows:
+                    component = identities.get(row["account_detail"].rsplit("|", 1)[-1])
+                    if component:
+                        row["component_id"] = component
+            except Exception as exc:
+                result.append(failure("dart", f"{ticker}/{receipt}/component_identity",
+                                      f"XBRL component identity unavailable ({type(exc).__name__}); original account labels retained."))
         return result
 
     parts = []

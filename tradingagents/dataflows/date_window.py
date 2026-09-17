@@ -12,8 +12,15 @@ in a backtest we can't prove it isn't future.
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from .utils import get_current_date
+
+
+def is_live_date(trade_date: str, now: datetime | None = None) -> bool:
+    """Live-only sources share the workflow's New York calendar date."""
+    now = now or datetime.now(timezone.utc)
+    return trade_date == now.astimezone(ZoneInfo("America/New_York")).date().isoformat()
 
 
 def to_utc(dt: datetime) -> datetime:

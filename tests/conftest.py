@@ -65,3 +65,26 @@ def mock_llm_client():
         return_value=client,
     ):
         yield client
+
+
+@pytest.fixture(autouse=True)
+def provider_cooldown_db(monkeypatch, tmp_path):
+    from tradingagents.dataflows import retry
+    monkeypatch.setattr(retry, "_COOLDOWN_DB", tmp_path / "provider-cooldowns.sqlite")
+    return retry._COOLDOWN_DB
+
+
+@pytest.fixture
+def data_retry_clock(monkeypatch):
+    """Exercise retries without real waiting or leaking provider cooldowns."""
+    from types import SimpleNamespace
+    from tradingagents.dataflows import retry
+    clock = SimpleNamespace(now=100.0, sleeps=[])
+    def sleep(seconds):
+        clock.sleeps.append(seconds)
+        clock.now += seconds
+    monkeypatch.setattr(retry, "time", SimpleNamespace(
+        time=lambda: 1789603200.0 + clock.now - 100,
+        sleep=sleep))
+    monkeypatch.setattr(retry.random, "uniform", lambda *args: 0.0)
+    return clock

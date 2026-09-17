@@ -4,6 +4,7 @@ These helpers do not call providers or infer unknown release dates. Cache hits
 retain the original retrieval time and version; failure results are not cached.
 """
 
+import calendar
 import copy
 import hashlib
 import json
@@ -112,7 +113,7 @@ def refresh_frequency(row):
 
 
 def _mark_comparative_financials(rows):
-    """Older bases are history only when a newer, fresh same-metric result exists.
+    """Older bases are history only when a newer, fresh same-account result exists.
 
     Do not widen the quarterly freshness threshold. A missing recent quarter,
     different issuer/scope/currency, or newer ratio cannot refresh a raw fact.
@@ -124,12 +125,22 @@ def _mark_comparative_financials(rows):
         row.pop("comparative_only", None)
         if (row.get("source") not in {"sec", "dart"}
                 or row.get("evidence_type") not in {"financial_fact", "derived_financial"}
-                or row.get("status") != "success" or not row.get("metric")
+                or row.get("status") != "success"
                 or number(row.get("value")) is None or not period_date(row.get("observed_at"))):
             continue
+        identity = ("metric", row["metric"]) if row.get("metric") else None
+        if identity is None:
+            if row["evidence_type"] != "financial_fact":
+                continue
+            # Raw SEC/DART targets end in period basis. Keep the entire account
+            # prefix, including issuer, statement and detail, rather than guessing a metric.
+            identity = ("account", row["target"].rsplit("/", 1)[0])
+            if (row["source"] == "dart" and row.get("component_id")
+                    and str(row.get("account_id") or "").startswith(("ifrs-full_", "ifrs_", "dart_"))):
+                identity = ("account", row.get("statement"), row["account_id"], row["component_id"])
         basis_scope = str(row.get("basis") or "").split("/", 1)[0]
         scope = row.get("reporting_scope") or (basis_scope if basis_scope in {"CFS", "OFS"} else "issuer")
-        key = (row["source"], row["target"].split("/", 1)[0], row["metric"], row.get("unit"),
+        key = (row["source"], row["target"].split("/", 1)[0], identity, row.get("unit"),
                scope, row.get("accounting_standard"), row["evidence_type"])
         groups[key].append(row)
     for batch in groups.values():
@@ -166,6 +177,16 @@ def assess_evidence(rows, trade_date):
             row["evidence_id"] = evidence_id(row)
             warnings.append(f"PUBLIC_FUTURE_OBSERVATION:{row['source']}:{row['target']}")
             continue
+        # Coarse labels describe a whole period, not an observation on its first day.
+        # Keep exact dates (including issuer statement dates) and PIT ordering intact.
+        label = str(row.get("observed_at"))
+        month = (12 if re.fullmatch(r"\d{4}", label) else
+                 3 * int(label[-1]) if re.fullmatch(r"\d{4}-?Q[1-4]", label) else
+                 observed.month if re.fullmatch(r"\d{6}|\d{4}-\d{2}|\d{4}M\d{1,2}", label) else None)
+        if month:
+            end = date(observed.year, month, calendar.monthrange(observed.year, month)[1])
+            age = (day - min(end, day)).days
+            row["observation_age_days"] = age
         frequency = refresh_frequency(row)
         if frequency:
             row["refresh_frequency"] = frequency

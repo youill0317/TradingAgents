@@ -2,29 +2,19 @@
 
 import math
 import re
-import time
 from datetime import date, datetime, timezone
 from xml.etree import ElementTree
 
-import requests
+from .retry import request_get
 
 
 def _request(url, params=None, headers=None):
-    """Bound requests; retry transient failures once without logging credential URLs."""
-    for attempt in range(2):
-        try:
-            response = requests.get(url, params=params, headers=headers, timeout=(5, 20))
-            if response.status_code in {429, 500, 502, 503, 504} and attempt == 0:
-                time.sleep(1)
-                continue
-            response.raise_for_status()
-            if len(response.content) > 25_000_000:
-                raise ValueError("Official response exceeds the download bound")
-            return response
-        except (requests.Timeout, requests.ConnectionError):
-            if attempt:
-                raise
-    raise RuntimeError("No official response")
+    """Use the shared retry policy and retain the official download bound."""
+    response = request_get(url, params=params, headers=headers)
+    if len(response.content) > 25_000_000:
+        response.close()
+        raise ValueError("Official response exceeds the download bound")
+    return response
 
 
 def request_json(url, params=None, headers=None):
@@ -72,11 +62,13 @@ def collect_parts(source, parts):
                 or [failure(source, target, "No usable observations returned.", status="empty")]
             )
         except Exception as exc:
+            response = getattr(exc, "response", None)
+            status = f", HTTP {response.status_code}" if response is not None else ""
             result.append(
                 failure(
                     source,
                     target,
-                    f"Collection failed ({type(exc).__name__}); check provider access and schema.",
+                    f"Collection failed ({type(exc).__name__}{status}); check provider access and schema.",
                 )
             )
     return result

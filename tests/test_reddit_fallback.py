@@ -1,4 +1,4 @@
-"""Tests for the RSS-first Reddit fetcher, its 429 backoff, the opt-in JSON
+"""Tests for the RSS-first Reddit fetcher, its 429 cooldown, the opt-in JSON
 path's degradation (#862), and chunked-transfer error handling (#1024)."""
 
 from __future__ import annotations
@@ -9,7 +9,10 @@ from urllib.error import HTTPError
 
 import pytest
 
+pytestmark = pytest.mark.usefixtures("data_retry_clock")
+
 from tradingagents.dataflows import reddit
+
 
 _SAMPLE_ATOM = """<?xml version="1.0" encoding="UTF-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
@@ -123,50 +126,13 @@ class TestJsonPathFallsBackToRss:
 
 
 @pytest.mark.unit
-class TestRss429Backoff:
-    def test_429_then_success_retries_once(self):
-        err = HTTPError("url", 429, "Too Many Requests", {}, None)
-        with patch.object(reddit, "urlopen", side_effect=[err, _atom_resp()]) as op, \
-             patch.object(reddit.time, "sleep") as slept:
-            posts = reddit._fetch_subreddit_rss("NVDA", "stocks", 5, 5.0)
-        assert op.call_count == 2          # original + exactly one retry
-        slept.assert_called_once()         # backed off before retrying
-        assert len(posts) == 2
+class TestRss429Cooldown:
+    def test_429_waits_then_recovers(self, data_retry_clock):
+        err = HTTPError("url", 429, "Too Many Requests", {"Retry-After": "10"}, None)
+        with patch.object(reddit, "urlopen", side_effect=[err, _atom_resp()]) as op:
+            assert len(reddit._fetch_subreddit_rss("NVDA", "stocks", 5, 5.0)) == 2
+        assert op.call_count == 2 and data_retry_clock.sleeps == [10]
 
-    def test_429_twice_gives_up_after_one_retry(self):
-        err = HTTPError("url", 429, "Too Many Requests", {}, None)
-        with patch.object(reddit, "urlopen", side_effect=[err, err]) as op, \
-             patch.object(reddit.time, "sleep"):
-            posts = reddit._fetch_subreddit_rss("NVDA", "stocks", 5, 5.0)
-        assert op.call_count == 2          # one retry, then gives up cleanly
-        assert posts is None
-
-    def test_retry_after_header_is_honoured(self):
-        err = HTTPError("url", 429, "Too Many Requests", {"Retry-After": "12"}, None)
-        with patch.object(reddit, "urlopen", side_effect=[err, _atom_resp()]), \
-             patch.object(reddit.time, "sleep") as slept:
-            reddit._fetch_subreddit_rss("NVDA", "stocks", 5, 5.0)
-        slept.assert_called_once_with(12.0)
-
-    def test_retry_after_zero_is_honoured_not_treated_as_absent(self):
-        # A valid "Retry-After: 0" means retry at once; it must not fall through
-        # to the fallback wait (the earlier `or 5.0` bug turned 0 into 5s).
-        err = HTTPError("url", 429, "Too Many Requests", {"Retry-After": "0"}, None)
-        with patch.object(reddit, "urlopen", side_effect=[err, _atom_resp()]), \
-             patch.object(reddit.time, "sleep") as slept:
-            reddit._fetch_subreddit_rss("NVDA", "stocks", 5, 5.0)
-        slept.assert_called_once_with(0.0)
-
-    def test_headerless_429_fallback_is_jittered(self):
-        # No Retry-After -> our own ~5s fallback, jittered so concurrent runs
-        # don't retry in lockstep (kept within a tight band).
-        err = HTTPError("url", 429, "Too Many Requests", {}, None)
-        with patch.object(reddit, "urlopen", side_effect=[err, _atom_resp()]), \
-             patch.object(reddit.time, "sleep") as slept:
-            reddit._fetch_subreddit_rss("NVDA", "stocks", 5, 5.0)
-        slept.assert_called_once()
-        (wait,), _ = slept.call_args
-        assert 48.0 <= wait <= 72.0  # 60s +/-20% jitter
 
 
 @pytest.mark.unit
@@ -288,17 +254,10 @@ class TestFailedFetchIsNotSilence:
         assert "no Reddit posts found" in out
         assert "unavailable" not in out
 
-    def test_retry_is_not_spent_again_after_a_failure(self):
-        # The 60s back-off must be paid at most once per run, so subsequent
-        # subreddits are fetched with retry disabled rather than stalling.
-        seen = []
-
-        def record(t, sub, limit, timeout, _retry=True):
-            seen.append(_retry)
-            return None
-
-        with patch.object(reddit, "_fetch_subreddit", side_effect=record):
-            reddit.fetch_reddit_posts(
-                "NVDA", subreddits=("a", "b", "c"), inter_request_delay=0
-            )
-        assert seen == [True, False, False]
+    def test_long_cooldown_skips_later_queries_without_early_retry(self, data_retry_clock):
+        err = HTTPError("url", 429, "Too Many Requests", {"Retry-After": "3600"}, None)
+        with patch.object(reddit, "urlopen", side_effect=err) as op:
+            result = reddit.fetch_reddit_posts("NVDA", subreddits=("a", "b", "c"), inter_request_delay=0)
+        op.assert_called_once()
+        assert data_retry_clock.sleeps == []
+        assert "Reddit unavailable" in result and "no Reddit posts found" not in result

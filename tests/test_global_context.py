@@ -1,7 +1,20 @@
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import pytest
+
+pytestmark = pytest.mark.usefixtures("data_retry_clock")
+
 from tradingagents.dataflows import global_context, reddit, yfinance_news
+
+
+@pytest.fixture(autouse=True)
+def isolate_apewisdom():
+    with patch.object(global_context, "collect_apewisdom", return_value={
+        "source": "apewisdom", "target": "rankings", "status": "empty", "content": "No observations",
+        "retrieved_at": "2026-09-09T00:00:00+00:00",
+    }):
+        yield
 
 
 def test_reddit_empty_and_failure_differ():

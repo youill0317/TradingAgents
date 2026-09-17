@@ -1,5 +1,6 @@
 """Graph wiring for market analysis, bounded debate, and risk review."""
 
+from datetime import datetime, timezone
 from typing import Annotated, Any
 
 from langchain_core.messages import ToolMessage
@@ -13,6 +14,8 @@ from tradingagents.agents import (
     create_sector_analyst,
 )
 from tradingagents.agents.market_review import create_market_review
+from tradingagents.dataflows.global_context import provider_result
+from tradingagents.dataflows.interface import get_category_for_method, get_vendor
 
 # The per-ticker placeholder anchors on the instrument under analysis; a scan has
 # no instrument, so it anchors on the task instead. A bare "Continue" is not an
@@ -117,7 +120,24 @@ def capture_macro_evidence(state: MarketState) -> dict:
         and getattr(state["messages"][-1], "tool_calls", None)
     ):
         warnings.append("MACRO_TOOL_BUDGET_EXHAUSTED")
+    calls = {call["id"]: call for message in state["messages"]
+             for call in getattr(message, "tool_calls", [])}
+    extra = []
+    for name in ("get_global_news", "get_prediction_markets"):
+        for message in _tool_messages(state, name):
+            content, status = provider_result(message.content, name)
+            args = calls.get(message.tool_call_id, {}).get("args", {})
+            extra.append({"source": name, "target": args.get("topic", args.get("curr_date", "follow-up")),
+                          "arguments": args, "status": status, "content": content,
+                          "configured_provider": get_vendor(get_category_for_method(name), name),
+                          "retrieved_at": datetime.now(timezone.utc).isoformat()})
+            if status not in {"success", "empty"}:
+                warnings.append(f"{name}: {status}")
     return {
+        "global_evidence": [*state.get("global_evidence", []), *extra],
+        "global_context": "\n\n".join([state.get("global_context", ""), *[
+            f"## Follow-up {row['source']}: {row['target']} [{row['status']}]\n{row['content']}"
+            for row in extra]]),
         "macro_evidence": "\n\n".join(str(message.content) for message in macro),
         "data_warnings": warnings,
     }

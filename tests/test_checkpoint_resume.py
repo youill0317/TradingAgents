@@ -1,9 +1,12 @@
 """Test checkpoint resume: crash mid-analysis, re-run resumes from last node."""
 
+import sqlite3
 import tempfile
 import unittest
+from pathlib import Path
 from typing import TypedDict
 
+import pytest
 from langgraph.graph import END, StateGraph
 
 from tradingagents.graph.checkpointer import (
@@ -16,6 +19,32 @@ from tradingagents.graph.checkpointer import (
 
 # Mutable flag to simulate crash on first run
 _should_crash = False
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_deleting_completed_thread_reclaims_disk_and_preserves_other_run(tmp_path, legacy):
+    with get_checkpointer(tmp_path, "TEST") as saver:
+        for date in ("2026-09-16", "2026-09-17"):
+            saver.conn.execute(
+                "INSERT INTO checkpoints VALUES (?, '', 'checkpoint', NULL, 'json', ?, ?)",
+                (thread_id("TEST", date), b"x" * 2_000_000, b"{}"),
+            )
+        saver.conn.commit()
+    db = Path(tmp_path) / "checkpoints/TEST.db"
+    if legacy:
+        conn = sqlite3.connect(db)
+        try:
+            conn.execute("PRAGMA auto_vacuum = NONE")
+            conn.execute("VACUUM")
+        finally:
+            conn.close()
+    before = db.stat().st_size
+    clear_checkpoint(tmp_path, "TEST", "2026-09-16")
+    assert db.stat().st_size < before - 1_500_000
+    with get_checkpointer(tmp_path, "TEST") as saver:
+        assert saver.conn.execute("SELECT thread_id FROM checkpoints").fetchall() == [
+            (thread_id("TEST", "2026-09-17"),)
+        ]
 
 
 class _SimpleState(TypedDict):

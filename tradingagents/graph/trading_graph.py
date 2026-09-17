@@ -298,6 +298,7 @@ class TradingAgentsGraph:
         or unreachable.
         """
         from tradingagents.dataflows.symbol_utils import normalize_symbol
+        from tradingagents.dataflows.stockstats_utils import yf_retry
 
         try:
             start = datetime.strptime(trade_date, "%Y-%m-%d")
@@ -307,8 +308,8 @@ class TradingAgentsGraph:
             # Normalize so the realized-return lookup hits the same instrument
             # the analysis priced (e.g. XAUUSD -> GC=F) (#984). The benchmark is
             # already a canonical Yahoo symbol from ``_resolve_benchmark``.
-            stock = yf.Ticker(normalize_symbol(ticker)).history(start=trade_date, end=end_str)
-            bench = yf.Ticker(benchmark).history(start=trade_date, end=end_str)
+            stock = yf_retry(lambda: yf.Ticker(normalize_symbol(ticker)).history(start=trade_date, end=end_str))
+            bench = yf_retry(lambda: yf.Ticker(benchmark).history(start=trade_date, end=end_str))
 
             # Require the full holding window in both series. A rerun before it
             # has traded leaves the entry pending to retry next run, rather than
@@ -622,6 +623,7 @@ class TradingAgentsGraph:
             "trade_date": final_state["trade_date"],
             "market_report": final_state["market_report"],
             "sentiment_report": final_state["sentiment_report"],
+            "sentiment_evidence": final_state.get("sentiment_evidence", ""),
             "news_report": final_state["news_report"],
             "fundamentals_report": final_state["fundamentals_report"],
             "investment_debate_state": {

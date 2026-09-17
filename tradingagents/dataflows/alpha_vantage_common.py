@@ -6,6 +6,8 @@ from io import StringIO
 import pandas as pd
 import requests
 
+from .retry import retry_call
+
 from .errors import VendorNotConfiguredError, VendorRateLimitError
 
 API_BASE_URL = "https://www.alphavantage.co/query"
@@ -60,6 +62,11 @@ class AlphaVantageRateLimitError(VendorRateLimitError):
     pass
 
 def _make_api_request(function_name: str, params: dict) -> dict | str:
+    return retry_call(lambda: _request_once(function_name, params), API_BASE_URL,
+                      rate_limit_errors=(AlphaVantageRateLimitError,))
+
+
+def _request_once(function_name: str, params: dict) -> dict | str:
     """Helper function to make API requests and handle responses.
 
     Raises:
@@ -103,7 +110,10 @@ def _make_api_request(function_name: str, params: dict) -> dict | str:
     if notice:
         low = notice.lower()
         if any(m in low for m in ("rate limit", "requests per day", "call frequency", "premium")):
-            raise AlphaVantageRateLimitError(f"Alpha Vantage rate limit exceeded: {notice}")
+            error = AlphaVantageRateLimitError("Alpha Vantage rate limit exceeded")
+            error.retryable = "per minute" in low and "per day" not in low
+            error.retry_after = 60.0
+            raise error
         if "api key" in low or "apikey" in low:
             # Reuse the existing "not configured" error so a bad key surfaces as
             # a real, actionable failure rather than a mislabeled rate limit (#991).

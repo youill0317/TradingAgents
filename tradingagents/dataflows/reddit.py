@@ -5,8 +5,7 @@ Default path is Reddit's public Atom/RSS search feed
 (``/search.json``) is reliably WAF-blocked (``HTTP 403``) for public clients
 (issue #862), and probing it on every call only doubled our request volume
 against Reddit's per-IP rate limit — tripping ``429`` on the RSS fallback — so
-it is kept (``_fetch_subreddit_json``) but not used by default. On a 429 we back
-off once (honouring ``Retry-After``). RSS lacks score / comment counts, so those
+it is kept (``_fetch_subreddit_json``) but not used by default. Transient failures wait and retry through the shared provider policy. RSS lacks score / comment counts, so those
 posts are marked and the formatter omits the metrics rather than printing fake
 zeros.
 
@@ -31,10 +30,10 @@ import time
 import xml.etree.ElementTree as ET
 from collections.abc import Iterable
 from datetime import datetime, timezone
-from urllib.error import HTTPError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+from .retry import read_url
 from .date_window import in_window
 from .symbol_utils import crypto_base
 
@@ -106,35 +105,9 @@ def _strip_html(content: str) -> str:
     return " ".join(html.unescape(text).split())
 
 
-# Headerless-429 backoff when Reddit gives no Retry-After. Measured against
-# /r/{sub}/search.rss, a retry still 429s at 8s, 10s and 30s of spacing and
-# succeeds at 60s, so a shorter wait spends the one retry on a request that
-# cannot succeed (#1295). Jittered so several analyses sharing an IP don't
-# retry in lockstep and re-collide on the limit.
-_RETRY_FALLBACK_SECONDS = 60.0
-
-
 def _jitter(seconds: float, frac: float = 0.2) -> float:
-    """Return ``seconds`` with +/-``frac`` random jitter, to desynchronize
-    concurrent runs pacing against the same per-IP limit."""
+    """Desynchronize ordinary subreddit queries."""
     return seconds * (1.0 + random.uniform(-frac, frac))
-
-
-def _retry_after_seconds(exc: HTTPError) -> float | None:
-    """Seconds to wait from a 429's ``Retry-After`` header, capped at 60s.
-
-    The cap matches ``_RETRY_FALLBACK_SECONDS``: honouring less than we would
-    wait on our own would spend the one retry on a request we already know is
-    too early.
-
-    Returns ``None`` only when the header is absent or unparseable; a valid
-    ``Retry-After: 0`` returns ``0.0`` (retry at once), not ``None``.
-    """
-    try:
-        val = exc.headers.get("Retry-After") if getattr(exc, "headers", None) else None
-        return min(float(val), 60.0) if val is not None else None
-    except (ValueError, TypeError, AttributeError):
-        return None
 
 
 # Reddit search feeds are small (a page of results); cap the read so a
@@ -159,14 +132,11 @@ def _fetch_subreddit_rss(
     sub: str,
     limit: int,
     timeout: float,
-    _retry: bool = True,
 ) -> list[dict] | None:
     """Default path: parse the public Atom search feed for a subreddit.
 
     Carries no score / comment counts, so those fields are left None and the
-    post is tagged ``source="rss"`` for honest display. On a 429 (Reddit's
-    per-IP rate limit) we back off once — honouring ``Retry-After`` when
-    present — before giving up, so a transient burst doesn't blank the feed.
+    post is tagged ``source="rss"`` for honest display. Transient failures use bounded retries and a shared provider cooldown.
 
     Returns ``[]`` when the search ran and matched nothing, and ``None`` when
     the fetch itself failed. The caller must keep these apart: rendering a
@@ -176,22 +146,7 @@ def _fetch_subreddit_rss(
     url = _RSS.format(sub=sub, qs=_search_qs(ticker, limit))
     req = Request(url, headers={"User-Agent": _UA})
     try:
-        with urlopen(req, timeout=timeout) as resp:
-            root = ET.fromstring(_read_capped(resp))
-    except HTTPError as exc:
-        if exc.code == 429 and _retry:
-            # Honour a server-supplied Retry-After exactly (including 0); jitter
-            # only our own fallback so concurrent runs don't retry in lockstep.
-            retry_after = _retry_after_seconds(exc)
-            wait = retry_after if retry_after is not None else _jitter(_RETRY_FALLBACK_SECONDS)
-            logger.warning(
-                "Reddit RSS 429 for r/%s · %s — backing off %.1fs then retrying once",
-                sub, ticker, wait,
-            )
-            time.sleep(wait)
-            return _fetch_subreddit_rss(ticker, sub, limit, timeout, _retry=False)
-        logger.warning("Reddit RSS fetch failed for r/%s · %s: %s", sub, ticker, exc)
-        return None
+        root = ET.fromstring(read_url(req, opener=urlopen, timeout=timeout, read=_read_capped))
     except (OSError, http.client.HTTPException, ET.ParseError) as exc:
         # OSError covers URLError/TimeoutError/connection resets; HTTPException
         # covers chunked-transfer errors (IncompleteRead/BadStatusLine, #1024).
@@ -237,8 +192,7 @@ def _fetch_subreddit_json(
     url = _API.format(sub=sub, qs=_search_qs(ticker, limit))
     req = Request(url, headers={"User-Agent": _UA, "Accept": "application/json"})
     try:
-        with urlopen(req, timeout=timeout) as resp:
-            payload = json.loads(_read_capped(resp))
+        payload = json.loads(read_url(req, opener=urlopen, timeout=timeout, read=_read_capped))
         children = (payload.get("data") or {}).get("children") or []
         return [c.get("data", {}) for c in children if isinstance(c, dict)]
     except (OSError, http.client.HTTPException, json.JSONDecodeError) as exc:
@@ -254,7 +208,6 @@ def _fetch_subreddit(
     sub: str,
     limit: int,
     timeout: float,
-    _retry: bool = True,
 ) -> list[dict] | None:
     """Fetch one subreddit, RSS-first. ``None`` means the fetch failed.
 
@@ -262,7 +215,7 @@ def _fetch_subreddit(
     so we go straight to the RSS feed — which serves our identified User-Agent
     reliably — halving our request volume against Reddit's per-IP rate limit.
     """
-    return _fetch_subreddit_rss(ticker, sub, limit, timeout, _retry=_retry)
+    return _fetch_subreddit_rss(ticker, sub, limit, timeout)
 
 
 def fetch_reddit_posts(
@@ -278,8 +231,7 @@ def fetch_reddit_posts(
     subreddits and return them as a formatted plaintext block.
 
     ``inter_request_delay`` paces the (now RSS-only) per-subreddit requests to
-    stay under Reddit's public per-IP rate limit; combined with the RSS-first
-    path it makes 429s rare even when several analyses run back-to-back.
+    reduce bursts. A rate-limited feed is unavailable until its cooldown expires.
 
     When ``start_date``/``end_date`` (yyyy-mm-dd) are given, posts are trimmed to
     that window so a historical run does not leak current discussion into a
@@ -292,18 +244,12 @@ def fetch_reddit_posts(
     blocks = []
     total_posts = 0
     unavailable = []
-    allow_retry = True
     for i, sub in enumerate(subreddits):
         if i > 0 and inter_request_delay:
             time.sleep(_jitter(inter_request_delay))
-        fetched = _fetch_subreddit(ticker, sub, limit_per_sub, timeout, _retry=allow_retry)
+        fetched = _fetch_subreddit(ticker, sub, limit_per_sub, timeout)
         if fetched is None:
-            # A failed fetch is not an absence of discussion, so it must not be
-            # rendered as "no posts found" (#1295). One failure also means the
-            # per-IP budget is likely gone, so skip the (now 60s) back-off on
-            # the remaining subreddits rather than stalling the run on retries
-            # that cannot succeed; #1286 tracks coordinating this properly.
-            allow_retry = False
+            # A failed or skipped fetch is not an observed absence of discussion.
             unavailable.append(sub)
             blocks.append(f"r/{sub}: <unavailable: fetch failed, not an absence of posts>")
             continue

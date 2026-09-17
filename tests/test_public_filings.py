@@ -1,5 +1,7 @@
 import io
 import zipfile
+
+import requests
 from unittest.mock import Mock
 
 from tradingagents.dataflows import public_filings
@@ -43,7 +45,7 @@ def test_sec_maps_ticker_filters_cutoff_and_builds_document_link(monkeypatch):
 
 def test_dart_maps_stock_code_and_marks_corrections(monkeypatch):
     monkeypatch.setenv("DART_API_KEY", "dart-secret")
-    monkeypatch.setattr(public_filings.requests, "get", Mock(return_value=Mock(content=_corp_zip())))
+    monkeypatch.setattr(requests, "get", Mock(return_value=Mock(content=_corp_zip())))
     monkeypatch.setattr(public_filings, "request_json", lambda url, **kwargs: {
         "status": "000", "list": [
             {"rcept_dt": "20240501", "rcept_no": "20240501000001", "corp_name": "삼성전자", "report_nm": "분기보고서"},
@@ -61,7 +63,7 @@ def test_dart_maps_stock_code_and_marks_corrections(monkeypatch):
 def test_fsc_uses_dart_registration_number_and_keeps_small_payload(monkeypatch):
     monkeypatch.setenv("DART_API_KEY", "dart-secret")
     monkeypatch.setenv("DATA_GO_KR_API_KEY", "fsc-secret")
-    monkeypatch.setattr(public_filings.requests, "get", Mock(return_value=Mock(content=_corp_zip())))
+    monkeypatch.setattr(requests, "get", Mock(return_value=Mock(content=_corp_zip())))
     calls = []
 
     def fake_json(url, **kwargs):
@@ -83,7 +85,7 @@ def test_fsc_uses_dart_registration_number_and_keeps_small_payload(monkeypatch):
 
 def test_provider_errors_are_not_returned_as_evidence(monkeypatch):
     monkeypatch.setenv("DART_API_KEY", "key")
-    monkeypatch.setattr(public_filings.requests, "get", Mock(return_value=Mock(content=_corp_zip())))
+    monkeypatch.setattr(requests, "get", Mock(return_value=Mock(content=_corp_zip())))
     monkeypatch.setattr(public_filings, "request_json", lambda *args, **kwargs: {"status": "010", "message": "bad key"})
 
     rows = public_filings.collect_dart("005930", "2024-05-31")

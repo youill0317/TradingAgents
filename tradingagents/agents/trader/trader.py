@@ -70,6 +70,7 @@ def create_trader(llm):
                     f"{report_section}"
                     f"Proposed Investment Plan:\n{investment_plan}\n\n"
                     f"Relevant Public Data Evidence:\n{public_data_for_agent(state, 'ticker_review')}\n\n"
+                    f"Collected sentiment source evidence:\n{state.get('sentiment_evidence', '')}\n\n"
                     f"Make an informed, strategic trading decision."
                 ),
             },

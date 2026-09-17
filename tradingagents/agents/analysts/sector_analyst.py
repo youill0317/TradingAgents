@@ -73,6 +73,9 @@ def create_sector_analyst(llm):
             "downstream.\n\n"
             + "--- MACRO REGIME (from the Macro Analyst) ---\n"
             f"{macro_report}"
+            + "\n--- COLLECTED NEWS, EXPECTATIONS AND DISCUSSION ATTENTION ---\n"
+            + state.get("global_context", "")
+            + "\nApeWisdom attention is not buying pressure or institutional flows. Screen candidates before recommending them.\n"
             + "\n--- COLLECTED US SECTOR PERFORMANCE ---\n"
             + state.get("sector_evidence", "")
             + "\n--- PARTICIPATION AND ROTATION ---\n" + state.get("market_diagnostics", "")

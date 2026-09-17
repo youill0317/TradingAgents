@@ -179,7 +179,7 @@ def get_stock_stats_indicators_window(
             if date_str in indicator_data:
                 indicator_value = indicator_data[date_str]
             else:
-                indicator_value = "N/A: Not a trading day (weekend or holiday)"
+                indicator_value = "N/A: No price bar available for this date; market session status is unverified"
 
             date_values.append((date_str, indicator_value))
             current_dt = current_dt - relativedelta(days=1)
@@ -466,14 +466,20 @@ def get_insider_transactions(
         # Empty is normal here (many valid symbols have no insider filings),
         # so report it plainly rather than treating the symbol as invalid.
         if data is None or data.empty:
-            return f"No insider transactions reported for symbol '{canonical}'"
+            return f"No insider transaction observations returned for '{canonical}'; provider coverage is unknown, not proof of no trades."
 
         # Convert to CSV string for consistency with other functions
         csv_string = data.to_csv()
 
         # Add header information
         header = f"# Insider Transactions data for {canonical}\n"
-        header += f"# Data retrieved on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+        header += f"# Data retrieved on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+        dates = pd.to_datetime(data.get("Start Date", pd.Series(dtype=object)), errors="coerce", utc=True).dropna()
+        if not dates.empty:
+            header += f"# Returned transaction dates: {dates.min().date()} to {dates.max().date()}; latest reported transaction: {dates.max().date()}\n"
+        else:
+            header += "# Transaction dates unavailable.\n"
+        header += "# Provider snapshot, not complete transaction history. Retrieval time does not establish recent trading activity; use transaction dates.\n\n"
 
         return header + csv_string
 

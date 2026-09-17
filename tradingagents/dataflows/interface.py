@@ -12,12 +12,14 @@ from .alpha_vantage import (
     get_stock as get_alpha_vantage_stock,
 )
 from .config import get_config
+from .date_window import is_live_date
 from .errors import (
     NoMarketDataError,
     VendorNotConfiguredError,
     VendorRateLimitError,
 )
 from .fred import get_macro_data as get_fred_macro_data
+from .kalshi import get_prediction_markets as get_kalshi_prediction_markets
 from .market_scan import (
     get_sector_performance as get_yfinance_sector_performance,
     screen_equities as screen_yfinance_equities,
@@ -92,6 +94,7 @@ VENDOR_LIST = [
     "yfinance",
     "fred",
     "polymarket",
+    "kalshi",
     "alpha_vantage",
 ]
 
@@ -151,6 +154,7 @@ VENDOR_METHODS = {
     # prediction_markets
     "get_prediction_markets": {
         "polymarket": get_polymarket_prediction_markets,
+        "kalshi": get_kalshi_prediction_markets,
     },
     # market_scan
     "get_sector_performance": {
@@ -185,6 +189,10 @@ def get_vendor(category: str, method: str = None) -> str:
 
 def route_to_vendor(method: str, *args, **kwargs):
     """Route method calls to appropriate vendor implementation with fallback support."""
+    if method == "get_prediction_markets":
+        curr_date = kwargs.pop("curr_date", None)
+        if curr_date and not is_live_date(curr_date):
+            return "DATA_UNAVAILABLE: Prediction markets provide live quotes, not historical/future-date evidence."
     category = get_category_for_method(method)
     vendor_config = get_vendor(category, method)
     primary_vendors = [v.strip() for v in vendor_config.split(',')]

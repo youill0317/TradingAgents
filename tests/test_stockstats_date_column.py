@@ -6,10 +6,34 @@ instead of `Date`, which would otherwise silently drop every indicator.
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
+from types import SimpleNamespace
+import time
+
 import pandas as pd
 import pytest
 
 from tradingagents.dataflows import stockstats_utils as su
+
+
+def test_yahoo_cache_initialization_finishes_before_concurrent_requests(monkeypatch):
+    caches = [SimpleNamespace(ready=False, initializing=False) for _ in range(3)]
+
+    def initialize(cache):
+        if cache.ready:
+            return
+        assert not cache.initializing, "Concurrent SQLite initialization"
+        cache.initializing = True
+        time.sleep(0.01)
+        cache.ready = True
+
+    for name, cache in zip(("get_tz_cache", "get_cookie_cache", "get_isin_cache"), caches):
+        cache.initialise = lambda c=cache: initialize(c)
+        monkeypatch.setattr(su.yf.cache, name, lambda c=cache: c)
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        results = list(pool.map(lambda _: su.yf_retry(lambda: all(c.ready for c in caches)), range(8)))
+    assert all(results)
 
 
 def _ohlcv(date_col: str) -> pd.DataFrame:
@@ -23,6 +47,18 @@ def _ohlcv(date_col: str) -> pd.DataFrame:
         "Close": [100.5 + i for i in range(10)],
         "Volume": [1_000_000 + i for i in range(10)],
     })
+
+
+def test_missing_date_does_not_claim_market_holiday(monkeypatch):
+    from tradingagents.dataflows import y_finance
+
+    monkeypatch.setattr(su, "load_ohlcv", lambda *args: _ohlcv("Date"))
+    monkeypatch.setattr(y_finance, "load_ohlcv", lambda *args: _ohlcv("Date"))
+    single = su.StockstatsUtils.get_stock_stats("TEST", "close_5_sma", "2026-04-15")
+    bulk = y_finance.get_stock_stats_indicators_window("TEST", "close_50_sma", "2026-04-15", 1)
+    for result in (single, bulk):
+        assert "No price bar" in result
+        assert "Not a trading day" not in result
 
 
 @pytest.mark.unit

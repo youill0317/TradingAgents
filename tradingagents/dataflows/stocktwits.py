@@ -21,6 +21,7 @@ import logging
 from datetime import datetime
 from urllib.request import Request, urlopen
 
+from .retry import read_url
 from .date_window import in_window
 from .symbol_utils import crypto_base
 
@@ -86,8 +87,7 @@ def fetch_stocktwits_messages(
     url = _API.format(ticker=_stocktwits_symbol(ticker))
     req = Request(url, headers={"User-Agent": _UA, "Accept": "application/json"})
     try:
-        with urlopen(req, timeout=timeout) as resp:
-            data = json.loads(resp.read())
+        data = json.loads(read_url(req, opener=urlopen, timeout=timeout, read=lambda resp: resp.read()))
     except (OSError, http.client.HTTPException, json.JSONDecodeError) as exc:
         # OSError covers URLError/TimeoutError/connection resets; HTTPException
         # covers chunked-transfer errors (IncompleteRead/BadStatusLine, #1024).

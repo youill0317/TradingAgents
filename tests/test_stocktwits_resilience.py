@@ -13,6 +13,8 @@ from urllib.error import HTTPError
 
 import pytest
 
+pytestmark = pytest.mark.usefixtures("data_retry_clock")
+
 from tradingagents.dataflows import stocktwits
 
 

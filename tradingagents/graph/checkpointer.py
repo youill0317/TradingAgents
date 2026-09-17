@@ -44,6 +44,10 @@ def get_checkpointer(data_dir: str | Path, ticker: str) -> Generator[SqliteSaver
     db = _db_path(data_dir, ticker)
     conn = sqlite3.connect(str(db), check_same_thread=False)
     try:
+        if conn.execute("PRAGMA auto_vacuum").fetchone()[0] != 1:
+            # Reclaim deleted threads' pages; VACUUM also upgrades existing DBs.
+            conn.execute("PRAGMA auto_vacuum = FULL")
+            conn.execute("VACUUM")
         saver = SqliteSaver(conn)
         saver.setup()
         yield saver
@@ -87,12 +91,5 @@ def clear_checkpoint(data_dir: str | Path, ticker: str, date: str, signature: st
     if not db.exists():
         return
     tid = thread_id(ticker, date, signature)
-    conn = sqlite3.connect(str(db))
-    try:
-        for table in ("writes", "checkpoints"):
-            conn.execute(f"DELETE FROM {table} WHERE thread_id = ?", (tid,))
-        conn.commit()
-    except sqlite3.OperationalError:
-        pass
-    finally:
-        conn.close()
+    with get_checkpointer(data_dir, ticker) as saver:
+        saver.delete_thread(tid)

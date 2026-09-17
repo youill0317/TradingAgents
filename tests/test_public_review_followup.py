@@ -262,7 +262,11 @@ def test_missing_core_metric_requires_structured_review_signal(tmp_path):
     final = workflow.compile().invoke(state)
     assert final["analysis_status"] == "REVIEW_REQUIRED"
     assert final["public_data_quality"]["missing_core_metrics"] == ["operating_cashflow"]
-    assert SignalProcessor().process_signal(final["final_trade_decision"]) == "Buy"
+    llm.invoke.assert_not_called()
+    assert "**Rating**: REVIEW" in final["final_trade_decision"]
+    assert "**Rating**: Buy" not in final["final_trade_decision"]
+    assert SignalProcessor().process_signal(final["final_trade_decision"]) == "REVIEW"
+    assert parse_rating(final["final_trade_decision"]) == "REVIEW"
     assert SignalProcessor().process_signal(
         final["final_trade_decision"], analysis_status=final["analysis_status"]
     ) == "REVIEW"

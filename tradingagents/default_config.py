@@ -150,7 +150,7 @@ DEFAULT_CONFIG = _apply_env_overrides({
         "fundamental_data": "yfinance",      # Options: alpha_vantage, yfinance
         "news_data": "yfinance",             # Options: alpha_vantage, yfinance
         "macro_data": "fred",                # Options: fred (needs FRED_API_KEY)
-        "prediction_markets": "polymarket",  # Options: polymarket (keyless)
+        "prediction_markets": "kalshi",  # Options: kalshi, polymarket (both keyless)
         "market_scan": "yfinance",           # Options: yfinance (keyless)
     },
     # Tool-level configuration (takes precedence over category-level)

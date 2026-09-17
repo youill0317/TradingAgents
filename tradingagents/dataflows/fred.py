@@ -16,6 +16,7 @@ import pytz
 import requests
 
 from .errors import VendorNotConfiguredError
+from .public_data_common import _request as request_http
 
 logger = logging.getLogger(__name__)
 
@@ -26,10 +27,6 @@ FRED_API_BASE = "https://api.stlouisfed.org/fred"
 # this rather than the caller's local date (#1275). pytz (already a dependency)
 # bundles its own tz database, so this works where system tzdata is absent.
 FRED_TZ = pytz.timezone("America/Chicago")
-
-# Network timeout (seconds) so a stalled request can't hang the agents,
-# mirroring the Alpha Vantage client.
-REQUEST_TIMEOUT = 30
 
 # Default trailing window when the caller does not specify one. A year captures
 # the trend and the year-over-year base for most monthly/quarterly series.
@@ -135,9 +132,12 @@ def _fred_today() -> str:
 def _request(path: str, params: dict) -> dict:
     """GET a FRED endpoint, surfacing FRED's JSON error body on a bad request."""
     api_params = {**params, "api_key": get_api_key(), "file_type": "json"}
-    response = requests.get(
-        f"{FRED_API_BASE}/{path}", params=api_params, timeout=REQUEST_TIMEOUT
-    )
+    try:
+        response = request_http(f"{FRED_API_BASE}/{path}", params=api_params)
+    except requests.HTTPError as exc:
+        response = exc.response
+        if response is None or response.status_code != 400:
+            raise
     # FRED returns 400 with a JSON {"error_message": ...} for unknown series IDs
     # or malformed params; turn that into a clear, actionable error.
     if response.status_code == 400:
@@ -146,7 +146,6 @@ def _request(path: str, params: dict) -> dict:
         except ValueError:
             message = response.text
         raise ValueError(f"FRED request failed: {message}")
-    response.raise_for_status()
     return response.json()
 
 

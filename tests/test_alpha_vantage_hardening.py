@@ -10,6 +10,8 @@ import json
 
 import pytest
 
+pytestmark = pytest.mark.usefixtures("data_retry_clock")
+
 import tradingagents.dataflows.alpha_vantage_common as av
 import tradingagents.dataflows.alpha_vantage_fundamentals as avf
 import tradingagents.dataflows.alpha_vantage_stock as avs

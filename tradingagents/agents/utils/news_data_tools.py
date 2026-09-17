@@ -1,7 +1,9 @@
 from typing import Annotated
 
 from langchain_core.tools import tool
+from langgraph.prebuilt import InjectedState
 
+from tradingagents.dataflows.date_window import is_live_date
 from tradingagents.dataflows.interface import route_to_vendor
 
 
@@ -48,6 +50,7 @@ def get_global_news(
 @tool
 def get_insider_transactions(
     ticker: Annotated[str, "ticker symbol"],
+    state: Annotated[dict, InjectedState] = None,
 ) -> str:
     """
     Retrieve insider transaction information about a company.
@@ -57,4 +60,6 @@ def get_insider_transactions(
     Returns:
         str: A report of insider transaction data
     """
+    if state and not is_live_date(state["trade_date"]):
+        return "DATA_UNAVAILABLE: Insider feed has no point-in-time publication history for this date."
     return route_to_vendor("get_insider_transactions", ticker)

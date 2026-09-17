@@ -43,7 +43,7 @@ _RATING_WORD_RE = re.compile(
 
 
 def extract_rating(text: str) -> str | None:
-    """Extract a 5-tier rating, or ``None`` when absent.
+    """Extract a 5-tier rating or explicit REVIEW, or ``None`` when absent.
 
     Two-pass strategy on the NFKC-normalized text (so fullwidth punctuation like
     ``Rating：Overweight`` is matched the same as ASCII):
@@ -56,6 +56,8 @@ def extract_rating(text: str) -> str | None:
 
     for line in norm.splitlines():
         m = _RATING_LABEL_RE.search(line)
+        if m and m.group(1).upper() == RATING_REVIEW:
+            return RATING_REVIEW
         if m and m.group(1).lower() in _RATING_SET:
             return m.group(1).capitalize()
 

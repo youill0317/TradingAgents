@@ -96,10 +96,9 @@ class PolymarketResilienceTests(unittest.TestCase):
         # An external-service hiccup must not raise into the analyst.
         with mock.patch.object(
             polymarket, "_request", side_effect=requests.RequestException("boom")
-        ):
-            out = polymarket.get_prediction_markets("Fed rate cut")
-        self.assertIn("unavailable", out.lower())
-        self.assertIn("Fed rate cut", out)
+        ), config_module.config_context({"data_vendors": {"prediction_markets": "polymarket"}}):
+            out = interface.route_to_vendor("get_prediction_markets", "Fed rate cut")
+        self.assertTrue(out.startswith("DATA_UNAVAILABLE:"))
 
 
 @pytest.mark.unit

@@ -13,6 +13,7 @@ import yfinance as yf
 
 from .config import get_config
 from .fred import _request, get_api_key
+from .stockstats_utils import yf_retry
 
 MAX_PAGES = 5
 PAGE_SIZE = 100
@@ -75,9 +76,9 @@ def collect_market_events(trade_date):
     retrieved = datetime.now(timezone.utc).isoformat()
     yahoo_status, error = "success", None
     try:
-        calendar = yf.Calendars(start=start, end=end)
+        calendar = yf_retry(lambda: yf.Calendars(start=start, end=end))
         for page in range(MAX_PAGES):
-            frame = calendar.get_economic_events_calendar(limit=PAGE_SIZE, offset=page * PAGE_SIZE)
+            frame = yf_retry(lambda: calendar.get_economic_events_calendar(limit=PAGE_SIZE, offset=page * PAGE_SIZE))
             if frame is None:
                 raise ValueError("Calendar returned no response")
             if not frame.empty and "Event Time" not in frame.columns:

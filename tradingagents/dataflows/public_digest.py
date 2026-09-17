@@ -11,6 +11,8 @@ from .public_evidence import evidence_id, source_tables
 
 def render_public_data(rows, max_chars=0):
     """Render a bounded view while retaining source, dates, units and failure states."""
+    from .public_quality import topics
+
     if not rows:
         return ""
     parts = [
@@ -41,12 +43,27 @@ def render_public_data(rows, max_chars=0):
         targets = sorted(
             grouped[source], key=lambda target: _evidence_priority(grouped[source][target][0])
         )
-        # Rotate between Census/BEA tables so durable-goods detail cannot hide
-        # retail demand, housing and construction under the same source budget.
+        # Rotate across countries and analytical groups within the existing budget.
+        # Keep issuer priorities intact and use provider metadata, not guessed exposure.
         families = defaultdict(list)
-        if source in {"census", "bea"}:
+        if source not in {"sec", "dart", "fsc"}:
             for target in targets:
-                family = " + ".join(source_tables(grouped[source][target][0]))
+                row = grouped[source][target][0]
+                base = row.get("base_target") or target
+                if source in {"census", "bea"}:
+                    group = " + ".join(source_tables(row))
+                elif source == "cftc":
+                    group = base.rsplit("/", 1)[0]
+                elif source == "tic":
+                    group = row.get("metric") or row.get("kind") or base.rsplit("/", 1)[-1]
+                elif source == "mof_japan":
+                    group = "/".join(base.split("/")[:2])
+                else:
+                    group = row.get("classification") or ", ".join(sorted(topics(row))) or " + ".join(source_tables(row))
+                country = row.get("country")
+                if source == "tic" and country in {"Grand Total", "Total", "All Countries"}:
+                    country = "All Countries"
+                family = "/".join(str(part) for part in (country, group) if part)
                 families[family].append(target)
             targets = [
                 target
@@ -126,8 +143,9 @@ def render_public_data(rows, max_chars=0):
             f"### {source} ({len(batch)} records; {len(lines)} summaries; {omitted} omitted by prompt budget; "
             f"{len({r['target'] for r in batch if r['status'] != 'success'})} series with gaps)\n"
             + (
-                "Available table groups: "
-                + ", ".join(f"{name} ({len(items)} series)" for name, items in families.items())
+                ("Available table groups: " if source in {"census", "bea"} else "Available coverage groups: ")
+                + ", ".join(f"{name} ({len(items)} series)" for name, items in list(families.items())[:8])
+                + (f"; {len(families) - 8} more groups available via get_official_evidence" if len(families) > 8 else "")
                 + ".\n"
                 if families
                 else ""

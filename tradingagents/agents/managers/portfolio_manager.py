@@ -28,8 +28,9 @@ def create_portfolio_manager(llm):
     structured_llm = bind_structured(llm, PortfolioDecision, "Portfolio Manager")
 
     def portfolio_manager_node(state) -> dict:
-        if state.get("public_data_evidence"):
-            state = {**state, "public_data_quality": ticker_quality(state)}
+        quality = ticker_quality(state) if state.get("public_data_evidence") else {}
+        if quality:
+            state = {**state, "public_data_quality": quality}
         instrument_context = get_instrument_context_from_state(state)
 
         history = state["risk_debate_state"]["history"]
@@ -67,6 +68,9 @@ def create_portfolio_manager(llm):
 **Relevant Public Data Evidence:**
 {public_data_for_agent(state, "ticker_review")}
 
+Collected sentiment source evidence (unverified opinions are not facts):
+{state.get("sentiment_evidence", "")}
+
 ---
 
 Ground every conclusion in specific evidence from the analysts. Commit to a directional call only when the evidence clearly supports one; choose Hold when the case is balanced, materially conflicting, ambiguous, or insufficient to justify changing exposure, rather than forcing a direction to appear decisive. Weigh the analysts on their merits, independent of speaking order.
@@ -75,17 +79,25 @@ Data sufficiency is separate from that rating: if core issuer facts are unavaila
 
 {NO_EXTERNAL_TOOLS}{get_language_instruction()}"""
 
-        final_trade_decision = invoke_structured_or_freetext(
-            structured_llm,
-            llm,
-            prompt,
-            render_pm_decision,
-            "Portfolio Manager",
-        )
+        if quality.get("status") == "REVIEW_REQUIRED":
+            final_trade_decision = (
+                "**Rating**: REVIEW\n\n"
+                "Position decision withheld: required issuer financial evidence is missing. "
+                "Review the data gaps before making a position decision."
+            )
+        else:
+            final_trade_decision = invoke_structured_or_freetext(
+                structured_llm,
+                llm,
+                prompt,
+                render_pm_decision,
+                "Portfolio Manager",
+            )
+            if quality:
+                quality = ticker_quality({**state, "final_trade_decision": final_trade_decision})
 
         quality_update = {}
-        if state.get("public_data_evidence"):
-            quality = ticker_quality({**state, "final_trade_decision": final_trade_decision})
+        if quality:
             quality_update = {"public_data_quality": quality, "analysis_status": quality["status"]}
             final_trade_decision = render_quality(quality) + "\n\n" + final_trade_decision
 

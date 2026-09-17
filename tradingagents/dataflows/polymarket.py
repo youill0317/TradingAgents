@@ -10,12 +10,9 @@ no auth. Each market's ``outcomePrices`` are the implied probabilities of its
 outcomes (a "Yes" at 0.76 means the market prices a 76% chance).
 """
 import json
-import logging
 from datetime import datetime, timezone
 
-import requests
-
-logger = logging.getLogger(__name__)
+from .retry import request_get
 
 GAMMA_BASE = "https://gamma-api.polymarket.com"
 
@@ -27,10 +24,9 @@ DEFAULT_LIMIT = 6
 
 
 def _request(path: str, params: dict) -> dict:
-    response = requests.get(
+    response = request_get(
         f"{GAMMA_BASE}/{path}", params=params, timeout=REQUEST_TIMEOUT
     )
-    response.raise_for_status()
     return response.json()
 
 
@@ -65,7 +61,7 @@ def _is_forward_looking(market: dict, now: datetime) -> bool:
     )
 
 
-def get_prediction_markets(topic: str, limit: int | None = None) -> str:
+def get_prediction_markets(topic: str, limit: int | None = None, offset: int = 0) -> str:
     """Return live prediction-market probabilities for an event topic.
 
     Args:
@@ -82,14 +78,10 @@ def get_prediction_markets(topic: str, limit: int | None = None) -> str:
     if limit is None:
         limit = DEFAULT_LIMIT
 
-    try:
-        data = _request("public-search", {"q": topic, "limit_per_type": 20})
-    except requests.RequestException as e:
-        logger.warning("Polymarket search failed for %r: %s", topic, e)
-        return (
-            f"Polymarket data is currently unavailable (network error: {e}). "
-            f"Proceed without prediction-market signal for '{topic}'."
-        )
+    if not isinstance(offset, int) or offset < 0:
+        raise ValueError("offset must be nonnegative")
+    # Let the shared router handle failures and try the next configured vendor.
+    data = _request("public-search", {"q": topic, "limit_per_type": 20})
 
     now = datetime.now(timezone.utc)
     candidates = [
@@ -115,7 +107,7 @@ def get_prediction_markets(topic: str, limit: int | None = None) -> str:
         )
 
     lines = []
-    for m in candidates[:limit]:
+    for m in candidates[offset:offset + limit]:
         prices = _parse_json_list(m.get("outcomePrices"))
         outcomes = _parse_json_list(m.get("outcomes"))
         try:

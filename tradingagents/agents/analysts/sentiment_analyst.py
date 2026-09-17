@@ -5,13 +5,14 @@ the old version had a prompt that demanded social-media analysis but the
 only tool available was Yahoo Finance news — which led LLMs to fabricate
 Reddit/X/StockTwits content under prompt pressure (verified live).
 
-The redesigned agent pre-fetches three complementary data sources before
+The redesigned agent pre-fetches complementary data sources before
 the LLM is invoked and injects them into the prompt as structured blocks:
 
-  1. News headlines     — Yahoo Finance (institutional framing)
+  1. News headlines     — configured news provider (reported claims)
   2. StockTwits messages — retail-trader posts indexed by cashtag, with
                            user-labeled Bullish/Bearish sentiment tags
   3. Reddit posts        — r/wallstreetbets, r/stocks, r/investing
+  4. ApeWisdom           — stock discussion attention
 
 The agent does not use tool-calling; the data is in the prompt from
 turn 0. Output uses the structured-output pattern (json_schema for
@@ -40,6 +41,8 @@ from tradingagents.agents.utils.structured import (
     bind_structured,
     invoke_structured_or_freetext,
 )
+from tradingagents.dataflows.apewisdom import collect_apewisdom
+from tradingagents.dataflows.interface import get_vendor
 from tradingagents.dataflows.reddit import fetch_reddit_posts
 from tradingagents.dataflows.stocktwits import fetch_stocktwits_messages
 
@@ -64,7 +67,7 @@ def create_sentiment_analyst(llm):
         start_date = _seven_days_back(end_date)
         instrument_context = get_instrument_context_from_state(state)
 
-        # Pre-fetch all three sources. Each fetcher degrades gracefully and
+        # Pre-fetch the sources. Each fetcher degrades gracefully and
         # returns a string (no exceptions surface from here), so the LLM
         # always sees something — either real data or a clear placeholder.
         news_block = get_news.func(ticker, start_date, end_date)
@@ -75,13 +78,14 @@ def create_sentiment_analyst(llm):
         )
         reddit_block = fetch_reddit_posts(ticker, start_date=start_date, end_date=end_date)
 
+        apewisdom = collect_apewisdom(ticker, end_date)
+        news_provider = get_vendor("news_data", "get_news")
+        source_evidence = _source_evidence(news_block, stocktwits_block, reddit_block, apewisdom, news_provider)
         system_message = _build_system_message(
             ticker=ticker,
             start_date=start_date,
             end_date=end_date,
-            news_block=news_block,
-            stocktwits_block=stocktwits_block,
-            reddit_block=reddit_block,
+            source_evidence=source_evidence,
         )
 
         prompt = ChatPromptTemplate.from_messages(
@@ -122,27 +126,17 @@ def create_sentiment_analyst(llm):
         return {
             "messages": [AIMessage(content=report_text)],
             "sentiment_report": report_text,
+            "sentiment_evidence": source_evidence,
         }
 
     return sentiment_analyst_node
 
 
-def _build_system_message(
-    *,
-    ticker: str,
-    start_date: str,
-    end_date: str,
-    news_block: str,
-    stocktwits_block: str,
-    reddit_block: str,
-) -> str:
-    """Assemble the sentiment-analyst system message with structured data blocks."""
-    return f"""You are a financial market sentiment analyst. Your task is to produce a comprehensive sentiment report for {ticker} covering the period from {start_date} to {end_date}, drawing on three complementary data sources that have already been collected for you.
+def _source_evidence(news_block, stocktwits_block, reddit_block, apewisdom, news_provider):
+    return f"""## Data sources (pre-fetched, in this prompt)
 
-## Data sources (pre-fetched, in this prompt)
-
-### News headlines — Yahoo Finance, past 7 days
-Institutional framing. Fact-driven, slower-moving signal.
+### News headlines — configured provider: {news_provider}, past 7 days
+Reported news and commentary; not a measurement of institutional positioning.
 
 <start_of_news>
 {news_block}
@@ -162,11 +156,36 @@ Community discussion. Engagement signal via upvote score and comment count. Subr
 {reddit_block}
 <end_of_reddit>
 
+### {apewisdom['source']} [{apewisdom['status']}]
+{apewisdom['content']}
+Source: {apewisdom['url']}
+Retrieved: {apewisdom['retrieved_at']}
+
+"""
+
+
+def _build_system_message(
+    *,
+    ticker: str,
+    start_date: str,
+    end_date: str,
+    source_evidence: str,
+) -> str:
+    """Assemble the sentiment-analyst system message with structured data blocks."""
+    return f"""You are a financial market sentiment analyst. Your task is to produce a comprehensive sentiment report for {ticker} covering the period from {start_date} to {end_date}, drawing on the available data sources that have already been collected for you.
+
+{source_evidence}
+
+ApeWisdom measures attention, not direction or institutional flows. Use current/prior ranks,
+mentions and upvotes to assess attention changes. Its source data overlaps the direct Reddit
+feed; do not treat agreement as independent confirmation.
+Unavailable or absent data is not neutral sentiment. Respect the observation windows.
+
 ## How to analyze this data (best practices)
 
 1. **Read the StockTwits Bullish/Bearish ratio as a leading retail-sentiment signal.** A 70/30 bullish/bearish split is moderately bullish; ≥90/10 may indicate over-extension and contrarian risk; 50/50 is uncertainty. Sample size matters — base rates on the actual message count, not percentages alone.
 
-2. **Look for cross-source divergences.** If news framing is bearish but StockTwits is overwhelmingly bullish, that mismatch is itself a signal — it can mean retail is leaning into a thesis the news flow hasn't caught up to (or vice versa, that retail is chasing while institutions are cautious).
+2. **Look for cross-source divergences.** If news framing is bearish but StockTwits is overwhelmingly bullish, that mismatch is itself a signal — it can mean retail is leaning into a thesis the news flow hasn't caught up to (or vice versa, that retail is chasing while news coverage is cautious).
 
 3. **Weight Reddit posts by engagement.** A 400-upvote / 200-comment thread reflects community attention; a 3-upvote post is noise. Read the body excerpts for context — the title alone often misleads.
 

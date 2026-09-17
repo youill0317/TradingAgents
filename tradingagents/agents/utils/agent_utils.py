@@ -108,9 +108,10 @@ def resolve_instrument_identity(ticker: str) -> dict:
     resolves for the same instrument the price path actually fetches (#983).
     """
     from tradingagents.dataflows.symbol_utils import normalize_symbol
+    from tradingagents.dataflows.stockstats_utils import yf_retry
 
     try:
-        info = yf.Ticker(normalize_symbol(ticker)).info or {}
+        info = yf_retry(lambda: yf.Ticker(normalize_symbol(ticker)).info) or {}
     except Exception as exc:  # noqa: BLE001 — fail open, never block the run
         logger.debug("Could not resolve instrument identity for %s: %s", ticker, exc)
         return {}
@@ -232,6 +233,5 @@ def create_msg_delete(task_context: str | None = None):
         return {"messages": removal_operations + [placeholder]}
 
     return delete_messages
-
 
 

@@ -3,49 +3,60 @@
 import json
 from datetime import datetime, timezone
 
+from .apewisdom import collect_apewisdom
 from .config import get_config
 from .interface import get_category_for_method, get_vendor, route_to_vendor
 from .reddit import collect_reddit_topic
 from .stocktwits import fetch_stocktwits_messages
 
 
+def provider_result(response, method):
+    """Interpret vendor payloads identically at collection and follow-up time."""
+    payload = response
+    if isinstance(response, str):
+        try:
+            payload = json.loads(response)
+        except (ValueError, TypeError):
+            payload = None
+    content = json.dumps(response) if isinstance(response, dict) else str(response)
+    lines = content.lower().splitlines()
+    failed = any(line.startswith(("error fetching", "data_unavailable:",
+                                  "polymarket data is currently unavailable"))
+                 for line in lines)
+    coverage = content.partition("\nQuery coverage:\n")[2]
+    partial_failure = any(": failed (" in line for line in coverage.splitlines())
+    empty = any(line.startswith(("no global news", "no open prediction markets"))
+                for line in lines)
+    if method == "get_global_news" and isinstance(payload, dict):
+        failed = failed or any(key in payload for key in ("Error Message", "Information", "Note"))
+        empty = empty or payload.get("feed") == []
+    has_news = any(": success (" in line for line in coverage.splitlines())
+    partial = any(line.startswith("data_partial:") for line in lines)
+    status = ("failed" if failed or (partial_failure and not has_news) else
+              "partial" if partial_failure or partial else "empty" if empty else "success")
+    if failed:
+        content = "Provider reported retrieval failure; error details omitted."
+    return content, status
+
+
 def collect_global_context(trade_date: str) -> dict:
     """Collect bounded evidence; optional source failures never stop a market scan."""
     evidence, warnings = [], []
     config = get_config()
+    prediction_provider = get_vendor("prediction_markets", "get_prediction_markets")
+    # Broad collection uses native categories; targeted follow-up still accepts event keywords.
+    topics = (("Economics", "Politics") if prediction_provider.split(",")[0].strip() == "kalshi"
+              else ("interest rates", "geopolitics"))
     for method, target in (("get_global_news", trade_date),
-                           ("get_prediction_markets", "interest rates"),
-                           ("get_prediction_markets", "geopolitics")):
+                           *(("get_prediction_markets", topic) for topic in topics)):
         provider = "unknown"
         try:
             provider = get_vendor(get_category_for_method(method), method)
             kwargs = ({"look_back_days": config["global_news_lookback_days"],
                        "limit": config["global_news_article_limit"]}
-                      if method == "get_global_news" else {})
+                      if method == "get_global_news" else {"curr_date": trade_date})
             response = route_to_vendor(method, target, **kwargs)
-            payload = response
-            if isinstance(response, str):
-                try:
-                    payload = json.loads(response)
-                except (ValueError, TypeError):
-                    payload = None
-            content = json.dumps(response) if isinstance(response, dict) else str(response)
-            lines = content.lower().splitlines()
-            failed = any(line.startswith(("error fetching", "data_unavailable:",
-                                          "polymarket data is currently unavailable"))
-                         for line in lines)
-            coverage = content.partition("\nQuery coverage:\n")[2]
-            partial_failure = any(": failed (" in line for line in coverage.splitlines())
-            empty = any(line.startswith(("no global news", "no open prediction markets"))
-                        for line in lines)
-            if method == "get_global_news" and isinstance(payload, dict):
-                failed = failed or any(key in payload for key in ("Error Message", "Information", "Note"))
-                empty = empty or payload.get("feed") == []
-            has_news = any(": success (" in line for line in coverage.splitlines())
-            status = ("failed" if failed or (partial_failure and not has_news) else
-                      "partial" if partial_failure else "empty" if empty else "success")
-            if failed:
-                content = "Provider reported retrieval failure; error details omitted."
+            content, status = provider_result(response, method)
         except Exception as exc:
             content, status = type(exc).__name__, "failed"
         evidence.append({"source": method, "configured_provider": provider, "target": target,
@@ -77,6 +88,7 @@ def collect_global_context(trade_date: str) -> dict:
     evidence.append({"source": "stocktwits", "target": "SPY", "status": status,
                      "content": content + "\nSource: https://stocktwits.com/symbol/SPY",
                      "retrieved_at": datetime.now(timezone.utc).isoformat()})
+    evidence.append(collect_apewisdom(None, trade_date))
     for item in evidence:
         if item["status"] not in ("success", "empty"):
             warnings.append(f"{item['source']} ({item['target']}): {item['status']}")
@@ -89,6 +101,7 @@ def collect_global_context(trade_date: str) -> dict:
     )
     report = caution + "\n\n" + "\n\n".join(
         f"## {item['source']}: {item['target']} [{item['status']}]\n{item['content']}"
+        + (f"\nSource: {item['url']}\nRetrieved: {item['retrieved_at']}" if item.get("url") else "")
         for item in evidence
     )
     return {"report": report, "evidence": evidence, "warnings": warnings}
