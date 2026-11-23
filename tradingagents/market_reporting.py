@@ -84,7 +84,6 @@ def write_market_report_tree(final_state: dict, save_path) -> Path:
     for source, key in (
         ("fred", "macro_evidence"),
         ("yahoo_sectors", "sector_evidence"),
-        ("yahoo_screener", "screen_evidence"),
     ):
         content = final_state.get(key) or ""
         if content:
@@ -108,15 +107,14 @@ def write_market_report_tree(final_state: dict, save_path) -> Path:
     (save_path / "scan.json").write_text(
         json.dumps(final_state.get("market_scan_result") or {
             "status": validation["status"], "warnings": validation["warnings"],
-            "candidates": [],
+            "sector_verdicts": [],
         }, indent=2, ensure_ascii=False), encoding="utf-8",
     )
     header = (
         f"# Market Scan — {trade_date}\n\n"
         f"_Generated {retrieved_at}._\n\n"
         f"**Validation:** {validation['status']}\n\n"
-        "This is a scan, not a recommendation: every candidate below still needs "
-        "its own analysis before it means anything.\n"
+        "This is a market and sector reading, not a recommendation or a position call.\n"
     )
     complete.write_text(header + "\n" + "\n\n".join(sections), encoding="utf-8")
     return complete

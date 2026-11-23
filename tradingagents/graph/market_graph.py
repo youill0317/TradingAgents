@@ -1,9 +1,9 @@
 """Market-wide scan: orchestrates the macro/sector/strategist workflow.
 
 The counterpart to ``TradingAgentsGraph``, for the question that comes before
-a ticker exists. Produces a regime call, a sector view, and a shortlist of
-names worth analysing in depth; it makes no position call and writes nothing
-to the decision log — a shortlist is not a decision.
+a ticker exists. Produces the market regime and a Bullish/Neutral/Bearish
+verdict on each US sector; it makes no position call and writes nothing to the
+decision log.
 """
 
 import hashlib
@@ -21,11 +21,7 @@ from langgraph.prebuilt import ToolNode
 
 import tradingagents
 from tradingagents.agents.managers.market_strategist import _required_evidence_warnings
-from tradingagents.agents.market_scan_tools import (
-    get_sector_performance,
-    get_stock_data,
-    screen_equities,
-)
+from tradingagents.agents.market_scan_tools import get_sector_performance
 from tradingagents.agents.market_schemas import (
     MarketScanReport,
     ScanMode,
@@ -42,7 +38,6 @@ from tradingagents.dataflows.global_context import collect_global_context
 from tradingagents.dataflows.global_market import collect_global_snapshot
 from tradingagents.dataflows.market_diagnostics import collect_market_diagnostics
 from tradingagents.dataflows.market_events import collect_market_events
-from tradingagents.dataflows.market_scan import resolve_sectors
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.llm_clients import create_tier_client
 from tradingagents.market_reporting import write_market_report_tree
@@ -125,20 +120,12 @@ class MarketAnalysisGraph:
                     get_prediction_markets,
                 ]
             ),
-            "sector": ToolNode(
-                [
-                    get_sector_performance,
-                    screen_equities,
-                    get_stock_data,
-                ]
-            ),
+            "sector": ToolNode([get_sector_performance]),
         }
 
     def scan(
         self,
         trade_date: str | None = None,
-        sectors: list[str] | None = None,
-        candidate_limit: int = 10,
         on_chunk: Callable[[dict], None] | None = None,
         on_progress: Callable[[str], None] | None = None,
         resume: bool = False,
@@ -147,8 +134,6 @@ class MarketAnalysisGraph:
 
         Args:
             trade_date: Date to scan for (yyyy-mm-dd). Defaults to today.
-            sectors: Sectors to restrict screening to; None lets the analyst choose.
-            candidate_limit: Maximum shortlist size.
             on_chunk: Optional callback invoked for each streamed graph state.
             on_progress: Collection and resume status callback.
             resume: Continue an interrupted scan with the same date, code and settings.
@@ -162,8 +147,6 @@ class MarketAnalysisGraph:
         parsed_date = datetime.strptime(trade_date, "%Y-%m-%d").date()
         if parsed_date != market_today:
             raise ValueError("Market scans support only today's New York date; past/future dates are unsupported")
-        if not 1 <= int(candidate_limit) <= 25:
-            raise ValueError("candidate_limit must be between 1 and 25")
 
         validate_market_credentials()
         scan_mode = ScanMode.LIVE
@@ -195,11 +178,8 @@ class MarketAnalysisGraph:
             "market_review_enabled": True,
             "macro_tool_rounds": 0,
             "sector_tool_rounds": 0,
-            "requested_sectors": resolve_sectors(sectors) if sectors else [],
-            "candidate_limit": int(candidate_limit),
             "macro_report": "",
             "sector_report": "",
-            "screen_evidence": "",
             "macro_evidence": "",
             "data_warnings": [],
             "market_scan_report": "",
@@ -223,7 +203,6 @@ class MarketAnalysisGraph:
         ) if code_commit != "unknown" else b""
         signature = hashlib.sha256(json.dumps([
             config_hash, code_commit, hashlib.sha256(working_diff).hexdigest(),
-            initial_state["requested_sectors"], int(candidate_limit),
         ]).encode()).hexdigest()
         tid = thread_id("MARKET-SCAN", trade_date, signature)
         graph_config["configurable"] = {"thread_id": tid}
@@ -284,7 +263,7 @@ class MarketAnalysisGraph:
                             status=ScanStatus.INCOMPLETE,
                             warnings=[*initial_state["data_warnings"], *missing],
                             regime="Range-Bound", regime_evidence="Analysis not started: required data unavailable.",
-                            sector_view="No LLM analysis or candidate selection was performed.", candidates=[],
+                            sector_view="No LLM analysis or sector verdict was performed.", sector_verdicts=[],
                         )
                         initial_state.update(market_scan_report=render_market_scan_report(report),
                                              market_scan_result=report.model_dump(mode="json"),

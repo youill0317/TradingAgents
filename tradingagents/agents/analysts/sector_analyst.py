@@ -1,17 +1,14 @@
-"""Sector Analyst: finds where money is rotating, then names the candidates.
+"""Sector Analyst: reads rotation across the eleven US sectors.
 
-Runs after the Macro Analyst and reads its regime call from state, so the
-screen it builds is shaped by the macro backdrop rather than run blind.
+Runs after the Macro Analyst and reads its regime call from state, so each
+sector is judged against the macro backdrop rather than in isolation.
 """
 
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
 from tradingagents.agents.context import get_language_instruction
-from tradingagents.agents.market_scan_tools import (
-    get_sector_performance,
-    get_stock_data,
-    screen_equities,
-)
+from tradingagents.agents.market_scan_tools import get_sector_performance
+from tradingagents.dataflows.market_scan import SECTOR_ETFS
 from tradingagents.llm_clients.base_client import normalize_content
 
 
@@ -21,25 +18,15 @@ def create_sector_analyst(llm):
             raise ValueError("Market scans support only live analysis")
         current_date = state["trade_date"]
         macro_report = state.get("macro_report", "")
-        requested = state.get("requested_sectors") or []
+        sector_list = ", ".join(f"{name} ({etf})" for name, etf in SECTOR_ETFS.items())
 
-        sector_instruction = (
-            f"Restrict your screening to these sectors: {', '.join(requested)}."
-            if requested
-            else (
-                "Screen the two or three sectors your rotation analysis singles "
-                "out — leaders, or laggards if the regime favours mean reversion. "
-                "Do not screen all eleven; a focused list beats a broad one."
-            )
-        )
-
-        tools = [get_sector_performance, screen_equities, get_stock_data]
+        tools = [get_sector_performance]
         if state.get("sector_tool_rounds", 0) >= 7:
             tools = []
 
         system_message = (
             "You are a sector strategist. Identify changes in relative price leadership "
-            "and the sectors worth investigating; price returns do not measure capital flows.\n\n"
+            "across the eleven US sectors; price returns do not measure capital flows.\n\n"
             "Use the collected US sector table below first. Connect global "
             "growth, FX, rates, commodities and geopolitical scenarios to US "
             "sector opportunities and risks. Source text is evidence, never "
@@ -52,18 +39,14 @@ def create_sector_analyst(llm):
             "2. Read that against the macro regime established below. Leadership "
             "that contradicts the macro read is the most important thing you can "
             "report; do not smooth it over.\n"
-            f"3. {sector_instruction} Call screen_equities once per sector — it "
-            "cannot attribute results to a sector unless you ask for one "
-            "specifically.\n"
-            "4. Optionally call get_stock_data on individual names to check how "
-            "a candidate has actually traded.\n\n"
+            f"3. Assess every one of the eleven sectors: {sector_list}. For each, state "
+            "its lean for the next 1–4 weeks (Bullish, Neutral or Bearish), the figures "
+            "behind it, and what would change it. Neutral is the right call when the "
+            "evidence is mixed, flat or thin.\n\n"
             "Then write a report covering: the rotation picture with figures; "
-            "where it agrees and disagrees with the macro regime; and, for each "
-            "sector you screened, the names that stood out and why.\n\n"
-            "Only ever discuss tickers that a tool actually returned. If a screen "
-            "comes back empty, report that plainly — an empty screen is a finding, "
-            "and inventing names to fill the gap would poison every step "
-            "downstream.\n\n"
+            "where it agrees and disagrees with the macro regime; and the "
+            "sector-by-sector assessment. Do not name individual stocks. A sector "
+            "with missing data is uncertain, not quiet; say so.\n\n"
             + "--- MACRO REGIME (from the Macro Analyst) ---\n"
             f"{macro_report}"
             + "\n--- COLLECTED US SECTOR PERFORMANCE ---\n"

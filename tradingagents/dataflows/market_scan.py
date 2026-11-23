@@ -1,39 +1,25 @@
-"""Market-wide scan vendor: sector rotation and equity screening (Yahoo).
+"""Market-wide scan vendor: US sector rotation from the SPDR sector ETFs (Yahoo).
 
-The per-ticker pipeline answers "is this one name a buy?". This module answers
-the question that comes *before* it: what is the market doing, and which names
-deserve a look. Two functions:
-
-- ``get_sector_performance`` ranks the SPDR sector ETFs against SPY so rotation
-  is visible at a glance. It goes through ``load_ohlcv``, so it inherits the
-  existing cache and the curr_date look-ahead filter.
-- ``screen_equities`` wraps Yahoo's screener (``yf.screen``) to turn a set of
-  criteria into an actual candidate list.
-
-Both hit Yahoo's *unofficial* screener/quote endpoints, which can change or
-throttle without notice; failures surface as ``VendorError`` so the routing
-layer reports them rather than inventing data.
+The per-ticker pipeline answers "is this one name a buy?". The market scan
+answers what the market as a whole and each US sector are doing.
+``get_sector_performance`` ranks the sector ETFs against SPY so rotation is
+visible at a glance. It goes through ``load_ohlcv``, so it inherits the
+existing cache and the curr_date look-ahead filter.
 """
 
 import logging
 import math
 from datetime import datetime
-from zoneinfo import ZoneInfo
 
 import pandas as pd
-import yfinance as yf
-from yfinance import EquityQuery
 
-from .config import get_config
 from .errors import NoMarketDataError
-from .vendors.yahoo.common import yf_retry
 from .vendors.yahoo.ohlcv import load_ohlcv
 
 logger = logging.getLogger(__name__)
 
 # SPDR sector ETFs. Yahoo's own sector objects (``yf.Sector``) expose weights and
 # constituents but no return figure, so performance comes from these instead.
-# Keyed by the screener's sector label so a row can be traced back to a filter.
 SECTOR_ETFS = {
     "Technology": "XLK",
     "Financial Services": "XLF",
@@ -53,18 +39,9 @@ SECTOR_ETFS = {
 # only reorders the table.
 BENCHMARKS = ("SPY", "QQQ", "IWM")
 
-# Yahoo's screener sector vocabulary, kept as a module constant so a bad
-# LLM-supplied sector is rejected with the valid list instead of 400ing Yahoo.
+# The eleven sectors every scan must give a verdict on.
 VALID_SECTORS = tuple(SECTOR_ETFS)
 
-# Real US listings only. Without this, ``region=us`` returns OTC-quoted foreign
-# ADRs that dominate any percent-change sort with illiquid noise (CSGYY +488%,
-# FUWAF, KAKKF ...) and carry no sector at all.
-US_EXCHANGES = ("NMS", "NYQ")
-
-# Yahoo caps screener pages; keep requests well under it.
-MAX_SCREEN_SIZE = 100
-ALLOWED_SORT_FIELDS = ("percentchange", "intradaymarketcap", "dayvolume")
 MIN_LOOKBACK_DAYS = 5
 MAX_LOOKBACK_DAYS = 252
 
@@ -176,190 +153,3 @@ def get_sector_performance(
     ]
     return "\n".join(out)
 
-
-def _build_query(
-    sector: str | None,
-    min_market_cap: float,
-    min_volume: float,
-    min_price: float,
-) -> EquityQuery:
-    """Assemble the screener query, always constrained to real US listings."""
-    clauses = [
-        EquityQuery("eq", ["region", "us"]),
-        # Non-negotiable: see US_EXCHANGES.
-        EquityQuery("is-in", ["exchange", *US_EXCHANGES]),
-        EquityQuery("gt", ["intradaymarketcap", min_market_cap]),
-        EquityQuery("gt", ["dayvolume", min_volume]),
-        EquityQuery("gt", ["intradayprice", min_price]),
-    ]
-    if sector:
-        clauses.append(EquityQuery("eq", ["sector", sector]))
-    return EquityQuery("and", clauses)
-
-
-def resolve_sectors(sector: str | list[str] | None) -> list[str | None]:
-    """Normalise the sector argument into a list of queries to run.
-
-    ``None`` means one unsectored sweep. Anything else is validated against
-    Yahoo's vocabulary and rejected with the valid list, rather than being
-    passed through to 400 the API (mirrors ``fred._resolve_series_id``).
-
-    Public, unlike its ``fred`` counterpart, because the CLI validates
-    ``--sectors`` with it: catching a typo at parse time costs nothing, while
-    letting it through burns an LLM turn discovering it via a tool error.
-    """
-    if sector is None:
-        return [None]
-    requested = [sector] if isinstance(sector, str) else list(sector)
-
-    lookup = {s.lower(): s for s in VALID_SECTORS}
-    resolved = []
-    for raw in requested:
-        canonical = lookup.get(str(raw).strip().lower())
-        if canonical is None:
-            raise ValueError(
-                f"'{raw}' is not a valid sector. Choose from: "
-                f"{', '.join(VALID_SECTORS)}."
-            )
-        resolved.append(canonical)
-    return resolved
-
-
-def screen_equities(
-    sector: str | list[str] | None = None,
-    min_market_cap: float = 1e10,
-    min_volume: float = 1e6,
-    min_price: float = 5.0,
-    sort_field: str = "intradaymarketcap",
-    limit: int = 25,
-    curr_date: str | None = None,
-) -> str:
-    """Screen US-listed equities and return the matches as a markdown table.
-
-    One query is issued per requested sector. That is deliberate: Yahoo leaves
-    the ``sector`` field of every screener row empty, so the only reliable way
-    to attribute a hit to a sector is to have asked for that sector.
-
-    Args:
-        sector: A sector name, a list of them, or None for a market-wide sweep.
-        min_market_cap: Minimum intraday market cap (USD).
-        min_volume: Minimum day volume (shares).
-        min_price: Minimum share price, to drop sub-$5 names.
-        sort_field: Screener field to rank by (e.g. ``percentchange``).
-        limit: Maximum rows per sector.
-        curr_date: The analysis date. Must match the current New York scan date.
-
-    Returns:
-        A markdown report of the matches, ranked within each sector.
-    """
-    if curr_date:
-        requested_date = datetime.strptime(curr_date, "%Y-%m-%d").date()
-        pinned = get_config().get("market_scan_date")
-        today = (
-            datetime.strptime(pinned, "%Y-%m-%d").date() if pinned
-            else datetime.now(ZoneInfo("America/New_York")).date()
-        )
-        if requested_date != today:
-            raise ValueError(
-                "UNSUPPORTED_HISTORICAL_UNIVERSE: Yahoo's screener is live-only; "
-                f"it cannot produce a point-in-time universe for {curr_date}."
-            )
-
-    sectors = resolve_sectors(sector)
-    if sort_field not in ALLOWED_SORT_FIELDS:
-        raise ValueError(
-            f"sort_field must be one of: {', '.join(ALLOWED_SORT_FIELDS)}"
-        )
-    for name, value in (
-        ("min_market_cap", min_market_cap),
-        ("min_volume", min_volume),
-        ("min_price", min_price),
-    ):
-        try:
-            number = float(value)
-        except (TypeError, ValueError) as exc:
-            raise ValueError(f"{name} must be a finite non-negative number") from exc
-        if not math.isfinite(number) or number < 0:
-            raise ValueError(f"{name} must be a finite non-negative number")
-    size = int(limit)
-    if not 1 <= size <= MAX_SCREEN_SIZE:
-        raise ValueError(f"limit must be between 1 and {MAX_SCREEN_SIZE}")
-
-    header = [f"## Equity screen ({sort_field}, top {size} per sector)"]
-
-    header.append(
-        f"\n_Filters: US listings ({'/'.join(US_EXCHANGES)}), market cap > "
-        f"${min_market_cap:,.0f}, volume > {min_volume:,.0f}, price > ${min_price:,.2f}._"
-    )
-
-    sections = []
-    failures = []
-    for sec in sectors:
-        query = _build_query(sec, min_market_cap, min_volume, min_price)
-        try:
-            result = yf_retry(lambda q=query: yf.screen(
-                q, size=size, sortField=sort_field, sortAsc=False
-            ))
-        except Exception as exc:
-            # One sector failing should not lose the other ten.
-            failures.append(exc)
-            sections.append(f"\n### {sec or 'All sectors'}\n\n_Screen failed: {exc}_")
-            continue
-
-        quotes = (result or {}).get("quotes", []) or []
-        title = sec or "All sectors"
-        if not quotes:
-            sections.append(f"\n### {title}\n\n_No matches._")
-            continue
-
-        lines = [
-            f"\n### {title} ({len(quotes)} of {(result or {}).get('total', len(quotes))} matches)",
-            "",
-            "| Symbol | Name | Price | Change | Mkt cap | Volume | P/E |",
-            "| --- | --- | --- | --- | --- | --- | --- |",
-        ]
-        for q in quotes:
-            lines.append(
-                "| {sym} | {name} | {price} | {chg} | {cap} | {vol} | {pe} |".format(
-                    sym=q.get("symbol", "?"),
-                    name=str(q.get("shortName") or q.get("displayName") or "")[:34],
-                    price=_num(q.get("regularMarketPrice"), "${:,.2f}"),
-                    chg=_num(q.get("regularMarketChangePercent"), "{:+.2f}%"),
-                    cap=_compact(q.get("marketCap")),
-                    vol=_compact(q.get("regularMarketVolume")),
-                    pe=_num(q.get("trailingPE"), "{:.1f}"),
-                )
-            )
-        sections.append("\n".join(lines))
-
-    # The Sector Analyst is told to screen one sector per call, so this branch is
-    # the normal path, not an edge case: reporting a vendor outage as "no
-    # matches" would hand the analyst an empty screen it is told to treat as a
-    # finding. Carry the real reason instead.
-    if failures and len(failures) == len(sectors):
-        raise NoMarketDataError(
-            sectors[0] or "market",
-            detail=f"screener failed: {failures[0]}",
-        )
-
-    return "\n".join(header + sections)
-
-
-def _num(value, spec: str) -> str:
-    """Format a numeric screener field, tolerating the Nones Yahoo mixes in."""
-    try:
-        return spec.format(float(value))
-    except (TypeError, ValueError):
-        return "n/a"
-
-
-def _compact(value) -> str:
-    """Render a large number as 1.2T / 34.5B / 890.1M so the table stays narrow."""
-    try:
-        n = float(value)
-    except (TypeError, ValueError):
-        return "n/a"
-    for unit, scale in (("T", 1e12), ("B", 1e9), ("M", 1e6), ("K", 1e3)):
-        if abs(n) >= scale:
-            return f"{n / scale:.1f}{unit}"
-    return f"{n:.0f}"

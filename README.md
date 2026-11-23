@@ -213,14 +213,17 @@ tradingagents --ticker NVDA --date 2026-09-23 --analysts market,news,fundamental
 ```
 Each flag skips only its own question. Run without a terminal, a missing answer stops the run before it starts and names the flag or variable to set.
 
+At start-up the interactive CLI mentions a newer release and notices from Tauric Research. It checks at most once a day, in the background, and sends nothing about your runs; set `TRADINGAGENTS_NO_UPDATE_CHECK=1` to turn it off. Runs without a terminal never check.
+
+A saved report also includes `complete_report.html`, the report as one page with its sections listed beside the text, for reading in a browser, on a phone or in print. Answering the save question at the prompt also asks about the page and can open it in your browser; `--no-html` skips it, and so does `ta.save_reports(state, "NVDA", html=False)` from Python.
+
 ### Market Scan
 
-`tradingagents market` surveys the whole market instead of a single name. It starts with global market conditions, then narrows to US sectors and liquid NYSE/Nasdaq candidates for further analysis.
+`tradingagents market` reads the whole market instead of a single name. It produces two results: the market regime (Risk-On, Risk-Off, Rotation, Range-Bound or Stressed) and a Bullish, Neutral or Bearish verdict on each of the eleven US sectors for the next 1–4 weeks, read through the SPDR sector ETFs (XLK, XLF, XLE, XLV, XLY, XLP, XLI, XLB, XLRE, XLU, XLC).
 
 ```bash
 tradingagents market                                  # current New York date
-tradingagents market --sectors Technology,Energy
-tradingagents market --limit 5 --save
+tradingagents market --save
 tradingagents market --non-interactive --output reports/latest
 ```
 
@@ -229,20 +232,15 @@ tradingagents market --non-interactive --output reports/latest
 | Global baseline | US, eurozone, UK, China, Japan, Korea, India and emerging-market equity proxies; FX, bonds, commodities; 1-week, 1-month and 3-month returns | Yahoo Finance |
 | Regional macro | Available growth, inflation, employment, rates and selected reserves excluding gold; explicit coverage gaps | FRED, `FRED_API_KEY` |
 | Global context | Regional news, war, political conflict, trade and energy; optional community and prediction-market signals | Configured news provider, Reddit, StockTwits, Polymarket |
-| US sectors | Sector ETF performance relative to benchmarks, informed by the global report | Yahoo Finance |
-| Candidates | Names supported by actual screener rows and usable sector evidence | Yahoo equity screener and strategist |
+| US sectors | Sector ETF performance relative to SPY across windows, informed by the global report | Yahoo Finance |
 
-The Macro Analyst explains global conditions and transmission to US markets before the Sector Analyst and Market Strategist narrow the search. ETF returns are proxies, not measured capital flows. Community posts are supporting signals, not verified facts. During a scan, global headlines are searched with the region-by-region queries in `market_global_news_queries` (defaults in `tradingagents/graph/market_graph.py`), not the per-ticker `global_news_queries`.
+The Macro Analyst explains global conditions and their transmission to US markets; the Sector Analyst assesses every sector against that regime; a two-sided debate, a draft, an independent risk review and the Market Strategist then settle the regime and the eleven verdicts. Each verdict carries a conviction (High, Medium or Low), its rationale and the condition that would overturn it. ETF returns are proxies, not measured capital flows. Community posts are supporting signals, not verified facts. During a scan, global headlines are searched with the region-by-region queries in `market_global_news_queries` (defaults in `tradingagents/graph/market_graph.py`), not the per-ticker `global_news_queries`.
 
 Market scans accept only the current date in `America/New_York`; omit `--date` for normal use. A scan that stops after analysis has started can be continued with `--resume`.
 
-Every run saves reports, `global_data.md`, `global_context.md`, raw evidence and a structured `scan.json` in its run directory. Missing or stale data is visible: partial evidence produces `DEGRADED` results with lower conviction; missing essential reports, sector evidence or screener evidence produces `INCOMPLETE` with no candidates, and the command exits unsuccessfully.
+Every run saves reports, `global_data.md`, `global_context.md`, raw evidence and a structured `scan.json` (regime and sector verdicts) in its run directory. Missing or stale data is visible: a sector without collected data keeps its verdict at Low conviction, and partial evidence produces `DEGRADED` results; missing essential reports, sector data or verdicts produces `INCOMPLETE` with no verdicts, and the command exits unsuccessfully.
 
-**The shortlist is not a recommendation.** At the end of an interactive scan you can pick a candidate to analyse right away; the scan's findings are passed to that analysis as prior research to verify. Otherwise run `tradingagents --ticker <TICKER>` on it.
-
-At start-up the interactive CLI mentions a newer release and notices from Tauric Research. It checks at most once a day, in the background, and sends nothing about your runs; set `TRADINGAGENTS_NO_UPDATE_CHECK=1` to turn it off. Runs without a terminal never check.
-
-A saved report also includes `complete_report.html`, the report as one page with its sections listed beside the text, for reading in a browser, on a phone or in print. Answering the save question at the prompt also asks about the page and can open it in your browser; `--no-html` skips it, and so does `ta.save_reports(state, "NVDA", html=False)` from Python.
+**The regime and sector verdicts are not position calls.** To analyse a single name in depth, run `tradingagents --ticker <TICKER>`.
 
 ### Markets and tickers
 

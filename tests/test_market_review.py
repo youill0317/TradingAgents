@@ -20,12 +20,12 @@ def test_initial_cases_are_independent_and_rebuttals_see_both_cases():
         assert create_market_review(llm, field)(state)[field] == "Reasoned case"
         prompt = str(llm.invoke.call_args.args[0])
         assert "UPSIDE_CLAIM" in prompt and "DOWNSIDE_CLAIM" in prompt
-    state["screen_evidence"] = "RAW_SCREEN"
+    state["sector_evidence"] = "RAW_SECTORS"
     llm.with_structured_output.return_value.invoke.return_value = MarketRiskReview(summary="Audited", findings=["Check valuation"])
     result = create_market_review(llm, "market_risk_review")(state)
     assert result["market_risk_findings"] == [{"id": "R1", "finding": "Check valuation"}]
     prompt = str(llm.with_structured_output.return_value.invoke.call_args.args[0])
-    assert "RAW_SCREEN" in prompt
+    assert "RAW_SECTORS" in prompt
     assert "OBSERVED_RATIO" in prompt and "DRAFT_CLAIM" in prompt
     assert "UPSIDE_CLAIM" not in prompt
 

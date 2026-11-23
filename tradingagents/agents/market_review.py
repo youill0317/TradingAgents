@@ -16,7 +16,7 @@ REVIEW_FIELDS = (*DEBATE_FIELDS, "market_risk_review")
 
 def market_evidence(state):
     fields = ("global_snapshot", "global_context", "market_diagnostics", "event_calendar",
-              "macro_report", "sector_report", "sector_evidence", "screen_evidence", "macro_evidence")
+              "macro_report", "sector_report", "sector_evidence", "macro_evidence")
     return "\n\n".join(f"--- {key} ---\n{state.get(key, 'Unavailable')}" for key in fields) + (
         f"\nAs of: {state.get('as_of_utc', state.get('trade_date'))}\nCoverage warnings: {state.get('data_warnings', [])}"
     )

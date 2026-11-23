@@ -51,7 +51,7 @@ MARKET_STAGES = (
 
 
 class MarketState(MessagesState):
-    """State for the market scan. No ticker — that is the output, not the input."""
+    """State for the market scan. No ticker: the subject is the market and its sectors."""
 
     market_review_enabled: bool
     market_bull_case: str
@@ -83,14 +83,9 @@ class MarketState(MessagesState):
     macro_tool_rounds: Annotated[int, "Macro analyst invocation count"]
     sector_tool_rounds: Annotated[int, "Sector analyst invocation count"]
 
-    # Run parameters, set at propagation time.
-    requested_sectors: Annotated[list, "Sectors to restrict screening to; empty = analyst's choice"]
-    candidate_limit: Annotated[int, "Maximum number of shortlist candidates"]
-
     # Reports, filled in order.
     macro_report: Annotated[str, "Report from the Macro Analyst"]
     sector_report: Annotated[str, "Report from the Sector Analyst"]
-    screen_evidence: Annotated[str, "Raw equity-screener tool results"]
     macro_evidence: Annotated[str, "Raw macro-indicator tool results"]
     data_warnings: Annotated[list[str], "Machine-readable upstream data failures"]
     market_scan_report: Annotated[str, "Final synthesis from the Market Strategist"]
@@ -146,24 +141,12 @@ def should_continue_sector(state: MarketState) -> str:
         and state.get("sector_tool_rounds", 0) < MAX_AGENT_TOOL_ROUNDS
     ):
         return "tools_sector"
-    return "Capture Screen Evidence"
+    return "Capture Sector Evidence"
 
 
-def capture_screen_evidence(state: MarketState) -> dict:
-    """Preserve raw screener output before the shared message-clear node runs."""
-    evidence = []
+def capture_sector_evidence(state: MarketState) -> dict:
+    """Keep the latest usable sector table before the shared message-clear node runs."""
     warnings = list(state.get("data_warnings", []))
-    for message in _tool_messages(state, "screen_equities"):
-        content = str(message.content)
-        if (
-            "## Equity screen" in content
-            and "NO_DATA_AVAILABLE" not in content and "DATA_UNAVAILABLE" not in content
-        ):
-            evidence.append(content)
-            if "Screen failed:" in content:
-                warnings.append("SCREEN_PARTIAL_FAILURE")
-        else:
-            warnings.append("SCREEN_PARTIAL_FAILURE")
     sector_data = [state.get("sector_evidence", ""), *[
         str(m.content) for m in _tool_messages(state, "get_sector_performance")
     ]]
@@ -176,8 +159,6 @@ def capture_screen_evidence(state: MarketState) -> dict:
         warnings.append("SECTOR_DATA_UNAVAILABLE")
     elif "n/a" in sector_evidence:
         warnings.append("SECTOR_DATA_PARTIAL")
-    if state.get("scan_mode") != "historical" and not evidence:
-        warnings.append("SCREEN_EVIDENCE_MISSING")
     if (
         state.get("sector_tool_rounds", 0) >= MAX_AGENT_TOOL_ROUNDS
         and getattr(state["messages"][-1], "tool_calls", None)
@@ -185,7 +166,6 @@ def capture_screen_evidence(state: MarketState) -> dict:
         warnings.append("SECTOR_TOOL_BUDGET_EXHAUSTED")
     return {
         "sector_evidence": sector_evidence,
-        "screen_evidence": "\n\n".join(evidence),
         "data_warnings": list(dict.fromkeys(warnings)),
     }
 
@@ -214,7 +194,7 @@ class MarketGraphSetup:
 
         workflow.add_node("Sector Analyst", create_sector_analyst(self.quick_thinking_llm))
         workflow.add_node("tools_sector", self.tool_nodes["sector"])
-        workflow.add_node("Capture Screen Evidence", capture_screen_evidence)
+        workflow.add_node("Capture Sector Evidence", capture_sector_evidence)
         workflow.add_node("Msg Clear Sector", create_msg_delete(SCAN_CONTEXT))
 
         review_nodes = (
@@ -229,7 +209,7 @@ class MarketGraphSetup:
         workflow.add_node("Market Risk Review", create_market_review(self.deep_thinking_llm, "market_risk_review"))
 
         # The strategist gets the deep model: it is the one call that has to hold
-        # both reports at once and commit to a shortlist.
+        # both reports at once and commit to the regime and sector verdicts.
         workflow.add_node(
             "Market Strategist", create_market_strategist(self.deep_thinking_llm)
         )
@@ -247,10 +227,10 @@ class MarketGraphSetup:
         workflow.add_conditional_edges(
             "Sector Analyst",
             should_continue_sector,
-            ["tools_sector", "Capture Screen Evidence"],
+            ["tools_sector", "Capture Sector Evidence"],
         )
         workflow.add_edge("tools_sector", "Sector Analyst")
-        workflow.add_edge("Capture Screen Evidence", "Msg Clear Sector")
+        workflow.add_edge("Capture Sector Evidence", "Msg Clear Sector")
         chain = ["Msg Clear Sector", *[name for name, _ in review_nodes],
                  "Market Draft", "Market Risk Review", "Market Strategist"]
         for source, target in zip(chain, chain[1:], strict=False):

@@ -48,7 +48,7 @@ def create_macro_analyst(llm):
             "transmission through energy/trade/supply chains, affected US sectors, "
             "alternative scenarios and uncertainty. Do not invent article details\n"
             "8. Regional coverage gaps and a synthesis of implications for the US. "
-            "This report must be useful independently of stock candidates.\n\n"
+            "This report must stand on its own as the regime call.\n\n"
             "Cite the actual figures and their dates. A claim without a number "
             "behind it is worth less than no claim at all. Where the indicators "
             "disagree, say so — a conflicted read is a real finding, and "

@@ -11,12 +11,13 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from tradingagents.dataflows.market_scan import SECTOR_ETFS
+
 
 class MarketRegime(StrEnum):
     """Coarse read on what the market is doing, used by the Market Strategist.
 
-    Deliberately coarse: the regime label is a routing hint for the candidate
-    list, not a forecast.  The nuance lives in ``regime_evidence``.
+    Deliberately coarse: the nuance lives in ``regime_evidence``.
     """
 
     RISK_ON = "Risk-On"
@@ -27,11 +28,19 @@ class MarketRegime(StrEnum):
 
 
 class Conviction(StrEnum):
-    """How strongly a candidate is put forward."""
+    """How strongly a sector verdict is held."""
 
     HIGH = "High"
     MEDIUM = "Medium"
     LOW = "Low"
+
+
+class SectorOutlook(StrEnum):
+    """Expected direction of a sector over the next 1–4 weeks."""
+
+    BULLISH = "Bullish"
+    NEUTRAL = "Neutral"
+    BEARISH = "Bearish"
 
 
 class ScanMode(StrEnum):
@@ -42,56 +51,54 @@ class ScanMode(StrEnum):
 
 
 class ScanStatus(StrEnum):
-    """Whether the final shortlist passed its required validation gates."""
+    """Whether the final verdicts passed their required validation gates."""
 
     COMPLETE = "COMPLETE"
     DEGRADED = "DEGRADED"
     INCOMPLETE = "INCOMPLETE"
 
 
-class MarketCandidate(BaseModel):
-    """One name on the shortlist, with the reason it is there."""
+class SectorVerdict(BaseModel):
+    """The verdict on one US sector, read through its SPDR sector ETF."""
 
-    ticker: str = Field(
-        description=(
-            "The exchange ticker symbol exactly as it appeared in the screen "
-            "results (e.g. 'NVDA'). Never invent a symbol that was not returned "
-            "by a tool."
-        ),
-    )
     sector: str = Field(
         description=(
-            "The sector this name was screened under, copied verbatim from the "
-            "screen results."
+            "Exactly one of: Technology, Financial Services, Energy, Healthcare, "
+            "Consumer Cyclical, Consumer Defensive, Industrials, Basic Materials, "
+            "Real Estate, Utilities, Communication Services."
         ),
     )
-    thesis: str = Field(
+    outlook: SectorOutlook = Field(
         description=(
-            "Two to three sentences on why this name fits the current market "
-            "regime and its sector's position, citing specific figures from the "
-            "macro and sector reports."
+            "Bullish or Bearish only when the evidence points one way for the next "
+            "1–4 weeks; Neutral when it is mixed, flat or too thin to call."
         ),
     )
     conviction: Conviction = Field(
         description=(
-            "High only when the macro regime and the sector evidence point the "
-            "same way for this name; Low when the case rests on a single signal."
+            "High only when the macro regime, relative performance across windows "
+            "and catalysts agree; Low when the verdict rests on a single signal."
         ),
     )
+    rationale: str = Field(
+        description=(
+            "One to three sentences citing the sector ETF's returns and spread "
+            "versus SPY across windows, and the macro or catalyst link."
+        ),
+    )
+    invalidation: str = Field(
+        description="The observable condition that would overturn this verdict.",
+    )
 
-    @field_validator("ticker", mode="before")
+    @field_validator("sector", mode="before")
     @classmethod
-    def _normalize_ticker(cls, v):
-        """Strip and upper-case the symbol so it can be matched against a report.
+    def _strip_sector(cls, v):
+        """Strip only; the sector name is matched in the Market Strategist node.
 
-        Normalise rather than validate, for the same reason
-        ``_coerce_optional_float`` coerces instead of erroring (#1058): a
-        raising validator fails the whole structured call and drops the report
-        to the free-text fallback, losing every other field with it. Whether the
-        symbol is *real* is checked in the Market Strategist node, where a bad
-        one costs one candidate instead of the report.
+        A raising validator would fail the whole structured call and lose every
+        other verdict with it (#1058); an unknown name costs one verdict there.
         """
-        return v.strip().upper() if isinstance(v, str) else v
+        return v.strip() if isinstance(v, str) else v
 
 
 class MarketRiskReview(BaseModel):
@@ -108,9 +115,8 @@ class MarketRiskResolution(BaseModel):
 class MarketScanReport(BaseModel):
     """Structured output produced by the Market Strategist.
 
-    Describes market conditions, participation, rotation and conditional
-    scenarios independently of the optional ticker shortlist. A shortlist
-    entry is a prompt for further analysis, not a position call.
+    Two results: the market regime and a verdict on every US sector. Neither is
+    a position call.
     """
 
     status: ScanStatus = Field(
@@ -147,11 +153,11 @@ class MarketScanReport(BaseModel):
             "where the market thinks it is heading. Three to five sentences."
         ),
     )
-    candidates: list[MarketCandidate] = Field(
+    sector_verdicts: list[SectorVerdict] = Field(
         description=(
-            "The shortlist, strongest first. Only names that actually appeared "
-            "in the screen results. Prefer a short, well-argued list over a long "
-            "one; return an empty list if the evidence supports no candidate."
+            "Exactly one verdict for each of the eleven US sectors, no more and no "
+            "fewer. Use Neutral rather than forcing a direction the evidence does "
+            "not support."
         ),
     )
 
@@ -174,7 +180,6 @@ def render_market_scan_report(report: MarketScanReport) -> str:
         "",
     ]
 
-    # Market assessment remains useful even when no stock candidates qualify.
     for title, text in (
         ("Market Outlook (1–4 weeks)", report.market_outlook),
         ("Risk Review Resolution", report.review_resolution),
@@ -190,30 +195,33 @@ def render_market_scan_report(report: MarketScanReport) -> str:
         parts.extend(["## Risk Findings Addressed", "", *[
             f"- {r.finding_id} — {r.decision}: {r.rationale}" for r in report.risk_resolutions
         ], ""])
-    parts.extend(["## Candidates", ""])
+    parts.extend(["## Sector Verdicts", ""])
 
-    if not report.candidates:
+    if not report.sector_verdicts:
         parts.append(
-            "_Candidate selection was not completed; see warnings._"
+            "_Sector verdicts were not completed; see warnings._"
             if report.status is ScanStatus.INCOMPLETE else
-            "_No candidate met the bar this scan._"
+            "_No sector verdict was produced._"
         )
         return "\n".join(parts)
 
+    def cell(text):
+        # Pipes or newlines inside a cell would break the table.
+        return text.replace("|", "\\|").replace("\n", " ")
+
     parts.extend([
-        "| # | Ticker | Sector | Conviction | Thesis |",
-        "| --- | --- | --- | --- | --- |",
+        "| Sector | ETF | Outlook | Conviction | Rationale | Invalidated if |",
+        "| --- | --- | --- | --- | --- | --- |",
     ])
-    for i, c in enumerate(report.candidates, start=1):
-        # Pipes inside the thesis would break the table; escape them.
-        thesis = c.thesis.replace("|", "\\|").replace("\n", " ")
+    for v in report.sector_verdicts:
         parts.append(
-            f"| {i} | {c.ticker} | {c.sector} | {c.conviction.value} | {thesis} |"
+            f"| {v.sector} | {SECTOR_ETFS.get(v.sector, '?')} | {v.outlook.value} | "
+            f"{v.conviction.value} | {cell(v.rationale)} | {cell(v.invalidation)} |"
         )
 
     parts.extend([
         "",
-        "_A shortlist entry is a prompt for further analysis, not a position "
-        "call. Run `tradingagents analyze` on a name before acting on it._",
+        "_Sector verdicts read the sector ETFs over the next 1–4 weeks. They are "
+        "not position calls._",
     ])
     return "\n".join(parts)

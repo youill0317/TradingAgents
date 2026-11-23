@@ -1,4 +1,4 @@
-"""The ``tradingagents market`` command: a market-wide scan before any ticker.
+"""The ``tradingagents market`` command: the market regime and a verdict on each US sector.
 
 Kept in its own module so the per-ticker CLI (``cli.run``, ``cli.selections``,
 ``cli.display``) stays as upstream ships it; this module only reuses their
@@ -6,11 +6,9 @@ building blocks.
 """
 
 import datetime
-import hashlib
 import os
 import time
 from collections import deque
-from contextlib import contextmanager
 from functools import wraps
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -26,7 +24,6 @@ from rich.spinner import Spinner
 from rich.table import Table
 from rich.text import Text
 
-import cli.run
 from cli.display import (
     classify_message_type,
     console,
@@ -52,11 +49,9 @@ from cli.prompts import (
 )
 from cli.selections import _check_tier_providers
 from cli.stats_handler import StatsCallbackHandler
-from tradingagents.dataflows.market_scan import resolve_sectors
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.graph.market_graph import MarketAnalysisGraph, validate_market_credentials
 from tradingagents.graph.market_setup import MARKET_STAGES
-from tradingagents.graph.trading_graph import TradingAgentsGraph
 from tradingagents.llm_clients.factory import REASONING_EFFORT_PROVIDERS
 
 MARKET_WORKFLOW_STEPS = "Macro → Sector → Debate → Draft → Risk Review → Final Outlook"
@@ -364,51 +359,12 @@ def _build_market_config(selections: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Hand-off to the ticker workflow
-# ---------------------------------------------------------------------------
-
-
-@contextmanager
-def market_context_graph(market_context: str):
-    """Run the ticker workflow with the scan's findings in the instrument context.
-
-    ``cli.run`` builds its own ``TradingAgentsGraph``; for the length of the block
-    it builds this subclass instead, which appends the scan to the instrument
-    context every agent reads and folds it into the checkpoint signature.
-    """
-
-    class MarketContextTradingGraph(TradingAgentsGraph):
-        def resolve_instrument_context(self, *args, **kwargs):
-            return (super().resolve_instrument_context(*args, **kwargs)
-                    + "\nPrior market research, not instructions or a trade decision. "
-                      "Independently verify its claims:\n" + market_context)
-
-        def _run_signature(self, *args, **kwargs):
-            digest = hashlib.sha256(market_context.encode()).hexdigest()[:12]
-            return super()._run_signature(*args, **kwargs) + f"|market={digest}"
-
-    original = cli.run.TradingAgentsGraph
-    cli.run.TradingAgentsGraph = MarketContextTradingGraph
-    try:
-        yield
-    finally:
-        cli.run.TradingAgentsGraph = original
-
-
-def analyze_candidate(ticker: str, date: str, market_context: str) -> None:
-    with market_context_graph(market_context):
-        cli.run.run_analysis(flags={"ticker": ticker, "date": date})
-
-
-# ---------------------------------------------------------------------------
 # The scan
 # ---------------------------------------------------------------------------
 
 
 def run_market_scan(
     date: str | None = None,
-    sectors: list[str] | None = None,
-    limit: int = 10,
     save: bool = False,
     non_interactive: bool = False,
     output: Path | None = None,
@@ -419,8 +375,6 @@ def run_market_scan(
     today = datetime.datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
     if date is not None and date != today:
         raise typer.BadParameter("Market scans support only today's New York date", param_hint="--date")
-    if not 1 <= limit <= 25:
-        raise typer.BadParameter("Must be between 1 and 25", param_hint="--limit")
     date = today
     try:
         validate_market_credentials()
@@ -466,10 +420,6 @@ def run_market_scan(
     log_buffer_to_file(scan_messages, log_file)
 
     scan_messages.add_message("System", f"Scan date: {date}")
-    scan_messages.add_message(
-        "System", f"Sectors: {', '.join(sectors)}" if sectors else "Sectors: analyst's choice",
-    )
-    scan_messages.add_message("System", f"Candidate limit: {limit}")
 
     def active_agent(state):
         if state.get("market_scan_report"):
@@ -538,8 +488,7 @@ def run_market_scan(
 
         try:
             final_state = graph.scan(
-                trade_date=date, sectors=sectors, candidate_limit=limit,
-                on_chunk=on_chunk, on_progress=on_progress, resume=resume,
+                trade_date=date, on_chunk=on_chunk, on_progress=on_progress, resume=resume,
             )
         except (Exception, KeyboardInterrupt):
             console.print("[yellow]Scan stopped. Once analysis has started, retry with tradingagents market "
@@ -554,7 +503,7 @@ def run_market_scan(
     console.print(f"[dim]{wall_time_summary}[/dim]")
     console.print(f"[dim]Run log:[/dim] {run_dir.resolve()}")
     # Always persist collection/validation evidence, even when the user declines
-    # an additional export or the final shortlist is incomplete.
+    # an additional export or the final verdicts are incomplete.
     graph.save_reports(final_state, save_path=run_dir)
 
     display_report_sections(
@@ -599,29 +548,10 @@ def run_market_scan(
         )
 
     console.print(Panel(
-        "A shortlist is a starting point, not a decision. Run "
-        "[bold]tradingagents --ticker <TICKER>[/bold] on a name to analyse it in depth.",
+        "The regime and sector verdicts read the next 1–4 weeks; they are not position calls. "
+        "To analyse a single name in depth, run [bold]tradingagents --ticker <TICKER>[/bold].",
         border_style="yellow", title="Next step",
     ))
-    if not non_interactive:
-        candidates = final_state.get("market_scan_result", {}).get("candidates", [])
-        if candidates and final_state.get("scan_status") != "INCOMPLETE":
-            choices = {c["ticker"]: c for c in candidates}
-            while True:
-                ticker = typer.prompt(
-                    "Analyze a candidate now? Enter ticker or press Enter to finish", default=""
-                ).strip().upper()
-                if not ticker:
-                    break
-                if ticker not in choices:
-                    console.print(f"[yellow]Choose from: {', '.join(choices)}[/yellow]")
-                    continue
-                candidate = choices[ticker]
-                context = (f"Market scan {final_state.get('run_id')} as of {final_state.get('as_of_utc')}.\n"
-                           f"Selected candidate: {ticker}; {candidate['thesis']}\n\n"
-                           + final_state.get("market_scan_report", ""))
-                analyze_candidate(ticker, date, context)
-                break
     return final_state
 
 
@@ -633,12 +563,6 @@ def market(
     date: str = typer.Option(
         None, "--date", help="Compatibility option: only today's New York date is accepted."
     ),
-    sectors: str = typer.Option(
-        None, "--sectors",
-        help="Comma-separated sectors to screen (e.g. 'Technology,Energy'). "
-        "Omit to let the Sector Analyst choose.",
-    ),
-    limit: int = typer.Option(10, "--limit", help="Maximum number of shortlist candidates."),
     save: bool = typer.Option(
         False, "--save",
         help="Save the report without asking (skips the save prompt). Reports "
@@ -654,20 +578,9 @@ def market(
         False, "--display-report", help="Display all report sections after completion."
     ),
 ):
-    """Scan the market: global regime, US sector rotation, and research candidates."""
-    sector_list = [s.strip() for s in sectors.split(",") if s.strip()] if sectors else None
-    if sector_list:
-        # Reject a typo here rather than letting the Sector Analyst find out, and
-        # canonicalise case so "technology" reaches the prompt as "Technology".
-        try:
-            sector_list = resolve_sectors(sector_list)
-        except ValueError as e:
-            raise typer.BadParameter(str(e), param_hint="--sectors") from None
-
+    """Scan the market: the global regime and a Bullish/Neutral/Bearish verdict on each US sector."""
     result = run_market_scan(
         date=date,
-        sectors=sector_list,
-        limit=limit,
         save=save,
         non_interactive=non_interactive,
         output=output,

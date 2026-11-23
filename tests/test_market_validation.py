@@ -1,4 +1,4 @@
-"""Candidate grounding and deterministic scan completion."""
+"""Sector verdict validation and deterministic scan completion."""
 from unittest.mock import Mock
 
 import pytest
@@ -6,9 +6,9 @@ import pytest
 from tradingagents.agents.managers import market_strategist as strategist
 from tradingagents.agents.market_schemas import MarketScanReport
 from tradingagents.agents.market_structured import StructuredOutputError
+from tradingagents.dataflows.market_scan import SECTOR_ETFS
 
-SCREEN = "## Equity screen\n### Energy\n| Symbol | Name |\n| --- | --- |\n| XOM | Exxon |"
-
+SECTORS = list(SECTOR_ETFS)
 
 EVIDENCE = [
     {"source": "fred", "target": "US: policy rate", "status": "success", "content": "Rate: 4%"},
@@ -17,11 +17,15 @@ EVIDENCE = [
 ]
 
 
-def report(tickers=("XOM",), **overrides):
+def verdict(sector, outlook="Bullish", conviction="High"):
+    return {"sector": sector, "outlook": outlook, "conviction": conviction,
+            "rationale": f"{sector} evidence", "invalidation": "Relative strength reverses"}
+
+
+def report(sectors=SECTORS, **overrides):
     return MarketScanReport(**{
-        "regime": "Risk-On", "regime_evidence": "Global context", "sector_view": "Energy",
-        "candidates": [{"ticker": t, "sector": "Energy", "thesis": "Evidence",
-                        "conviction": "High"} for t in tickers], **overrides,
+        "regime": "Risk-On", "regime_evidence": "Global context", "sector_view": "Energy leads",
+        "sector_verdicts": [verdict(s) for s in sectors], **overrides,
     })
 
 
@@ -29,31 +33,51 @@ def run(monkeypatch, answer=None, **overrides):
     monkeypatch.setattr(strategist, "bind_structured", lambda *a: None)
     invoke = Mock(return_value=answer or report())
     monkeypatch.setattr(strategist, "invoke_structured_required", invoke)
-    state = {"macro_report": "Global conditions", "sector_report": "Energy report",
-             "screen_evidence": SCREEN, "global_evidence": EVIDENCE, **overrides}
+    state = {"macro_report": "Global conditions", "sector_report": "Sector report",
+             "global_evidence": EVIDENCE, **overrides}
     return strategist.create_market_strategist(None)(state), invoke
 
 
-def test_candidate_filters_record_every_drop():
-    result = strategist._ground_candidates(report(("XOM", "XOM", "FAKE")), SCREEN, 1)
-    assert [c.ticker for c in result.candidates] == ["XOM"]
-    assert result.warnings == ["CANDIDATE_DUPLICATE:XOM", "CANDIDATE_NOT_GROUNDED:FAKE"]
-    restricted = strategist._ground_candidates(report(), SCREEN, 10, ["Technology"])
-    assert not restricted.candidates
-    assert restricted.warnings == ["CANDIDATE_SECTOR_NOT_REQUESTED:XOM"]
+def test_verdicts_are_canonicalised_and_every_drop_recorded():
+    answer = report(sector_verdicts=[
+        verdict(" energy "), verdict("XLK"), verdict("Energy"), verdict("Crypto"),
+    ])
+    result = strategist._validate_sector_verdicts(answer)
+    assert [v.sector for v in result.sector_verdicts] == ["Technology", "Energy"]
+    assert "SECTOR_VERDICT_DUPLICATE:Energy" in result.warnings
+    assert "SECTOR_VERDICT_UNKNOWN:Crypto" in result.warnings
+    missing = [w for w in result.warnings if w.startswith("SECTOR_VERDICT_MISSING:")]
+    assert len(missing) == len(SECTORS) - 2
 
 
-def test_sector_outage_blocks_candidates(monkeypatch):
+def test_verdicts_follow_the_canonical_sector_order():
+    result = strategist._validate_sector_verdicts(report(sectors=list(reversed(SECTORS))))
+    assert [v.sector for v in result.sector_verdicts] == SECTORS
+    assert result.warnings == []
+
+
+def test_a_missing_sector_degrades_and_no_verdict_is_incomplete(monkeypatch):
+    result, _ = run(monkeypatch, report(sectors=SECTORS[:-1]))
+    assert result["scan_status"] == "DEGRADED"
+    assert f"SECTOR_VERDICT_MISSING:{SECTORS[-1]}" in result["scan_warnings"]
+    assert len(result["market_scan_result"]["sector_verdicts"]) == len(SECTORS) - 1
+
+    result, _ = run(monkeypatch, report(sectors=[]))
+    assert result["scan_status"] == "INCOMPLETE"
+    assert "SECTOR_VERDICTS_MISSING" in result["scan_warnings"]
+
+
+def test_sector_outage_blocks_verdicts(monkeypatch):
     result, _ = run(monkeypatch, data_warnings=["SECTOR_DATA_UNAVAILABLE"])
     assert result["scan_status"] == "INCOMPLETE"
-    assert not result["market_scan_result"]["candidates"]
+    assert not result["market_scan_result"]["sector_verdicts"]
 
 
-@pytest.mark.parametrize("field", ["macro_report", "sector_report", "screen_evidence"])
-def test_missing_required_evidence_blocks_candidates(monkeypatch, field):
+@pytest.mark.parametrize("field", ["macro_report", "sector_report"])
+def test_missing_required_report_blocks_verdicts(monkeypatch, field):
     result, _ = run(monkeypatch, **{field: ""})
     assert result["scan_status"] == "INCOMPLETE"
-    assert not result["market_scan_result"]["candidates"]
+    assert not result["market_scan_result"]["sector_verdicts"]
 
 
 def test_model_cannot_set_completion_status(monkeypatch):
@@ -70,42 +94,44 @@ def test_invalid_output_preserves_data_warnings(monkeypatch):
     assert result["scan_status"] == "INCOMPLETE"
     assert "FRED_MISSING" in result["scan_warnings"]
     assert "STRUCTURED_OUTPUT_INVALID" in result["scan_warnings"]
+    assert result["market_scan_result"]["sector_verdicts"] == []
+
+
+def _table(rows):
+    return ("## Sector performance\n### Sectors (best to worst)\n"
+            "| Rank | Sector | ETF | Return | vs SPY |\n"
+            + "\n".join(f"| {i} | {name} | {SECTOR_ETFS[name]} | {ret} | {rel} |"
+                        for i, (name, ret, rel) in enumerate(rows, 1)))
 
 
 @pytest.mark.parametrize("sector_return", ["n/a", "nan%", "bad%"])
-def test_candidate_needs_own_sector_performance(monkeypatch, sector_return):
-    sector_table = (
-        "## Sector performance\n### Sectors (best to worst)\n"
-        "| Rank | Sector | ETF | Return | vs SPY |\n"
-        f"| 1 | Energy | XLE | {sector_return} | n/a |\n"
-        "| 2 | Technology | XLK | +2.00% | +1.00% |"
-    )
-    result, _ = run(monkeypatch, sector_evidence=sector_table)
+def test_verdict_without_its_sector_data_drops_to_low_conviction(monkeypatch, sector_return):
+    rows = [(name, "+2.00%", "+1.00%") for name in SECTORS]
+    rows[SECTORS.index("Energy")] = ("Energy", sector_return, "n/a")
+    result, _ = run(monkeypatch, sector_evidence=_table(rows))
     assert result["scan_status"] == "DEGRADED"
-    assert result["market_scan_result"]["candidates"] == []
-    assert "CANDIDATE_SECTOR_DATA_MISSING:XOM" in result["scan_warnings"]
+    assert "SECTOR_VERDICT_DATA_MISSING:Energy" in result["scan_warnings"]
+    by_sector = {v["sector"]: v for v in result["market_scan_result"]["sector_verdicts"]}
+    assert by_sector["Energy"]["conviction"] == "Low"
+    assert by_sector["Technology"]["conviction"] == "High"
 
 
-@pytest.mark.parametrize("tickers,evidence,limit,kept,warning", [
-    ((" xom ",), SCREEN, 10, ["XOM"], None),
-    (("GDP", "VIX", "ETF"), "GDP weakened while VIX rose; the ETF lagged.", 10, [], "CANDIDATE_NOT_GROUNDED"),
-    (("XOM",), SCREEN.replace("### Energy", "### Technology"), 10, [], "CANDIDATE_NOT_GROUNDED"),
-    (("XOM", "CVX"), SCREEN + "\n| CVX | Chevron |", 1, ["XOM"], "CANDIDATE_LIMIT_EXCEEDED"),
-])
-def test_grounding_rejects_prose_wrong_sectors_and_excess_candidates(tickers, evidence, limit, kept, warning):
-    result = strategist._ground_candidates(report(tickers), evidence, limit)
-    assert [c.ticker for c in result.candidates] == kept
-    assert result.regime_evidence == "Global context"
-    if warning:
-        assert any(w.startswith(warning + ":") for w in result.warnings)
+def test_conviction_only_changes_for_the_sector_missing_its_benchmark(monkeypatch):
+    rows = [(name, "+2.00%", "+1.00%") for name in SECTORS]
+    rows[SECTORS.index("Energy")] = ("Energy", "+3.00%", "n/a")
+    result, _ = run(monkeypatch, sector_evidence=_table(rows), data_warnings=["OPTIONAL_REGION_GAP"])
+    assert result["scan_status"] == "DEGRADED"
+    convictions = {v["sector"]: v["conviction"] for v in result["market_scan_result"]["sector_verdicts"]}
+    assert convictions["Energy"] == "Low"
+    assert {c for name, c in convictions.items() if name != "Energy"} == {"High"}
 
 
 @pytest.mark.parametrize("source,status", [("fred", "stale"), ("yfinance", "failed"), ("get_global_news", "unavailable")])
-def test_missing_input_family_blocks_candidates_despite_reports(monkeypatch, source, status):
+def test_missing_input_family_blocks_verdicts_despite_reports(monkeypatch, source, status):
     evidence = [dict(row, status=status) if row["source"] == source else row for row in EVIDENCE]
     result, _ = run(monkeypatch, global_evidence=evidence)
     assert result["scan_status"] == "INCOMPLETE"
-    assert result["market_scan_result"]["candidates"] == []
+    assert result["market_scan_result"]["sector_verdicts"] == []
 
 
 def test_empty_news_search_is_observed_coverage(monkeypatch):
@@ -115,39 +141,45 @@ def test_empty_news_search_is_observed_coverage(monkeypatch):
     assert result["scan_status"] == "COMPLETE"
 
 
-def test_sector_recovery_reaches_grounding_and_saved_evidence(monkeypatch, tmp_path):
+def test_sector_recovery_reaches_validation_and_saved_evidence(monkeypatch, tmp_path):
     import json
 
     from langchain_core.messages import ToolMessage
 
-    from tradingagents.graph.market_setup import capture_screen_evidence
+    from tradingagents.graph.market_setup import capture_sector_evidence
     from tradingagents.market_reporting import write_market_report_tree
 
-    table = "## Sector performance\n### Sectors (best to worst)\n| 1 | Energy | XLE | +3% | +1% |"
-    captured = capture_screen_evidence({
+    table = _table([(name, "+3%", "+1%") for name in SECTORS])
+    captured = capture_sector_evidence({
         "sector_evidence": "DATA_UNAVAILABLE: failed", "data_warnings": ["SECTOR_DATA_UNAVAILABLE"],
-        "messages": [ToolMessage(content=table, name="get_sector_performance", tool_call_id="s"),
-                     ToolMessage(content=SCREEN, name="screen_equities", tool_call_id="e")],
+        "messages": [ToolMessage(content=table, name="get_sector_performance", tool_call_id="s")],
     })
+    assert "SECTOR_DATA_UNAVAILABLE" not in captured["data_warnings"]
     result, _ = run(monkeypatch, **captured)
     assert result["scan_status"] == "COMPLETE"
-    assert result["market_scan_result"]["candidates"][0]["ticker"] == "XOM"
+    assert len(result["market_scan_result"]["sector_verdicts"]) == len(SECTORS)
     write_market_report_tree({**captured, **result}, tmp_path)
     saved = [json.loads(line) for line in (tmp_path / "evidence.jsonl").read_text().splitlines()]
     assert next(r["content"] for r in saved if r["source"] == "yahoo_sectors") == table
+    scan = json.loads((tmp_path / "scan.json").read_text())
+    assert [v["sector"] for v in scan["sector_verdicts"]] == SECTORS
 
 
-def test_candidate_conviction_only_changes_for_its_missing_benchmark(monkeypatch):
-    table = "## Sector performance\n### Sectors (best to worst)\n| 1 | Energy | XLE | +3% | n/a |\n| 2 | Technology | XLK | +2% | +1% |"
-    answer = report(candidates=[
-        {"ticker": "XOM", "sector": "Energy", "thesis": "Energy", "conviction": "High"},
-        {"ticker": "MSFT", "sector": "Technology", "thesis": "Technology", "conviction": "High"},
-    ])
-    result, _ = run(monkeypatch, answer, sector_evidence=table, data_warnings=["OPTIONAL_REGION_GAP"],
-                    screen_evidence=SCREEN + "\n### Technology\n| MSFT | Microsoft |")
-    assert result["scan_status"] == "DEGRADED"
-    assert [(c["ticker"], c["conviction"]) for c in result["market_scan_result"]["candidates"]] == [
-        ("XOM", "Low"), ("MSFT", "High")]
+def test_sector_outage_is_not_silent():
+    from tradingagents.graph.market_setup import capture_sector_evidence
+
+    result = capture_sector_evidence({"data_warnings": ["GLOBAL_GAP"], "messages": []})
+    assert "GLOBAL_GAP" in result["data_warnings"]
+    assert "SECTOR_DATA_UNAVAILABLE" in result["data_warnings"]
+
+
+def test_report_renders_the_verdict_table(monkeypatch):
+    answer = report(sector_verdicts=[verdict("Energy", "Bearish", "Medium"), verdict("Utilities", "Neutral", "Low")])
+    result, _ = run(monkeypatch, answer)
+    text = result["market_scan_report"]
+    assert "**Market Regime:** **Risk-On**" in text
+    assert "| Energy | XLE | Bearish | Medium |" in text
+    assert "| Utilities | XLU | Neutral | Low |" in text
 
 
 def test_new_market_scan_cannot_silently_omit_market_assessment(monkeypatch):
@@ -157,16 +189,14 @@ def test_new_market_scan_cannot_silently_omit_market_assessment(monkeypatch):
     assert "MARKET_SCENARIOS_INCOMPLETE" in result["scan_warnings"]
 
 
-def test_market_assessment_survives_empty_shortlist(monkeypatch):
-    result, _ = run(monkeypatch, report((), market_outlook="Range with downside risk",
+def test_market_assessment_reaches_the_report(monkeypatch):
+    result, _ = run(monkeypatch, report(market_outlook="Range with downside risk",
         participation_assessment="Narrow participation", rotation_assessment="Defensives improving",
         catalyst_assessment="CPI expected tomorrow", scenarios=["Base: flat", "Upside: broadening", "Downside: breakdown"]),
-        market_diagnostics_data={"status": "success"},
-        screen_evidence="## Equity screen\n### Energy\nNo matches.")
+        market_diagnostics_data={"status": "success"})
     assert result["scan_status"] == "COMPLETE"
     assert "Narrow participation" in result["market_scan_report"]
     assert "Downside: breakdown" in result["market_scan_report"]
-    assert result["market_scan_result"]["candidates"] == []
 
 
 @pytest.mark.parametrize("missing", ["market_risk_review", "market_bear_rebuttal", "market_draft_report", "resolution"])
@@ -182,7 +212,7 @@ def test_final_review_cannot_be_skipped(monkeypatch, missing):
         state[missing] = ""
     result, _ = run(monkeypatch, answer, **state)
     assert result["scan_status"] == "INCOMPLETE"
-    assert result["market_scan_result"]["candidates"] == []
+    assert result["market_scan_result"]["sector_verdicts"] == []
 
 
 @pytest.mark.parametrize("resolutions,complete", [
@@ -199,4 +229,4 @@ def test_every_material_risk_finding_needs_one_substantive_response(monkeypatch,
                  market_risk_findings=[{"id": "R1", "finding": "Check oil"}])
     result, _ = run(monkeypatch, report(review_resolution="Checked", risk_resolutions=resolutions), **state)
     assert (result["scan_status"] == "COMPLETE") is complete
-    assert bool(result["market_scan_result"]["candidates"]) is complete
+    assert bool(result["market_scan_result"]["sector_verdicts"]) is complete

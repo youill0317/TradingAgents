@@ -1,7 +1,7 @@
 """Required structured output for the market scan.
 
 ``tradingagents.agents.structured`` falls back to free text when a schema
-cannot be produced, which suits narrative reports. Market-scan candidates
+cannot be produced, which suits narrative reports. Market-scan verdicts
 become inputs to another stage, so they must validate or fail loudly.
 """
 
@@ -25,7 +25,7 @@ def invoke_structured_required(
     """Return a validated structured result, never an unvalidated text fallback.
 
     This is for outputs that become executable inputs to another stage (for
-    example, market-scan ticker candidates).  A prose fallback is useful for a
+    example, market-scan sector verdicts).  A prose fallback is useful for a
     narrative report, but must not be allowed to bypass schema and grounding
     checks on actionable fields.
     """

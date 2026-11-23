@@ -4,37 +4,9 @@ import json
 from datetime import datetime
 
 import pytest
-from langchain_core.messages import AIMessage, ToolMessage
+from langchain_core.messages import AIMessage
 
-from tradingagents.dataflows.config import run_config as config_context
-from tradingagents.dataflows.market_scan import screen_equities
-from tradingagents.graph.market_setup import capture_screen_evidence
-
-
-def test_partial_screens_and_sector_outage_are_not_silent():
-    state = {"data_warnings": ["GLOBAL_GAP"], "messages": [
-        ToolMessage(content="## Equity screen\n### Energy\n_No matches._", name="screen_equities", tool_call_id="1"),
-        ToolMessage(content="NO_DATA_AVAILABLE: offline", name="screen_equities", tool_call_id="2"),
-    ]}
-    result = capture_screen_evidence(state)
-    assert "GLOBAL_GAP" in result["data_warnings"]
-    assert "SCREEN_PARTIAL_FAILURE" in result["data_warnings"]
-    assert "SECTOR_DATA_UNAVAILABLE" in result["data_warnings"]
-    assert "SCREEN_EVIDENCE_MISSING" not in result["data_warnings"]
-
-
-def test_screen_uses_pinned_run_date_across_host_and_midnight(monkeypatch):
-    import tradingagents.dataflows.market_scan as market
-
-    class Clock(datetime):
-        @classmethod
-        def now(cls, tz=None):
-            return cls(2026, 9, 5, 9, tzinfo=tz)
-
-    monkeypatch.setattr(market, "datetime", Clock)
-    monkeypatch.setattr(market.yf, "screen", lambda *a, **k: {"quotes": [], "total": 0})
-    with config_context({"market_scan_date": "2026-09-04"}):
-        assert "No matches" in screen_equities(sector="Energy", curr_date="2026-09-04")
+from tradingagents.dataflows.market_scan import SECTOR_ETFS
 
 
 @pytest.mark.parametrize("date", ["2000-01-01", "2999-01-01"])
@@ -58,7 +30,7 @@ def test_cli_incomplete_scan_has_failure_exit(monkeypatch):
 
 
 @pytest.mark.parametrize("provider,token_key,stream", [("openai", "max_tokens", False), ("google", "max_output_tokens", True)])
-def test_global_collection_reaches_real_graph_and_grounded_candidate(
+def test_global_collection_reaches_real_graph_and_sector_verdicts(
     monkeypatch, tmp_path, stream, provider, token_key
 ):
     from langchain_core.runnables import RunnableLambda
@@ -77,11 +49,12 @@ def test_global_collection_reaches_real_graph_and_grounded_candidate(
         def bind_tools(self, tools):
             def answer(prompt):
                 prompts.append(str(prompt))
-                if any(t.name == "screen_equities" for t in tools):
+                if any(t.name == "get_sector_performance" for t in tools):
                     self.sector_calls += 1
                     if self.sector_calls == 1:
                         return AIMessage(content="", tool_calls=[{
-                            "name": "screen_equities", "args": {"sector": "Energy"}, "id": "screen",
+                            "name": "get_sector_performance",
+                            "args": {"curr_date": "2026-09-11", "look_back_days": 30}, "id": "sectors",
                         }])
                     return AIMessage(content=[{"type": "text", "text": "US Energy benefits from the global scenario"}] if provider == "google" else "US Energy benefits from the global scenario")
                 return AIMessage(content=[{"type": "text", "text": "Japan and oil: a global scenario with uncertainty"}] if provider == "google" else "Japan and oil: a global scenario with uncertainty")
@@ -102,10 +75,12 @@ def test_global_collection_reaches_real_graph_and_grounded_candidate(
                 return MarketScanReport(risk_resolutions=[{"finding_id": "R1", "decision": "accepted", "rationale": "Observed ratio; monitor RSP/SPY"}], regime="Rotation", regime_evidence="Japan and oil",
                                         sector_view="Energy", review_resolution="Accepted concentration finding: monitor RSP/SPY", market_outlook="Conditional market outlook",
                                         participation_assessment="ETF participation", rotation_assessment="Leadership reversal",
-                                        catalyst_assessment="Upcoming CPI", scenarios=["Base: stable", "Upside: breadth expands", "Downside: breadth contracts"], candidates=[{
-                                            "ticker": "XOM", "sector": "Energy", "conviction": "High",
-                                            "thesis": "Global oil scenario transmits to US energy",
-                                        }])
+                                        catalyst_assessment="Upcoming CPI", scenarios=["Base: stable", "Upside: breadth expands", "Downside: breadth contracts"], sector_verdicts=[{
+                                            "sector": name, "outlook": "Bullish" if name == "Energy" else "Neutral",
+                                            "conviction": "High" if name == "Energy" else "Medium",
+                                            "rationale": "Global oil scenario transmits to US energy" if name == "Energy" else "Mixed",
+                                            "invalidation": "Oil reverses",
+                                        } for name in SECTOR_ETFS])
             return RunnableLambda(final)
 
     class Client:
@@ -135,7 +110,7 @@ def test_global_collection_reaches_real_graph_and_grounded_candidate(
         "report": "DATED_CATALYSTS", "data": {"events": []}, "evidence": [], "warnings": [],
     })
     import tradingagents.dataflows.market_scan as market
-    monkeypatch.setattr(market.yf, "screen", lambda *a, **k: {"quotes": [{"symbol": "XOM"}], "total": 1})
+    monkeypatch.setattr(market, "_pct_return", lambda symbol, *a: 3.0 if symbol == "XLE" else 1.0)
     config = {**DEFAULT_CONFIG, "data_cache_dir": str(tmp_path / "cache"),
               "results_dir": str(tmp_path / "results"), "checkpoint_enabled": True,
               "llm_provider": provider, "max_tokens": "4096"}
@@ -145,18 +120,18 @@ def test_global_collection_reaches_real_graph_and_grounded_candidate(
     other_key = "max_tokens" if token_key == "max_output_tokens" else "max_output_tokens"
     assert all(other_key not in options for options in client_options)
     chunks = []
-    state = graph.scan(sectors=["Energy"], candidate_limit=3, on_chunk=chunks.append if stream else None)
+    state = graph.scan(on_chunk=chunks.append if stream else None)
     if stream:
         assert state["scan_status"] == "INCOMPLETE"
         with pytest.raises(ValueError, match="No interrupted"):
-            graph.scan(sectors=["Energy"], candidate_limit=4, resume=True)
+            # Different settings are a different scan, with nothing to resume.
+            mg.MarketAnalysisGraph(config={**config, "output_language": "Korean"}).scan(resume=True)
         snapshot_time = state["as_of_utc"]
-        state = graph.scan(sectors=["Energy"], candidate_limit=3, on_chunk=chunks.append, resume=True)
+        state = graph.scan(on_chunk=chunks.append, resume=True)
         assert state["as_of_utc"] == snapshot_time
         assert len(final_calls) == 3, "resume retries only the failed final call"
         assert chunks[-1] == state
         assert any(c.get("macro_report") and not c.get("sector_report") for c in chunks)
-    assert state["requested_sectors"] == ["Energy"] and state["candidate_limit"] == 3
     assert "company_of_interest" not in state
     assert state["trade_date"] == datetime.fromisoformat(state["as_of_utc"]).astimezone(mg.ZoneInfo("America/New_York")).date().isoformat()
     assert calls == ["snapshot", "context", "diagnostics", "events"]
@@ -168,13 +143,17 @@ def test_global_collection_reaches_real_graph_and_grounded_candidate(
     assert "REVIEW: concentration" in prompts[-1]
     assert "DRAFT:" in prompts[-1] and "RISK REVIEW:" in prompts[-1]
     assert "Accepted concentration" in state["market_scan_report"]
-    assert state["market_draft_result"]["candidates"][0]["ticker"] == "XOM"
+    assert state["market_draft_result"]["sector_verdicts"][2]["sector"] == "Energy"
     assert state["scan_status"] == "COMPLETE"
-    assert state["market_scan_result"]["candidates"][0]["ticker"] == "XOM"
+    verdicts = {v["sector"]: v for v in state["market_scan_result"]["sector_verdicts"]}
+    assert list(verdicts) == list(SECTOR_ETFS)
+    assert verdicts["Energy"]["outlook"] == "Bullish" and verdicts["Energy"]["conviction"] == "High"
+    assert "+2.00%" in state["sector_evidence"], "the tool's table, not the precollected one, drives validation"
+    assert "| Energy | XLE | Bullish | High |" in state["market_scan_report"]
     with pytest.raises(ValueError, match="No interrupted"):
-        graph.scan(sectors=["Energy"], candidate_limit=3, resume=True)
+        graph.scan(resume=True)
     graph.save_reports(state, tmp_path / "export")
-    assert json.loads((tmp_path / "export" / "scan.json").read_text())["candidates"]
+    assert len(json.loads((tmp_path / "export" / "scan.json").read_text())["sector_verdicts"]) == len(SECTOR_ETFS)
     assert json.loads((tmp_path / "export" / "market_diagnostics.json").read_text())["status"] == "success"
     assert json.loads((tmp_path / "export" / "event_calendar.json").read_text())["events"] == []
     report = (tmp_path / "export" / "complete_report.md").read_text()
@@ -204,7 +183,7 @@ def test_global_collection_reaches_real_graph_and_grounded_candidate(
 
 @pytest.mark.parametrize("kwargs", [
     {"trade_date": "2000-01-01"}, {"trade_date": "2999-01-01"},
-    {"trade_date": "not-a-date"}, {"candidate_limit": 0}, {"candidate_limit": 26},
+    {"trade_date": "not-a-date"},
 ])
 def test_graph_rejects_invalid_inputs_before_collection(kwargs):
     from tradingagents.graph.market_graph import MarketAnalysisGraph
