@@ -5,14 +5,14 @@ have day precision; they must never be represented as exact announcement times.
 """
 import math
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import pandas as pd
 import yfinance as yf
 
 from .config import get_config
-from .fred import _request, get_api_key
+from .vendors.fred import _request, get_api_key
 
 MAX_PAGES = 5
 PAGE_SIZE = 100
@@ -65,14 +65,14 @@ def _yahoo_row(name, row, as_of):
 
 def collect_market_events(trade_date):
     cfg = get_config()
-    as_of = pd.Timestamp(cfg.get("market_scan_as_of") or datetime.now(timezone.utc))
+    as_of = pd.Timestamp(cfg.get("market_scan_as_of") or datetime.now(UTC))
     if as_of.tzinfo is None:
         raise ValueError("market_scan_as_of must include a timezone")
     as_of = as_of.tz_convert("UTC")
     start = (datetime.fromisoformat(trade_date).date() - timedelta(days=7)).isoformat()
     end = (datetime.fromisoformat(trade_date).date() + timedelta(days=14)).isoformat()
     events, evidence, warnings = [], [], []
-    retrieved = datetime.now(timezone.utc).isoformat()
+    retrieved = datetime.now(UTC).isoformat()
     yahoo_status, error = "success", None
     try:
         calendar = yf.Calendars(start=start, end=end)
@@ -141,7 +141,7 @@ def collect_market_events(trade_date):
         warnings.append("EVENT_CALENDAR_UNAVAILABLE:fred")
     events.extend(fred_events)
     evidence.append({"source": "fred_calendar", "status": fred_status, "error": error,
-                     "retrieved_at": datetime.now(timezone.utc).isoformat(),
+                     "retrieved_at": datetime.now(UTC).isoformat(),
                      "content": f"FRED release dates {trade_date} to {end}: {fred_status}; {len(fred_events)} rows"})
     unique = {(r["source"], r["event"], r["region"], r["period"], r["time_utc"] or r["date"]): r for r in events}
     events = sorted(unique.values(), key=lambda r: (r["date"], r["time_utc"] or "", r["event"]))

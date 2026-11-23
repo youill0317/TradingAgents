@@ -26,7 +26,8 @@ from yfinance import EquityQuery
 
 from .config import get_config
 from .errors import NoMarketDataError
-from .stockstats_utils import load_ohlcv, yf_retry
+from .vendors.yahoo.common import yf_retry
+from .vendors.yahoo.ohlcv import load_ohlcv
 
 logger = logging.getLogger(__name__)
 

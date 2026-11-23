@@ -18,7 +18,7 @@ so that:
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
@@ -39,7 +39,12 @@ def _coerce_optional_float(value):
     cannot be salvaged into an absolute level -- reading "15%" as 15 would put a
     stop at $15 on a $600 stock -- so it is dropped like a placeholder, leaving
     one bad field to null out instead of failing the whole proposal. A formatted
-    price is reduced to its number. Anything else passes through to pydantic.
+    price is reduced to its number.
+
+    Anything that is not a single number is dropped the same way. A range
+    ("150-160") or a hedge ("around 150") would otherwise reach pydantic, fail
+    validation, and discard the whole decision, losing every field the model got
+    right along with the price.
     """
     if not isinstance(value, str):
         return value
@@ -47,7 +52,10 @@ def _coerce_optional_float(value):
     if text.lower() in _NULLISH_FLOAT or text.endswith("%"):
         return None
     cleaned = text.replace(",", "").lstrip("$€£¥").strip()
-    return cleaned or None
+    try:
+        return float(cleaned)
+    except ValueError:
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -55,7 +63,7 @@ def _coerce_optional_float(value):
 # ---------------------------------------------------------------------------
 
 
-class PortfolioRating(str, Enum):
+class PortfolioRating(StrEnum):
     """5-tier rating used by the Research Manager and Portfolio Manager."""
 
     BUY = "Buy"
@@ -65,7 +73,7 @@ class PortfolioRating(str, Enum):
     SELL = "Sell"
 
 
-class TraderAction(str, Enum):
+class TraderAction(StrEnum):
     """3-tier transaction direction used by the Trader.
 
     The Trader's job is to translate the Research Manager's investment plan
@@ -96,11 +104,10 @@ class ResearchPlan(BaseModel):
     recommendation: PortfolioRating = Field(
         description=(
             "The investment recommendation. Exactly one of Buy / Overweight / "
-            "Hold / Underweight / Sell. Choose Hold when the evidence is "
-            "balanced, materially conflicting, ambiguous, or insufficient to "
-            "justify changing exposure; otherwise commit to the side with the "
-            "clearly stronger arguments. Do not pick a direction merely to be "
-            "decisive."
+            "Hold / Underweight / Sell. Conflicting arguments alone are not a "
+            "reason to Hold: commit to the stronger side, sized by how "
+            "decisively it wins. Choose Hold only when the evidence is still "
+            "balanced after weighing, or too thin to support a call."
         ),
     )
     rationale: str = Field(
@@ -113,7 +120,9 @@ class ResearchPlan(BaseModel):
     strategic_actions: str = Field(
         description=(
             "Concrete steps for the trader to implement the recommendation, "
-            "including position sizing guidance consistent with the rating."
+            "including sizing guidance relative to a standard allocation. The "
+            "research team does not see the caller's holdings; the trader and "
+            "portfolio manager apply the actual position."
         ),
     )
 
@@ -191,12 +200,12 @@ def render_trader_proposal(proposal: TraderProposal) -> str:
         "",
         f"**Reasoning**: {proposal.reasoning}",
     ]
-    if proposal.entry_price is not None:
-        parts.extend(["", f"**Entry Price**: {proposal.entry_price}"])
-    if proposal.stop_loss is not None:
-        parts.extend(["", f"**Stop Loss**: {proposal.stop_loss}"])
-    if proposal.position_sizing:
-        parts.extend(["", f"**Position Sizing**: {proposal.position_sizing}"])
+    # Named even when absent, so a reader can tell a level the trader chose not
+    # to give from one the schema never asked for.
+    for label, value in (("Entry Price", proposal.entry_price),
+                         ("Stop Loss", proposal.stop_loss),
+                         ("Position Sizing", proposal.position_sizing)):
+        parts.extend(["", f"**{label}**: {value if value is not None and value != '' else 'not provided'}"])
     parts.extend([
         "",
         f"FINAL TRANSACTION PROPOSAL: **{proposal.action.value.upper()}**",
@@ -221,10 +230,11 @@ class PortfolioDecision(BaseModel):
     rating: PortfolioRating = Field(
         description=(
             "The final position rating. Exactly one of Buy / Overweight / Hold / "
-            "Underweight / Sell, picked based on the analysts' debate. Choose "
-            "Hold when the case is balanced, materially conflicting, ambiguous, "
-            "or insufficient to justify changing exposure, rather than forcing a "
-            "direction to appear decisive."
+            "Underweight / Sell, picked based on the analysts' debate. "
+            "Conflicting arguments alone are not a reason to Hold: commit to the "
+            "stronger side, sized by how decisively it wins. Choose Hold only "
+            "when the evidence is still balanced after weighing, or too thin to "
+            "support a call."
         ),
     )
     executive_summary: str = Field(
@@ -270,10 +280,11 @@ def render_pm_decision(decision: PortfolioDecision) -> str:
         "",
         f"**Investment Thesis**: {decision.investment_thesis}",
     ]
-    if decision.price_target is not None:
-        parts.extend(["", f"**Price Target**: {decision.price_target}"])
-    if decision.time_horizon:
-        parts.extend(["", f"**Time Horizon**: {decision.time_horizon}"])
+    # Named even when absent: a missing line reads as a field nobody asked for,
+    # so a reader cannot tell "no target" from "target not reported".
+    target = decision.price_target if decision.price_target is not None else "not provided"
+    parts.extend(["", f"**Price Target**: {target}"])
+    parts.extend(["", f"**Time Horizon**: {decision.time_horizon or 'not provided'}"])
     return "\n".join(parts)
 
 
@@ -282,7 +293,7 @@ def render_pm_decision(decision: PortfolioDecision) -> str:
 # ---------------------------------------------------------------------------
 
 
-class SentimentBand(str, Enum):
+class SentimentBand(StrEnum):
     """Discrete sentiment direction produced by the Sentiment Analyst.
 
     Six tiers keep the signal granular enough to be actionable while remaining
@@ -366,215 +377,3 @@ def render_sentiment_report(report: SentimentReport) -> str:
         "",
         report.narrative,
     ])
-
-
-# ---------------------------------------------------------------------------
-# Market Strategist
-# ---------------------------------------------------------------------------
-
-
-class MarketRegime(str, Enum):
-    """Coarse read on what the market is doing, used by the Market Strategist.
-
-    Deliberately coarse: the regime label is a routing hint for the candidate
-    list, not a forecast.  The nuance lives in ``regime_evidence``.
-    """
-
-    RISK_ON = "Risk-On"
-    RISK_OFF = "Risk-Off"
-    ROTATION = "Rotation"
-    RANGE_BOUND = "Range-Bound"
-    STRESSED = "Stressed"
-
-
-class Conviction(str, Enum):
-    """How strongly a candidate is put forward."""
-
-    HIGH = "High"
-    MEDIUM = "Medium"
-    LOW = "Low"
-
-
-class ScanMode(str, Enum):
-    """Point-in-time contract for a market scan."""
-
-    LIVE = "live"
-    HISTORICAL = "historical"
-
-
-class ScanStatus(str, Enum):
-    """Whether the final shortlist passed its required validation gates."""
-
-    COMPLETE = "COMPLETE"
-    DEGRADED = "DEGRADED"
-    INCOMPLETE = "INCOMPLETE"
-
-
-class MarketCandidate(BaseModel):
-    """One name on the shortlist, with the reason it is there."""
-
-    ticker: str = Field(
-        description=(
-            "The exchange ticker symbol exactly as it appeared in the screen "
-            "results (e.g. 'NVDA'). Never invent a symbol that was not returned "
-            "by a tool."
-        ),
-    )
-    sector: str = Field(
-        description=(
-            "The sector this name was screened under, copied verbatim from the "
-            "screen results."
-        ),
-    )
-    thesis: str = Field(
-        description=(
-            "Two to three sentences on why this name fits the current market "
-            "regime and its sector's position, citing specific figures from the "
-            "macro and sector reports."
-        ),
-    )
-    conviction: Conviction = Field(
-        description=(
-            "High only when the macro regime and the sector evidence point the "
-            "same way for this name; Low when the case rests on a single signal."
-        ),
-    )
-
-    @field_validator("ticker", mode="before")
-    @classmethod
-    def _normalize_ticker(cls, v):
-        """Strip and upper-case the symbol so it can be matched against a report.
-
-        Normalise rather than validate, for the same reason
-        ``_coerce_optional_float`` coerces instead of erroring (#1058): a
-        raising validator fails the whole structured call and drops the report
-        to the free-text fallback, losing every other field with it. Whether the
-        symbol is *real* is checked in the Market Strategist node, where a bad
-        one costs one candidate instead of the report.
-        """
-        return v.strip().upper() if isinstance(v, str) else v
-
-
-class MarketRiskReview(BaseModel):
-    summary: str = Field(description="What was audited, including unavailable evidence.")
-    findings: list[str] = Field(description="Material findings only. Each states the claim, source/date, severity, required correction and monitoring condition. Empty if none.")
-
-
-class MarketRiskResolution(BaseModel):
-    finding_id: str
-    decision: Literal["accepted", "rejected"]
-    rationale: str = Field(description="Evidence/date and correction made, or evidence supporting rejection.")
-
-
-class MarketScanReport(BaseModel):
-    """Structured output produced by the Market Strategist.
-
-    Describes market conditions, participation, rotation and conditional
-    scenarios independently of the optional ticker shortlist. A shortlist
-    entry is a prompt for further analysis, not a position call.
-    """
-
-    status: ScanStatus = Field(
-        default=ScanStatus.COMPLETE,
-        description="Completeness of the validated scan output.",
-    )
-    warnings: list[str] = Field(
-        default_factory=list,
-        description="Machine-readable reasons for degraded or incomplete output.",
-    )
-    review_resolution: str = Field(default="", description="Final response to material independent risk findings: accepted/rejected, evidence, corrections and unresolved uncertainty.")
-    risk_resolutions: list[MarketRiskResolution] = Field(default_factory=list, description="Exactly one response per supplied risk finding ID; no invented IDs.")
-    market_outlook: str = Field(default="", description="Independent 1–4 week market outlook: regime, contradictions, risk appetite and conditions for reassessment.")
-    participation_assessment: str = Field(default="", description="Breadth of sector/ETF participation, equal-weight vs cap-weight and small vs large caps; cite dates and coverage, not invented stock breadth.")
-    rotation_assessment: str = Field(default="", description="Multi-horizon sector leadership, reversals and like-for-like rank or weekly relative changes, grounded in the diagnostics.")
-    catalyst_assessment: str = Field(default="", description="Dated upcoming events, available consensus and recent numeric surprises; identify missing coverage and separate data surprises from market direction.")
-    scenarios: list[str] = Field(default_factory=list, description="Base, upside and downside scenarios for the next 1–4 weeks; each states observable confirmation/invalidation conditions and affected sectors, without invented probabilities.")
-
-    regime: MarketRegime = Field(
-        description="The single regime label that best fits the current market.",
-    )
-    regime_evidence: str = Field(
-        description=(
-            "Why that regime, anchored in available global economic and asset "
-            "evidence, including its transmission to US markets. Distinguish "
-            "reported geopolitical facts from expectations and scenarios. "
-            "Three to five sentences. Name the figures, not just their direction."
-        ),
-    )
-    sector_view: str = Field(
-        description=(
-            "Which sectors are leading and lagging, citing the trailing returns "
-            "and the spread versus SPY, and what that rotation implies about "
-            "where the market thinks it is heading. Three to five sentences."
-        ),
-    )
-    candidates: list[MarketCandidate] = Field(
-        description=(
-            "The shortlist, strongest first. Only names that actually appeared "
-            "in the screen results. Prefer a short, well-argued list over a long "
-            "one; return an empty list if the evidence supports no candidate."
-        ),
-    )
-
-
-def render_market_scan_report(report: MarketScanReport) -> str:
-    """Render a MarketScanReport to the markdown shape the CLI and report tree expect."""
-    parts = [
-        f"**Status:** **{report.status.value}**",
-        *(["", "## Warnings", "", *[f"- {w}" for w in report.warnings]] if report.warnings else []),
-        "",
-        f"**Market Regime:** **{report.regime.value}**",
-        "",
-        "## Regime Evidence",
-        "",
-        report.regime_evidence,
-        "",
-        "## Sector View",
-        "",
-        report.sector_view,
-        "",
-    ]
-
-    # Market assessment remains useful even when no stock candidates qualify.
-    for title, text in (
-        ("Market Outlook (1–4 weeks)", report.market_outlook),
-        ("Risk Review Resolution", report.review_resolution),
-        ("Participation and Concentration", report.participation_assessment),
-        ("Rotation and Transitions", report.rotation_assessment),
-        ("Catalysts and Expectations", report.catalyst_assessment),
-    ):
-        if text:
-            parts.extend([f"## {title}", "", text, ""])
-    if report.scenarios:
-        parts.extend(["## Conditional Scenarios", "", *[f"- {s}" for s in report.scenarios], ""])
-    if report.risk_resolutions:
-        parts.extend(["## Risk Findings Addressed", "", *[
-            f"- {r.finding_id} — {r.decision}: {r.rationale}" for r in report.risk_resolutions
-        ], ""])
-    parts.extend(["## Candidates", ""])
-
-    if not report.candidates:
-        parts.append(
-            "_Candidate selection was not completed; see warnings._"
-            if report.status is ScanStatus.INCOMPLETE else
-            "_No candidate met the bar this scan._"
-        )
-        return "\n".join(parts)
-
-    parts.extend([
-        "| # | Ticker | Sector | Conviction | Thesis |",
-        "| --- | --- | --- | --- | --- |",
-    ])
-    for i, c in enumerate(report.candidates, start=1):
-        # Pipes inside the thesis would break the table; escape them.
-        thesis = c.thesis.replace("|", "\\|").replace("\n", " ")
-        parts.append(
-            f"| {i} | {c.ticker} | {c.sector} | {c.conviction.value} | {thesis} |"
-        )
-
-    parts.extend([
-        "",
-        "_A shortlist entry is a prompt for further analysis, not a position "
-        "call. Run `tradingagents analyze` on a name before acting on it._",
-    ])
-    return "\n".join(parts)

@@ -5,7 +5,7 @@ import pytest
 from langchain_core.messages import AIMessage
 
 from tradingagents.agents.market_review import create_market_review
-from tradingagents.agents.schemas import MarketRiskReview
+from tradingagents.agents.market_schemas import MarketRiskReview
 
 
 def test_initial_cases_are_independent_and_rebuttals_see_both_cases():

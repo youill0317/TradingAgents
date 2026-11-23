@@ -7,7 +7,7 @@ import pytest
 from tradingagents.llm_clients.openai_client import (
     OPENAI_COMPATIBLE_PROVIDERS,
     DeepSeekChatOpenAI,
-    GatewayChatOpenAI,
+    LocalCompatibleChatOpenAI,
     MinimaxChatOpenAI,
     NormalizedChatOpenAI,
     is_openai_compatible,
@@ -36,12 +36,11 @@ def test_registry_membership():
     ("minimax", "https://api.minimax.io/v1", MinimaxChatOpenAI, False),
     ("minimax-cn", "https://api.minimaxi.com/v1", MinimaxChatOpenAI, False),
     ("openrouter", "https://openrouter.ai/api/v1", NormalizedChatOpenAI, False),
-    ("llmgateway", "https://api.llmgateway.io/v1", GatewayChatOpenAI, False),
     ("mistral", "https://api.mistral.ai/v1", NormalizedChatOpenAI, False),
     ("kimi", "https://api.moonshot.ai/v1", NormalizedChatOpenAI, False),
     ("groq", "https://api.groq.com/openai/v1", NormalizedChatOpenAI, False),
     ("nvidia", "https://integrate.api.nvidia.com/v1", NormalizedChatOpenAI, False),
-    ("ollama", "http://localhost:11434/v1", NormalizedChatOpenAI, False),
+    ("ollama", "http://localhost:11434/v1", LocalCompatibleChatOpenAI, False),
 ])
 def test_registry_spec(provider, base_url, chat_class, responses):
     spec = OPENAI_COMPATIBLE_PROVIDERS[provider]
@@ -61,38 +60,57 @@ def test_key_optionality():
     assert OPENAI_COMPATIBLE_PROVIDERS["ollama"].base_url_env == "OLLAMA_BASE_URL"
 
 
-@pytest.mark.parametrize("arguments,valid", [('{"answer": 3}', True), ('{"answer": "not-an-integer"}', False)])
-def test_gateway_wire_request_and_schema_validation(monkeypatch, arguments, valid):
-    from pydantic import BaseModel
+# --- a provider that signs in: its own credential, its own pinned endpoint ---------
 
-    from tradingagents.llm_clients import create_llm_client
+class _Recorder:
+    """Stands in for the chat class and records what the client built."""
 
-    class Answer(BaseModel):
-        answer: int
+    def __init__(self, **kwargs):
+        self.kwargs = kwargs
 
-    monkeypatch.setenv("LLM_GATEWAY_API_KEY", "dummy")
-    llm = create_llm_client(provider="llmgateway", model="custom-route").get_llm()
-    from types import SimpleNamespace
 
-    assert str(llm.openai_api_base) == "https://api.llmgateway.io/v1"
-    assert llm.openai_api_key.get_secret_value() == "dummy"
-    captured = []
-    def create(**kwargs):
-        captured.append(kwargs)
-        payload = {"id": "test", "object": "chat.completion", "created": 0, "model": "custom-route",
-                "choices": [{"index": 0, "finish_reason": "tool_calls", "message": {
-                    "role": "assistant", "content": None, "tool_calls": [{"id": "one", "type": "function",
-                    "function": {"name": "Answer", "arguments": arguments}}]}}]}
-        return SimpleNamespace(parse=lambda: payload)
-    monkeypatch.setattr(llm.client.with_raw_response, "create", create)
-    chain = llm.with_structured_output(Answer)
-    if valid:
-        assert chain.invoke("Return answer 3").answer == 3
-    else:
-        with pytest.raises(ValueError):
-            chain.invoke("Return answer 3")
-    assert captured[0]["model"] == "custom-route"
-    assert captured[0]["tools"][0]["function"]["name"] == "Answer"
-    assert captured[0].get("tool_choice") is None
-    assert "response_format" not in captured[0]
-    assert llm.use_responses_api is False
+def _signed_in_provider(monkeypatch, token="plan-token"):
+    from tradingagents.llm_clients import openai_client
+
+    spec = openai_client.ProviderSpec(
+        base_url="https://api.openai.com/v1", pinned_base_url=True, use_responses_api=True,
+        credential=lambda: (lambda: token), chat_class=_Recorder,
+    )
+    monkeypatch.setitem(openai_client.OPENAI_COMPATIBLE_PROVIDERS, "signed-in", spec)
+    return openai_client
+
+
+@pytest.mark.unit
+def test_a_signed_in_provider_sends_its_own_credential_never_an_api_key(monkeypatch):
+    openai_client = _signed_in_provider(monkeypatch)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-must-not-be-used")
+    llm = openai_client.OpenAIClient("gpt-x", provider="signed-in").get_llm()
+    assert callable(llm.kwargs["api_key"]) and llm.kwargs["api_key"]() == "plan-token"
+    assert llm.kwargs["base_url"] == "https://api.openai.com/v1"
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("client_kwargs", [
+    {"base_url": "https://relay.example/v1"},       # backend_url / TRADINGAGENTS_LLM_BACKEND_URL
+    {"api_key": "sk-explicit"},
+])
+def test_a_signed_in_provider_refuses_another_endpoint_or_key(monkeypatch, client_kwargs):
+    openai_client = _signed_in_provider(monkeypatch)
+    base_url = client_kwargs.pop("base_url", None)
+    client = openai_client.OpenAIClient("gpt-x", base_url=base_url, provider="signed-in", **client_kwargs)
+    with pytest.raises(ValueError):
+        client.get_llm()
+
+
+@pytest.mark.unit
+def test_a_missing_sign_in_fails_before_any_request(monkeypatch):
+    from tradingagents.llm_clients import openai_client
+
+    def not_signed_in():
+        raise ValueError("Not signed in; run `tradingagents login chatgpt`.")
+
+    spec = openai_client.ProviderSpec(base_url="https://api.openai.com/v1", pinned_base_url=True,
+                                      credential=not_signed_in, chat_class=_Recorder)
+    monkeypatch.setitem(openai_client.OPENAI_COMPATIBLE_PROVIDERS, "signed-in", spec)
+    with pytest.raises(ValueError, match="login chatgpt"):
+        openai_client.OpenAIClient("gpt-x", provider="signed-in").get_llm()

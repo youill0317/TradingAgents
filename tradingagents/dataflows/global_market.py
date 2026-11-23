@@ -5,13 +5,13 @@ import os
 import re
 from concurrent.futures import ThreadPoolExecutor
 from contextvars import copy_context
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from urllib.parse import quote
 
 import pandas as pd
 
-from .fred import get_macro_data
-from .stockstats_utils import load_ohlcv
+from .vendors.fred import get_macro_data
+from .vendors.yahoo.ohlcv import load_ohlcv
 
 # ETF returns are USD investor proxies, not local-index returns or fund flows.
 GLOBAL_ASSETS = (
@@ -61,7 +61,7 @@ def _asset_observation(asset, trade_date):
     symbol, label, unit = asset
     record = {
         "source": "yfinance", "target": symbol, "status": "success",
-        "retrieved_at": datetime.now(timezone.utc).isoformat(),
+        "retrieved_at": datetime.now(UTC).isoformat(),
         "url": f"https://finance.yahoo.com/quote/{quote(symbol, safe='')}/",
     }
     try:
@@ -113,7 +113,7 @@ def _asset_observation(asset, trade_date):
 def _macro_observation(target, series, trade_date):
     record = {
         "source": "fred", "target": target, "series_id": series, "status": "unavailable",
-        "retrieved_at": datetime.now(timezone.utc).isoformat(),
+        "retrieved_at": datetime.now(UTC).isoformat(),
     }
     if series is None:
         record["status"] = "not_configured"

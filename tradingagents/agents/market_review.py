@@ -3,9 +3,10 @@ import logging
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from tradingagents.agents.schemas import MarketRiskReview
-from tradingagents.agents.utils.agent_utils import get_language_instruction
-from tradingagents.agents.utils.structured import bind_structured, invoke_structured_required
+from tradingagents.agents.context import get_language_instruction
+from tradingagents.agents.market_schemas import MarketRiskReview
+from tradingagents.agents.market_structured import invoke_structured_required
+from tradingagents.agents.structured import bind_structured
 from tradingagents.llm_clients.base_client import normalize_content
 
 logger = logging.getLogger(__name__)

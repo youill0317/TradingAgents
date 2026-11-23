@@ -4,7 +4,7 @@ import pandas as pd
 import pytest
 
 from tradingagents.dataflows import global_market as gm
-from tradingagents.dataflows.config import config_context, get_config
+from tradingagents.dataflows.config import get_config, run_config as config_context
 
 
 def test_calendar_returns_preserve_dates_and_exclude_future(monkeypatch):

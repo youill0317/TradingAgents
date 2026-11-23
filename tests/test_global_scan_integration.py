@@ -6,7 +6,7 @@ from datetime import datetime
 import pytest
 from langchain_core.messages import AIMessage, ToolMessage
 
-from tradingagents.dataflows.config import config_context
+from tradingagents.dataflows.config import run_config as config_context
 from tradingagents.dataflows.market_scan import screen_equities
 from tradingagents.graph.market_setup import capture_screen_evidence
 
@@ -39,7 +39,7 @@ def test_screen_uses_pinned_run_date_across_host_and_midnight(monkeypatch):
 
 @pytest.mark.parametrize("date", ["2000-01-01", "2999-01-01"])
 def test_cli_rejects_noncurrent_date_before_initializing_models(monkeypatch, date):
-    import cli.main as cli
+    import cli.market as cli
 
     monkeypatch.setattr(cli, "MarketAnalysisGraph", lambda **k: pytest.fail("must reject before model setup"))
     with pytest.raises(cli.typer.BadParameter):
@@ -49,10 +49,11 @@ def test_cli_rejects_noncurrent_date_before_initializing_models(monkeypatch, dat
 def test_cli_incomplete_scan_has_failure_exit(monkeypatch):
     from typer.testing import CliRunner
 
-    import cli.main as cli
+    import cli.main
+    import cli.market
 
-    monkeypatch.setattr(cli, "run_market_scan", lambda **k: {"scan_status": "INCOMPLETE"})
-    result = CliRunner().invoke(cli.app, ["market", "--non-interactive"])
+    monkeypatch.setattr(cli.market, "run_market_scan", lambda **k: {"scan_status": "INCOMPLETE"})
+    result = CliRunner().invoke(cli.main.app, ["market", "--non-interactive"])
     assert result.exit_code == 1
 
 
@@ -63,7 +64,7 @@ def test_global_collection_reaches_real_graph_and_grounded_candidate(
     from langchain_core.runnables import RunnableLambda
 
     import tradingagents.graph.market_graph as mg
-    from tradingagents.agents.schemas import MarketRiskReview, MarketScanReport
+    from tradingagents.agents.market_schemas import MarketRiskReview, MarketScanReport
     from tradingagents.default_config import DEFAULT_CONFIG
 
     monkeypatch.setenv("FRED_API_KEY", "offline-test")
@@ -113,7 +114,8 @@ def test_global_collection_reaches_real_graph_and_grounded_candidate(
 
     calls = []
     client_options = []
-    monkeypatch.setattr(mg, "create_llm_client", lambda **k: client_options.append(k) or Client())
+    import tradingagents.llm_clients.factory as factory
+    monkeypatch.setattr(factory, "create_llm_client", lambda **k: client_options.append(k) or Client())
     monkeypatch.setattr(mg, "collect_global_snapshot", lambda date: calls.append("snapshot") or {
         "report": "JAPAN_BASELINE", "evidence": [
             {"source": "fred", "status": "success", "content": "Japan growth"},

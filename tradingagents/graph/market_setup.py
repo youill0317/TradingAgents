@@ -2,16 +2,13 @@
 
 from typing import Annotated, Any
 
-from langchain_core.messages import ToolMessage
+from langchain_core.messages import HumanMessage, RemoveMessage, ToolMessage
 from langgraph.graph import END, START, MessagesState, StateGraph
 from langgraph.prebuilt import ToolNode
 
-from tradingagents.agents import (
-    create_macro_analyst,
-    create_market_strategist,
-    create_msg_delete,
-    create_sector_analyst,
-)
+from tradingagents.agents.analysts.macro_analyst import create_macro_analyst
+from tradingagents.agents.analysts.sector_analyst import create_sector_analyst
+from tradingagents.agents.managers.market_strategist import create_market_strategist
 from tradingagents.agents.market_review import create_market_review
 
 # The per-ticker placeholder anchors on the instrument under analysis; a scan has
@@ -22,6 +19,28 @@ SCAN_CONTEXT = (
     "Your subject is the market itself."
 )
 MAX_AGENT_TOOL_ROUNDS = 8
+
+
+def create_msg_delete(task_context: str):
+    """Build the node that clears messages between the scan's analysts.
+
+    The placeholder must not be a bare ``"Continue"``: some OpenAI-compatible
+    providers take that literally as the task (#888), so it is anchored on the
+    scan's task and date instead.
+    """
+    def delete_messages(state):
+        removal_operations = [RemoveMessage(id=m.id) for m in state["messages"]]
+        trade_date = state.get("trade_date", "the requested date")
+        placeholder = HumanMessage(
+            content=(
+                f"Proceed with your assigned analysis for this workflow. "
+                f"{task_context} The analysis date is {trade_date}."
+            )
+        )
+        return {"messages": removal_operations + [placeholder]}
+
+    return delete_messages
+
 MARKET_STAGES = (
     ("Macro Analyst", "macro_report"), ("Sector Analyst", "sector_report"),
     ("Market Bull Case", "market_bull_case"), ("Market Bear Case", "market_bear_case"),

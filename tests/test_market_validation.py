@@ -4,8 +4,8 @@ from unittest.mock import Mock
 import pytest
 
 from tradingagents.agents.managers import market_strategist as strategist
-from tradingagents.agents.schemas import MarketScanReport
-from tradingagents.agents.utils.structured import StructuredOutputError
+from tradingagents.agents.market_schemas import MarketScanReport
+from tradingagents.agents.market_structured import StructuredOutputError
 
 SCREEN = "## Equity screen\n### Energy\n| Symbol | Name |\n| --- | --- |\n| XOM | Exxon |"
 
@@ -121,7 +121,7 @@ def test_sector_recovery_reaches_grounding_and_saved_evidence(monkeypatch, tmp_p
     from langchain_core.messages import ToolMessage
 
     from tradingagents.graph.market_setup import capture_screen_evidence
-    from tradingagents.reporting import write_market_report_tree
+    from tradingagents.market_reporting import write_market_report_tree
 
     table = "## Sector performance\n### Sectors (best to worst)\n| 1 | Energy | XLE | +3% | +1% |"
     captured = capture_screen_evidence({

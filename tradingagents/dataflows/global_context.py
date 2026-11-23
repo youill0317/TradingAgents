@@ -1,12 +1,25 @@
 """Optional global news and community context using existing providers."""
 
+import http.client
 import json
-from datetime import datetime, timezone
+import xml.etree.ElementTree as ET
+from datetime import UTC, datetime
 
 from .config import get_config
-from .interface import get_category_for_method, get_vendor, route_to_vendor
-from .reddit import collect_reddit_topic
-from .stocktwits import fetch_stocktwits_messages
+from .router import get_category_for_method, get_vendor, route_to_vendor
+from .vendors import reddit
+from .vendors.stocktwits import fetch_stocktwits_messages
+
+
+def collect_reddit_topic(query: str, subreddit: str, limit: int = 5) -> dict:
+    """Preserve topic evidence and distinguish failed requests from empty feeds."""
+    try:
+        posts = reddit._fetch_subreddit_rss(query, subreddit, limit, 10.0)
+        if posts is None:
+            return {"status": "failed", "posts": [], "error": "Reddit fetch unavailable"}
+        return {"status": "success" if posts else "empty", "posts": posts}
+    except (OSError, http.client.HTTPException, ET.ParseError) as exc:
+        return {"status": "failed", "posts": [], "error": type(exc).__name__}
 
 
 def collect_global_context(trade_date: str) -> dict:
@@ -34,23 +47,19 @@ def collect_global_context(trade_date: str) -> dict:
             failed = any(line.startswith(("error fetching", "data_unavailable:",
                                           "polymarket data is currently unavailable"))
                          for line in lines)
-            coverage = content.partition("\nQuery coverage:\n")[2]
-            partial_failure = any(": failed (" in line for line in coverage.splitlines())
             empty = any(line.startswith(("no global news", "no open prediction markets"))
                         for line in lines)
             if method == "get_global_news" and isinstance(payload, dict):
                 failed = failed or any(key in payload for key in ("Error Message", "Information", "Note"))
                 empty = empty or payload.get("feed") == []
-            has_news = any(": success (" in line for line in coverage.splitlines())
-            status = ("failed" if failed or (partial_failure and not has_news) else
-                      "partial" if partial_failure else "empty" if empty else "success")
+            status = "failed" if failed else "empty" if empty else "success"
             if failed:
                 content = "Provider reported retrieval failure; error details omitted."
         except Exception as exc:
             content, status = type(exc).__name__, "failed"
         evidence.append({"source": method, "configured_provider": provider, "target": target,
                          "status": status, "content": content,
-                         "retrieved_at": datetime.now(timezone.utc).isoformat()})
+                         "retrieved_at": datetime.now(UTC).isoformat()})
 
     for subreddit, query in (("Economics", "inflation"), ("geopolitics", "war OR trade")):
         target = f"r/{subreddit}: {query}"
@@ -59,15 +68,15 @@ def collect_global_context(trade_date: str) -> dict:
             lines = []
             for post in result["posts"]:
                 stamp = post.get("created_utc")
-                published = datetime.fromtimestamp(stamp, timezone.utc).isoformat() if stamp else "unknown"
+                published = datetime.fromtimestamp(stamp, UTC).isoformat() if stamp else "unknown"
                 lines.append(f"{published}: {post.get('title', '')}\n"
-                             f"Excerpt: {post.get('selftext', '')[:240]}\nURL: {post.get('url', '')}")
+                             f"Excerpt: {post.get('selftext', '')[:240]}")
             content = "\n\n".join(lines) or result.get("error", "No matching posts")
             status = result["status"]
         except Exception as exc:
             content, status = type(exc).__name__, "failed"
         evidence.append({"source": "reddit", "target": target, "status": status, "content": content,
-                         "retrieved_at": datetime.now(timezone.utc).isoformat()})
+                         "retrieved_at": datetime.now(UTC).isoformat()})
 
     try:
         content = fetch_stocktwits_messages("SPY", limit=5)
@@ -76,7 +85,7 @@ def collect_global_context(trade_date: str) -> dict:
         content, status = type(exc).__name__, "failed"
     evidence.append({"source": "stocktwits", "target": "SPY", "status": status,
                      "content": content + "\nSource: https://stocktwits.com/symbol/SPY",
-                     "retrieved_at": datetime.now(timezone.utc).isoformat()})
+                     "retrieved_at": datetime.now(UTC).isoformat()})
     for item in evidence:
         if item["status"] not in ("success", "empty"):
             warnings.append(f"{item['source']} ({item['target']}): {item['status']}")

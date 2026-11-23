@@ -8,9 +8,9 @@ and what does it imply for risk appetite right now.
 
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
-from tradingagents.agents.utils.agent_utils import (
+from tradingagents.agents.context import get_language_instruction
+from tradingagents.agents.tools import (
     get_global_news,
-    get_language_instruction,
     get_macro_indicators,
     get_prediction_markets,
 )

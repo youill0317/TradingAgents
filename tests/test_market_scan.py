@@ -99,7 +99,9 @@ class TestScreenEquities:
         result = ms.screen_equities(sector=["Technology", "Energy"])
 
         assert "AAA" in result, "the healthy sector's results must survive"
-        assert "Yahoo said no" in result, "the failure must be visible, not swallowed"
+        # yf_retry reports a transit failure by type, not by the vendor's message.
+        assert "Screen failed: Yahoo Finance request failed: RuntimeError" in result, \
+            "the failure must be visible, not swallowed"
 
 
     def test_a_single_sector_failure_is_not_reported_as_no_matches(self, monkeypatch):
@@ -115,7 +117,7 @@ class TestScreenEquities:
         monkeypatch.setattr(ms.yf, "screen", dead_screen)
         with pytest.raises(ms.NoMarketDataError) as exc:
             ms.screen_equities(sector="Technology")
-        assert "Yahoo 500" in str(exc.value)
+        assert "screener failed: Yahoo Finance request failed" in str(exc.value)
 
     def test_a_genuinely_empty_screen_still_says_no_matches(self, monkeypatch):
         monkeypatch.setattr(
@@ -176,7 +178,7 @@ def test_cli_streams_reports_and_saves_even_without_optional_export(monkeypatch,
     from langchain_core.messages import AIMessage
     from rich.console import Console
 
-    import cli.main as cli
+    import cli.market as cli
 
     monkeypatch.setenv("FRED_API_KEY", "offline-test")
     reports = {field: agent + " report" for agent, field in cli.MARKET_STAGES}
@@ -206,7 +208,7 @@ def test_cli_streams_reports_and_saves_even_without_optional_export(monkeypatch,
 
     save = Mock(return_value=tmp_path / "complete_report.md")
     handoff = Mock()
-    monkeypatch.setattr(cli, "run_analysis", handoff)
+    monkeypatch.setattr(cli, "analyze_candidate", handoff)
     monkeypatch.setattr(cli, "MarketAnalysisGraph", lambda **k: SimpleNamespace(scan=scan, save_reports=save, config=k["config"]))
     monkeypatch.setattr(cli, "Live", live)
     monkeypatch.setattr(cli, "get_market_selections", lambda: {})
@@ -215,15 +217,16 @@ def test_cli_streams_reports_and_saves_even_without_optional_export(monkeypatch,
     monkeypatch.setattr(cli.typer, "prompt", lambda *a, **k: next(answers))
     console = Console(file=StringIO(), record=True, width=120, height=40)
     monkeypatch.setattr(cli, "console", console)
-    assert cli.run_market_scan(show_welcome=False) == state
+    assert cli.run_market_scan() == state
     save.assert_called_once()
     assert save.call_args.args[0] == state
     run_dir = next((tmp_path / "market_scans").iterdir())
     for _, field in cli.MARKET_STAGES:
         assert (run_dir / cli.SCAN_REPORT_FILES[field]).read_text() == reports[field]
-    assert handoff.call_args.kwargs["ticker"] == "XOM"
-    assert "Oil transmission" in handoff.call_args.kwargs["market_context"]
-    assert "run-1" in handoff.call_args.kwargs["market_context"]
+    ticker, date, market_context = handoff.call_args.args
+    assert ticker == "XOM"
+    assert "Oil transmission" in market_context
+    assert "run-1" in market_context
 
 
 @pytest.mark.parametrize("dates,prices,expected", [

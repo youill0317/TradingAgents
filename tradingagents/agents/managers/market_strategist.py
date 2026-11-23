@@ -9,21 +9,20 @@ from __future__ import annotations
 import logging
 import math
 
+from tradingagents.agents.context import get_language_instruction
 from tradingagents.agents.market_review import DEBATE_FIELDS, REVIEW_FIELDS
-from tradingagents.agents.schemas import (
+from tradingagents.agents.market_schemas import (
     Conviction,
     MarketScanReport,
     ScanMode,
     ScanStatus,
     render_market_scan_report,
 )
-from tradingagents.agents.utils.agent_utils import get_language_instruction
-from tradingagents.agents.utils.structured import (
-    NO_EXTERNAL_TOOLS,
+from tradingagents.agents.market_structured import (
     StructuredOutputError,
-    bind_structured,
     invoke_structured_required,
 )
+from tradingagents.agents.structured import NO_EXTERNAL_TOOLS, bind_structured
 
 logger = logging.getLogger(__name__)
 

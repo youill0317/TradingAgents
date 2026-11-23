@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 
 from tradingagents.dataflows import market_diagnostics as md, market_events as me
-from tradingagents.dataflows.config import config_context
+from tradingagents.dataflows.config import run_config as config_context
 
 
 def test_diagnostics_calculates_aligned_breadth_and_ratios(monkeypatch):

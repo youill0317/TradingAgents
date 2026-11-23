@@ -11,7 +11,7 @@ import json
 import os
 import subprocess
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -19,36 +19,54 @@ from zoneinfo import ZoneInfo
 
 from langgraph.prebuilt import ToolNode
 
+import tradingagents
 from tradingagents.agents.managers.market_strategist import _required_evidence_warnings
-from tradingagents.agents.schemas import (
+from tradingagents.agents.market_scan_tools import (
+    get_sector_performance,
+    get_stock_data,
+    screen_equities,
+)
+from tradingagents.agents.market_schemas import (
     MarketScanReport,
     ScanMode,
     ScanStatus,
     render_market_scan_report,
 )
-from tradingagents.agents.utils.agent_utils import (
+from tradingagents.agents.tools import (
     get_global_news,
     get_macro_indicators,
     get_prediction_markets,
-    get_stock_data,
 )
-from tradingagents.agents.utils.market_scan_tools import (
-    get_sector_performance,
-    screen_equities,
-)
-from tradingagents.dataflows.config import config_context, set_config
+from tradingagents.dataflows.config import run_config, set_config
 from tradingagents.dataflows.global_context import collect_global_context
 from tradingagents.dataflows.global_market import collect_global_snapshot
 from tradingagents.dataflows.market_diagnostics import collect_market_diagnostics
 from tradingagents.dataflows.market_events import collect_market_events
 from tradingagents.dataflows.market_scan import resolve_sectors
 from tradingagents.default_config import DEFAULT_CONFIG
-from tradingagents.llm_clients import create_llm_client
-from tradingagents.reporting import write_market_report_tree
+from tradingagents.llm_clients import create_tier_client
+from tradingagents.market_reporting import write_market_report_tree
 
 from .checkpointer import get_checkpointer, thread_id
 from .market_setup import MARKET_STAGES, MarketGraphSetup
-from .trading_graph import build_provider_kwargs
+
+# The package directory, for the code commit and working diff a scan records.
+_PROJECT_DIR = os.path.dirname(os.path.abspath(tradingagents.__file__))
+
+# Global-first headline searches used during a scan, in place of the per-ticker
+# ``global_news_queries`` default. Set ``market_global_news_queries`` to change.
+MARKET_GLOBAL_NEWS_QUERIES = [
+    "Federal Reserve interest rates inflation",
+    "eurozone ECB inflation economy",
+    "United Kingdom Bank of England economy",
+    "China economy trade policy",
+    "Japan Bank of Japan yen economy",
+    "South Korea economy exports",
+    "India economy inflation rates",
+    "emerging markets debt currencies economy",
+    "war geopolitical conflict sanctions tariffs",
+    "oil commodities supply chain energy",
+]
 
 
 def validate_market_credentials():
@@ -80,24 +98,9 @@ class MarketAnalysisGraph:
         os.makedirs(self.config["data_cache_dir"], exist_ok=True)
         os.makedirs(self.config["results_dir"], exist_ok=True)
 
-        llm_kwargs = build_provider_kwargs(self.config)
-        if self.callbacks:
-            llm_kwargs["callbacks"] = self.callbacks
-
-        deep_client = create_llm_client(
-            provider=self.config["llm_provider"],
-            model=self.config["deep_think_llm"],
-            base_url=self.config.get("backend_url"),
-            **llm_kwargs,
-        )
-        quick_client = create_llm_client(
-            provider=self.config["llm_provider"],
-            model=self.config["quick_think_llm"],
-            base_url=self.config.get("backend_url"),
-            **llm_kwargs,
-        )
-        self.deep_thinking_llm = deep_client.get_llm()
-        self.quick_thinking_llm = quick_client.get_llm()
+        extra = {"callbacks": self.callbacks} if self.callbacks else {}
+        self.deep_thinking_llm = create_tier_client(self.config, "deep", **extra).get_llm()
+        self.quick_thinking_llm = create_tier_client(self.config, "quick", **extra).get_llm()
 
         self.tool_nodes = self._create_tool_nodes()
         self.graph_setup = MarketGraphSetup(
@@ -164,14 +167,14 @@ class MarketAnalysisGraph:
 
         validate_market_credentials()
         scan_mode = ScanMode.LIVE
-        as_of_utc = datetime.now(timezone.utc).isoformat()
+        as_of_utc = datetime.now(UTC).isoformat()
         run_id = uuid4().hex
         config_hash = hashlib.sha256(
             json.dumps(self.config, sort_keys=True, default=str).encode()
         ).hexdigest()
         try:
             code_commit = subprocess.check_output(
-                ["git", "-C", self.config["project_dir"], "rev-parse", "HEAD"],
+                ["git", "-C", _PROJECT_DIR, "rev-parse", "HEAD"],
                 text=True,
                 timeout=2,
             ).strip()
@@ -215,7 +218,7 @@ class MarketAnalysisGraph:
         # Checkpoint identity includes the working diff so local edits cannot resume
         # a different graph under the same commit.
         working_diff = subprocess.check_output(
-            ["git", "-C", self.config["project_dir"], "diff", "HEAD", "--", ":/tradingagents", ":/cli"],
+            ["git", "-C", _PROJECT_DIR, "diff", "HEAD", "--", ":/tradingagents", ":/cli"],
             timeout=2,
         ) if code_commit != "unknown" else b""
         signature = hashlib.sha256(json.dumps([
@@ -238,8 +241,14 @@ class MarketAnalysisGraph:
                     on_chunk(initial_state)
             else:
                 saver.delete_thread(tid)
-            with config_context({**self.config, "market_scan_date": str(trade_date),
-                                 "market_scan_as_of": as_of_utc}):
+            scan_config = {
+                **self.config,
+                "global_news_queries": self.config.get(
+                    "market_global_news_queries", MARKET_GLOBAL_NEWS_QUERIES),
+                "market_scan_date": str(trade_date),
+                "market_scan_as_of": as_of_utc,
+            }
+            with run_config(scan_config):
                 if not resume:
                     if on_progress:
                         on_progress("Collecting global prices and FRED indicators")

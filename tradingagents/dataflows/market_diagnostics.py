@@ -6,13 +6,13 @@ silently replaced by a shorter window.
 """
 from concurrent.futures import ThreadPoolExecutor
 from contextvars import copy_context
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import numpy as np
 import pandas as pd
 
 from .market_scan import SECTOR_ETFS
-from .stockstats_utils import load_ohlcv
+from .vendors.yahoo.ohlcv import load_ohlcv
 
 WINDOWS = {"1w": pd.Timedelta(days=7), "1mo": pd.DateOffset(months=1), "3mo": pd.DateOffset(months=3)}
 PROXIES = {"RSP": "equal-weight / cap-weight", "IWM": "small / large caps",
@@ -23,7 +23,7 @@ SYMBOLS = tuple(dict.fromkeys(["SPY", "RSP", "IWM", "QQQ", "HYG", "LQD", *SECTOR
 def _load(symbol, date):
     record = {"source": "yfinance", "target": symbol,
               "url": f"https://finance.yahoo.com/quote/{symbol}/",
-              "retrieved_at": datetime.now(timezone.utc).isoformat()}
+              "retrieved_at": datetime.now(UTC).isoformat()}
     try:
         frame = load_ohlcv(symbol, date)
         dates = pd.to_datetime(frame["Date"]).dt.tz_localize(None).dt.normalize()
