@@ -34,7 +34,7 @@ def invoke_structured_required(
             f"{agent_name}: provider does not support required structured output"
         )
     try:
-        # Gateways may not support forced tool_choice. The output schema is
+        # Some providers do not support forced tool_choice. The output schema is
         # still permitted when the analyst is forbidden from using data tools.
         result = structured_llm.invoke(
             prompt + f"\n\nReturn the result using the {schema.__name__} output schema. "
