@@ -89,6 +89,21 @@ def get_stock_stats_indicators_window(
             "Usage: Capture quick shifts in momentum and potential entry points. "
             "Tips: Prone to noise in choppy markets; use alongside longer averages for filtering false signals."
         ),
+        "close_5_sma": (
+            "5 SMA: About one trading week of closes. "
+            "Usage: Read the very short-term direction and the latest pullback or bounce. "
+            "Tips: Highly reactive and noisy; read it against the 20 and 60 SMAs rather than alone."
+        ),
+        "close_20_sma": (
+            "20 SMA: About one trading month of closes. "
+            "Usage: Gauge the short-term trend and serve as near support/resistance. "
+            "Tips: Price often crosses it in sideways markets; a cross alone is not a trend change."
+        ),
+        "close_60_sma": (
+            "60 SMA: About one quarter of closes. "
+            "Usage: Gauge the intermediate trend between the 20 and 200 SMAs. "
+            "Tips: Needs at least 60 sessions of history; compare its slope, not just price's position."
+        ),
         # MACD Related
         "macd": (
             "MACD: Computes momentum via differences of EMAs. "
@@ -110,6 +125,31 @@ def get_stock_stats_indicators_window(
             "RSI: Measures momentum to flag overbought/oversold conditions. "
             "Usage: Apply 70/30 thresholds and watch for divergence to signal reversals. "
             "Tips: In strong trends, RSI may remain extreme; always cross-check with trend analysis."
+        ),
+        "kdjk": (
+            "Stochastic %K: Where the close sits within the recent high-low range. "
+            "Usage: Readings above 80 or below 20 flag stretched moves; watch %K crossing %D. "
+            "Tips: Very sensitive in strong trends; it is built from the same prices as RSI, so do not count both as separate confirmation."
+        ),
+        "kdjd": (
+            "Stochastic %D: A smoothed %K. "
+            "Usage: Use as the signal line for %K crossovers. "
+            "Tips: Lags %K; read the pair together, not as two signals."
+        ),
+        "cci": (
+            "CCI: Measures how far price sits from its statistical mean. "
+            "Usage: Moves beyond +100 or -100 mark unusually strong or weak price relative to its average. "
+            "Tips: Unbounded and noisy; use it to spot stretched conditions, not to time entries alone."
+        ),
+        "wr": (
+            "Williams %R: The close's position relative to the recent high, from 0 to -100. "
+            "Usage: Above -20 is near the top of the range, below -80 near the bottom. "
+            "Tips: Closely related to the stochastic; pick one of the two."
+        ),
+        "close_10_roc": (
+            "10-day Rate of Change (momentum): The percentage change over 10 sessions. "
+            "Usage: Track whether momentum is accelerating or fading, and divergence from price. "
+            "Tips: Raw and unsmoothed; a single large day can dominate it."
         ),
         # Volatility Indicators
         "boll": (
@@ -137,6 +177,11 @@ def get_stock_stats_indicators_window(
             "VWMA: A moving average weighted by volume. "
             "Usage: Confirm trends by integrating price action with volume data. "
             "Tips: Watch for skewed results from volume spikes; use in combination with other volume analyses."
+        ),
+        "obv": (
+            "OBV: On-Balance Volume, a running total that adds a day's volume when price closes up and subtracts it when price closes down. "
+            "Usage: Check whether volume confirms the price trend; a price high without an OBV high is a divergence. "
+            "Tips: Read its direction and divergences, not its level; large single-day volumes can distort it."
         ),
         "mfi": (
             "MFI: The Money Flow Index is a momentum indicator that uses both price and volume to measure buying and selling pressure. "
@@ -202,6 +247,15 @@ def get_stock_stats_indicators_window(
     return result_str
 
 
+def _with_derived(df, indicator: str):
+    """Add an indicator stockstats does not compute; others are computed by stockstats on access."""
+    if indicator == "obv" and "obv" not in df.columns:
+        close, volume = df["close"].astype(float), df["volume"].astype(float)
+        direction = close.diff().apply(lambda d: 1 if d > 0 else -1 if d < 0 else 0)
+        df["obv"] = (direction * volume).cumsum()
+    return df
+
+
 def _get_stock_stats_bulk(
     symbol: Annotated[str, "ticker symbol of the company"],
     indicator: Annotated[str, "technical indicator to calculate"],
@@ -215,7 +269,7 @@ def _get_stock_stats_bulk(
     from stockstats import wrap
 
     data = load_ohlcv(symbol, as_of_date)
-    df = wrap(data)
+    df = _with_derived(wrap(data), indicator)
     df["Date"] = df["Date"].dt.strftime("%Y-%m-%d")
 
     df[indicator]  # This triggers stockstats to calculate the indicator
@@ -280,7 +334,7 @@ def get_stock_stats(
     ],
 ):
     data = load_ohlcv(symbol, as_of_date)
-    df = wrap(data)
+    df = _with_derived(wrap(data), indicator)
     df["Date"] = df["Date"].dt.strftime("%Y-%m-%d")
     as_of_str = pd.to_datetime(as_of_date).strftime("%Y-%m-%d")
 

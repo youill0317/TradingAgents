@@ -76,11 +76,11 @@ TradingAgents is a multi-agent trading framework that mirrors the dynamics of re
 Our framework decomposes complex trading tasks into specialized roles.
 
 ### Analyst Team
-- Fundamentals Analyst: Evaluates company financials and performance metrics, identifying intrinsic values and potential red flags.
+- Fundamentals Analyst: Evaluates company financials and performance metrics, identifying intrinsic values and potential red flags: a three-to-five-year vertical analysis, profitability, stability, growth, activity and market-value ratios, cash conversion, working capital, per-share value and earnings quality.
 - Sentiment Analyst: Aggregates news headlines, StockTwits, and Reddit chatter into a single sentiment read to gauge short-term market mood.
-- News Analyst: Monitors global news and macroeconomic indicators, interpreting the impact of events on market conditions.
-- Technical Analyst: Utilizes technical indicators (like MACD and RSI) to detect trading patterns and forecast price movements.
-- Business Analyst (opt-in, `--analysts ...,business`): Assesses the business and its price from the web: what it sells and to whom, the company type and thesis, industry and competitors, the economic moat (Wide / Moderate / Narrow / None, or Withheld), management's capital allocation and governance, growth drivers, a valuation fitted to the company type, bear/base/bull scenarios and the case against. It uses the model provider's built-in web search (OpenAI, Anthropic, Google), so it runs only on an analysis dated today, labels each statement as fact, issuer's claim, consensus, estimate or unconfirmed, and lists the pages it cited. On a past date or another provider it files a note that it did not run instead of answering from memory. It is never part of the default selection.
+- News Analyst: Monitors global news and macroeconomic indicators, interpreting the impact of events on market conditions, and reviews the company's material news and announcements over the past three months.
+- Technical Analyst: Utilizes technical indicators (moving averages, MACD, RSI, stochastic, Williams %R, CCI, rate of change, Bollinger Bands, ATR, VWMA, OBV) to detect trading patterns and forecast price movements, and reads volume, chart structure and support and resistance zones from the price history.
+- Business Analyst (opt-in, `--analysts ...,business`): Assesses the business and its price from the web: what it sells and to whom, the company type and thesis, industry and competitors, the economic moat (Wide / Moderate / Narrow / None, or Withheld), products, management's capital allocation and governance, growth drivers, macro and policy exposure, a valuation fitted to the company type, analyst ratings, short interest and positioning, bear/base/bull scenarios and the case against. It uses the model provider's built-in web search (OpenAI, Anthropic, Google), so it runs only on an analysis dated today, labels each statement as fact, issuer's claim, consensus, estimate or unconfirmed, and lists the pages it cited. On a past date or another provider it files a note that it did not run instead of answering from memory. It is never part of the default selection.
 
 The selected analysts work at the same time, each on its own tools, and the research debate starts once all of their reports are in.
 
@@ -232,11 +232,11 @@ It runs the same way as a ticker analysis, step for step:
 | Ticker analysis | Market analysis |
 | --- | --- |
 | Fundamentals Analyst | Macro Analyst: the US and major economies' growth, inflation, jobs and policy rates |
-| Market Analyst | Market Analyst: US trend, participation, volatility and credit; cross-asset returns; rates and the dollar |
+| Market Analyst | Market Analyst: US trend, participation, volatility and credit; index moving averages, momentum, volume, OBV and trading ranges; cross-asset returns; rates and the dollar |
 | News Analyst | Market News Analyst: global news, the economic calendar, prediction markets |
 | Sentiment Analyst | Market Sentiment Analyst: VIX, StockTwits on SPY and each sector ETF, Reddit |
 | — | Sector Analyst: each sector's performance and rotation against SPY (reports, does not judge) |
-| Business Analyst (opt-in, web search) | Policy Analyst (opt-in, web search): monetary, fiscal, trade and industrial policy with its stage (proposed / legislated / enacted / in force), regulation, each sector's industry developments, social and demographic trends |
+| Business Analyst (opt-in, web search) | Policy Analyst (opt-in, web search): monetary, fiscal, trade and industrial policy with its stage (proposed / legislated / enacted / in force), regulation, each sector's industry developments, social and demographic trends, market sentiment and positioning indicators |
 | Bull / Bear Researchers, Research Manager | Market Bull / Bear Researchers, Market Research Manager |
 | Trader | Sector Strategist (overweight, market weight or underweight per sector) |
 | Aggressive / Conservative / Neutral Analysts | the same three, debating the sector proposal |

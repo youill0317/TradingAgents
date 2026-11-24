@@ -15,7 +15,10 @@ from langgraph.prebuilt import InjectedState
 from tradingagents.dataflows.date_window import as_of
 from tradingagents.dataflows.errors import NoMarketDataError, VendorUnavailableError
 from tradingagents.dataflows.global_market import get_global_asset_report, get_regional_macro_report
-from tradingagents.dataflows.market_diagnostics import collect_market_diagnostics
+from tradingagents.dataflows.market_diagnostics import (
+    collect_index_technicals,
+    collect_market_diagnostics,
+)
 from tradingagents.dataflows.market_events import collect_market_events
 from tradingagents.dataflows.market_scan import (
     SECTOR_ETFS,
@@ -108,14 +111,17 @@ def get_market_internals(
     Retrieve US market internals: how many sectors are rising or above their
     50/200 session averages, equal-weight vs cap-weight, small vs large caps,
     Nasdaq vs S&P 500, high-yield vs investment-grade credit, and SPY, QQQ and
-    IWM trend, drawdown and realized volatility.
+    IWM trend, drawdown and realized volatility, and for each of those indexes its
+    moving averages (5/20/60/200), momentum (RSI, MACD, stochastic, Williams %R,
+    CCI, rate of change), volume and OBV, and its recent trading ranges.
     Args:
         curr_date (str): Current date in yyyy-mm-dd format
     Returns:
         str: A formatted report of market-wide participation and risk measures.
     """
     return _serve("get_market_internals",
-                  lambda date: collect_market_diagnostics(date)["internals_report"], as_of(curr_date, trade_date))
+                  lambda date: collect_market_diagnostics(date)["internals_report"] + "\n\n"
+                  + collect_index_technicals(date), as_of(curr_date, trade_date))
 
 
 @tool

@@ -197,3 +197,80 @@ def collect_market_diagnostics(trade_date):
     return {"data": data, "report": "\n".join(out), "sector_report": "\n".join(sector_report),
             "internals_report": "\n".join(internals), "rotation_report": "\n".join(rotation),
             "evidence": evidence, "warnings": warnings}
+
+
+# --- Index technicals: the indicators the ticker Market Analyst reads, for the indexes ---
+
+INDEXES = {"SPY": "S&P 500", "QQQ": "Nasdaq 100", "IWM": "Russell 2000"}
+
+
+def _fmt_level(value):
+    return "n/a" if value is None or pd.isna(value) else f"{value:,.2f}"
+
+
+def _fmt_count(value):
+    return "n/a" if value is None or pd.isna(value) else f"{value:,.0f}"
+
+
+def _index_technicals(symbol: str, date: str) -> str:
+    """One index's trend, momentum, volume and support/resistance zones as of ``date``."""
+    from stockstats import wrap
+
+    frame = load_ohlcv(symbol, date).copy()
+    frame["Date"] = pd.to_datetime(frame["Date"]).dt.tz_localize(None)
+    frame = frame[frame["Date"] <= pd.Timestamp(date)].sort_values("Date").drop_duplicates("Date", keep="last")
+    if len(frame) < 30:
+        return f"- {symbol}: too little price history for technicals"
+    stats = wrap(frame.reset_index(drop=True))
+    last = stats.iloc[-1]
+    close, volume = stats["close"].astype(float), stats["volume"].astype(float)
+    direction = close.diff().apply(lambda d: 1 if d > 0 else -1 if d < 0 else 0)
+    obv = (direction * volume).cumsum()
+
+    def latest(name):
+        try:
+            return float(stats[name].iloc[-1])
+        except Exception:
+            return None
+
+    smas = {n: (latest(f"close_{n}_sma") if len(stats) >= n else None) for n in (5, 20, 60, 200)}
+    obv_change = obv.iloc[-1] - obv.iloc[-21] if len(obv) > 21 else None
+    vol20, vol60 = volume.tail(20).mean(), volume.tail(60).mean() if len(volume) >= 60 else None
+    up = volume[direction > 0].tail(20).mean()
+    down = volume[direction < 0].tail(20).mean()
+    spikes = stats.tail(60)[volume.tail(60) > 2 * volume.tail(60).median()]
+
+    def zone(window):
+        recent = stats.tail(window)
+        return (f"{_fmt_level(recent['low'].min())} ({recent.loc[recent['low'].idxmin(), 'Date']:%Y-%m-%d}) to "
+                f"{_fmt_level(recent['high'].max())} ({recent.loc[recent['high'].idxmax(), 'Date']:%Y-%m-%d})")
+
+    lines = [
+        f"- {symbol} ({INDEXES[symbol]}) on {last['Date']:%Y-%m-%d}: close {_fmt_level(last['close'])}; "
+        + ", ".join(f"SMA{n} {_fmt_level(v)}" for n, v in smas.items()),
+        f"  momentum: RSI {_fmt_level(latest('rsi'))}, MACD {_fmt_level(latest('macd'))} vs signal "
+        f"{_fmt_level(latest('macds'))}, stochastic %K {_fmt_level(latest('kdjk'))}, Williams %R "
+        f"{_fmt_level(latest('wr'))}, CCI {_fmt_level(latest('cci'))}, 10-day rate of change "
+        f"{_fmt_level(latest('close_10_roc'))}%",
+        f"  volume: 20-session average {_fmt_count(vol20)} vs 60-session {_fmt_count(vol60)}; "
+        f"average volume on up days {_fmt_count(up)} vs down days {_fmt_count(down)} (last 20 sessions); "
+        f"OBV change over 20 sessions {_fmt_count(obv_change)}; sessions above twice the 60-session median volume: "
+        + (", ".join(f"{d:%Y-%m-%d}" for d in spikes["Date"]) or "none"),
+        f"  ranges (low to high, with the dates that set them): 20 sessions {zone(20)}; 60 sessions {zone(60)}; "
+        f"252 sessions {zone(252)}",
+    ]
+    return "\n".join(lines)
+
+
+def collect_index_technicals(trade_date: str) -> str:
+    """Trend, momentum, volume and range for SPY, QQQ and IWM, each as of ``trade_date``."""
+    parts = ["## Index technicals",
+             "Moving averages, RSI, MACD, stochastic, Williams %R, CCI and rate of change are all computed from the "
+             "same closes: agreement among them is one piece of evidence. Ranges are observed lows and highs, not "
+             "forecast support or resistance; daily bars may be intraday."]
+    for symbol in INDEXES:
+        try:
+            parts.append(_index_technicals(symbol, trade_date))
+        except Exception as exc:
+            parts.append(f"- {symbol}: technicals unavailable ({type(exc).__name__})")
+    return "\n".join(parts)

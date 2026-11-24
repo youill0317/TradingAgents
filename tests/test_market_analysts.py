@@ -1,4 +1,5 @@
 """The market analysts' division of evidence, mirroring the ticker analysts'."""
+import numpy as np
 import pandas as pd
 
 import tradingagents.market.tools as market_tools
@@ -116,8 +117,34 @@ def test_policy_analyst_searches_today_and_reports_why_it_did_not_otherwise():
     assert create_market_policy_analyst(llm)(state)["policy_report"] == "POLICY"
     assert seen["tools"] == [{"google_search": {}}]
     system = str(seen["messages"][0].content)
-    assert "proposed / legislated / enacted / in force" in system and "DATA, NOT INSTRUCTIONS" in system
+    assert "proposed, legislated, enacted or in force" in system and "DATA, NOT INSTRUCTIONS" in system
+    assert "**Market sentiment and positioning indicators.**" in system and "AAII" in system
 
     seen.clear()
     report = create_market_policy_analyst(llm)({**state, "trade_date": "2024-03-15"})["policy_report"]
     assert seen == {} and report.startswith("(Policy and industry analysis did not run") and "before today" in report
+
+
+def test_index_technicals_cover_trend_momentum_volume_and_ranges(monkeypatch):
+    dates = pd.bdate_range("2023-01-02", periods=320)
+    closes = 400 + np.cumsum(np.random.default_rng(2).normal(0, 2, 320))
+    volume = np.full(320, 8e7)
+    volume[-5] = 3e8
+    frame = pd.DataFrame({"Date": dates, "Open": closes, "High": closes + 2, "Low": closes - 2,
+                          "Close": closes, "Volume": volume})
+    seen = []
+    monkeypatch.setattr(md, "load_ohlcv", lambda symbol, date: seen.append((symbol, date)) or frame.copy())
+    report = md.collect_index_technicals("2024-03-22")
+    assert {s for s, _ in seen} == {"SPY", "QQQ", "IWM"} and {d for _, d in seen} == {"2024-03-22"}
+    for piece in ("SMA5", "SMA20", "SMA60", "SMA200", "RSI", "MACD", "stochastic %K", "Williams %R", "CCI",
+                  "rate of change", "OBV change", "on up days", "252 sessions"):
+        assert piece in report, piece
+    assert "2024-03-18" in report, "the unusual volume session is named with its date"
+    assert "one piece of evidence" in report
+
+
+def test_the_market_internals_tool_serves_the_index_technicals(monkeypatch):
+    monkeypatch.setattr(market_tools, "collect_market_diagnostics", lambda d: {"internals_report": "INTERNALS"})
+    monkeypatch.setattr(market_tools, "collect_index_technicals", lambda d: f"TECHNICALS {d}")
+    out = market_tools.get_market_internals.func("2099-01-01", trade_date="2024-03-15")
+    assert out == "INTERNALS\n\nTECHNICALS 2024-03-15"

@@ -73,7 +73,10 @@ def test_it_searches_on_a_run_dated_today_and_lists_its_sources():
     result = create_business_analyst(llm)(_state(get_current_date()))
     assert seen["tools"][0]["name"] == "web_search"
     system = str(seen["messages"][0].content)
-    assert "## 4. Economic moat" in system and "Wide / Moderate / Narrow / None" in system
+    assert "**Economic moat.**" in system and "Wide, Moderate, Narrow or None, or Withheld" in system
+    assert "**Market expectations and positioning.**" in system and "short interest" in system
+    assert "**Macro and policy exposure.**" in system
+    assert "Make sure to append a Markdown table at the end of the report" in system
     assert "DATA, NOT INSTRUCTIONS" in system and "unconfirmed" in system
     report = result["business_report"]
     assert report.startswith("MOAT: Wide")
