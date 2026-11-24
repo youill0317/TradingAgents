@@ -38,6 +38,41 @@ class Conviction(StrEnum):
     LOW = "Low"
 
 
+class EvidenceLean(StrEnum):
+    """Which way one kind of evidence points for a sector against SPY."""
+
+    OUTPERFORM = "outperform"
+    UNDERPERFORM = "underperform"
+    MIXED = "mixed"
+    NONE = "none"
+
+
+# The kinds of evidence a verdict draws on, one per analyst, and the report each comes from.
+EVIDENCE_SOURCES: dict[str, str] = {
+    "macro": "macro_report",
+    "market": "market_report",
+    "news": "news_report",
+    "sentiment": "sentiment_report",
+    "sector": "sector_report",
+    "policy": "policy_report",
+}
+
+
+class SectorEvidence(BaseModel):
+    """Where each kind of evidence points for one sector, against SPY.
+
+    ``none`` means that evidence says nothing about the sector or was not in
+    this run; it is not a neutral reading, and must not be used to fill a gap.
+    """
+
+    macro: EvidenceLean = Field(default=EvidenceLean.NONE, description="The macro report's reading for this sector.")
+    market: EvidenceLean = Field(default=EvidenceLean.NONE, description="The market report's reading.")
+    news: EvidenceLean = Field(default=EvidenceLean.NONE, description="The market news report's reading.")
+    sentiment: EvidenceLean = Field(default=EvidenceLean.NONE, description="The sentiment report's reading.")
+    sector: EvidenceLean = Field(default=EvidenceLean.NONE, description="The sector report's relative-performance reading.")
+    policy: EvidenceLean = Field(default=EvidenceLean.NONE, description="The policy and industry report's reading.")
+
+
 class SectorVerdict(BaseModel):
     sector: str = Field(description="Exactly one of: " + ", ".join(SECTOR_ETFS) + ".")
     outlook: SectorOutlook = Field(
@@ -49,6 +84,10 @@ class SectorVerdict(BaseModel):
                     "verdict rests on a single signal.")
     rationale: str = Field(description="One to three sentences citing the figures and dates behind the verdict.")
     invalidation: str = Field(description="The observable condition that would overturn the verdict.")
+    evidence: SectorEvidence = Field(
+        default_factory=SectorEvidence,
+        description="For each kind of evidence, whether it points to this sector outperforming or underperforming "
+                    "SPY, is mixed, or says nothing (none). Record what each report says, not what the verdict is.")
 
 
 class MarketCall(BaseModel):
@@ -63,6 +102,12 @@ class MarketCall(BaseModel):
     sector_verdicts: list[SectorVerdict] = Field(
         description="Exactly one verdict for each of the eleven US sectors.")
     summary: str = Field(description="The section this agent is asked for, in prose.")
+    scenarios: list[str] = Field(
+        default_factory=list,
+        description="Base, bull and bear scenarios over the horizon: each its assumptions, the regime it implies, "
+                    "the sectors it favours and the observation that would confirm it. Qualitative likelihoods only.")
+    counter_case: str = Field(
+        default="", description="The strongest argument against this call, and the concrete way it would fail.")
 
 
 SECTORS: tuple[str, ...] = tuple(SECTOR_ETFS)
@@ -118,8 +163,27 @@ def render_call(call: MarketCall, summary_heading: str) -> str:
         else:
             lines.append(f"| {name} | {SECTOR_ETFS[name]} | {v.outlook.value} | {v.conviction.value} | "
                          f"{_cell(v.rationale)} | {_cell(v.invalidation)} |")
+    leans = [(v.sector, v.evidence) for v in call.sector_verdicts]
+    if any(getattr(e, src) != EvidenceLean.NONE for _, e in leans for src in EVIDENCE_SOURCES):
+        lines += ["", "**Evidence by source** (+ outperform, - underperform, ~ mixed, blank none):", "",
+                  "| Sector | " + " | ".join(EVIDENCE_SOURCES) + " |",
+                  "| --- |" + " --- |" * len(EVIDENCE_SOURCES)]
+        mark = {EvidenceLean.OUTPERFORM: "+", EvidenceLean.UNDERPERFORM: "-", EvidenceLean.MIXED: "~",
+                EvidenceLean.NONE: ""}
+        for name, e in leans:
+            lines.append(f"| {name} | " + " | ".join(mark[getattr(e, src)] for src in EVIDENCE_SOURCES) + " |")
+    if call.scenarios:
+        lines += ["", "**Scenarios**:", *[f"- {s}" for s in call.scenarios]]
+    if call.counter_case:
+        lines += ["", "**Strongest case against**:", call.counter_case]
     lines += ["", f"**{summary_heading}**:", call.summary]
     return "\n".join(lines)
+
+
+def call_evidence(call: MarketCall) -> dict[str, dict[str, str]]:
+    """Each rated sector's evidence leans, by source."""
+    return {v.sector: {src: getattr(v.evidence, src).value for src in EVIDENCE_SOURCES}
+            for v in normalize_call(call).sector_verdicts}
 
 
 # --- Reading a call back from free text -------------------------------------

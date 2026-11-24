@@ -12,13 +12,15 @@ def _tools(key):
 
 
 def test_each_analyst_covers_one_kind_of_evidence_without_overlap():
-    assert list(ANALYST_SPECS) == ["macro", "market", "news", "sentiment", "sector"]
+    assert list(ANALYST_SPECS) == ["macro", "market", "news", "sentiment", "policy", "sector"]
     assert _tools("macro") == {"get_macro_indicators", "get_regional_macro"}
     assert _tools("market") == {"get_market_internals", "get_global_asset_returns", "get_macro_indicators"}
     assert _tools("news") == {"get_global_news", "get_economic_calendar", "get_prediction_markets"}
     assert _tools("sector") == {"get_sector_performance", "get_sector_rotation"}
     # Like the ticker Sentiment Analyst, it takes its sources up front.
     assert ANALYST_SPECS["sentiment"].tools == () and ANALYST_SPECS["sentiment"].factory is not None
+    # The Policy Analyst searches the web inside its one call, so it has no vendor tools either.
+    assert ANALYST_SPECS["policy"].tools == () and ANALYST_SPECS["policy"].factory is not None
     market_only = {"get_economic_calendar", "get_sector_rotation", "get_market_internals", "get_prediction_markets"}
     for tool in market_only:
         assert sum(tool in _tools(key) for key in ANALYST_SPECS) == 1, tool
@@ -68,3 +70,54 @@ def test_a_vix_outage_is_a_visible_placeholder(monkeypatch):
         raise OSError("offline")
     monkeypatch.setattr(market_tools, "load_ohlcv", down)
     assert market_tools.collect_market_sentiment("2024-03-15")["vix"].startswith("DATA_UNAVAILABLE")
+
+
+def test_policy_analyst_is_opt_in_and_never_in_a_default_run():
+    import inspect
+
+    from tradingagents.market.graph import MarketAnalysisGraph
+    from tradingagents.market.setup import ALL_ANALYSTS, ANALYST_ORDER, OPT_IN_ANALYSTS
+
+    assert {"policy"} == OPT_IN_ANALYSTS and "policy" in ALL_ANALYSTS and "policy" not in ANALYST_ORDER
+    assert inspect.signature(MarketAnalysisGraph.__init__).parameters["selected_analysts"].default == ANALYST_ORDER
+
+
+def test_macro_analyst_places_the_cycle_and_writes_transmission_chains():
+    instructions = ANALYST_SPECS["macro"].instructions
+    assert "expansion, late-cycle overheating, slowdown, or recovery" in instructions
+    assert "household and corporate debt and money supply" in instructions
+    assert "never as a forecast of a turning-point date" in instructions
+    assert "-> the channel" in instructions
+
+
+def test_news_analyst_separates_new_information_and_policy_stages():
+    instructions = ANALYST_SPECS["news"].instructions
+    assert "new information or already expected" in instructions
+    assert "proposed, legislated, enacted, in force" in instructions
+    assert "two outlets repeating one source are one source" in instructions
+
+
+def test_policy_analyst_searches_today_and_reports_why_it_did_not_otherwise():
+    from types import SimpleNamespace
+
+    from langchain_core.messages import AIMessage
+
+    from tradingagents.dataflows.date_window import get_current_date
+    from tradingagents.market.analysts import create_market_policy_analyst
+
+    seen = {}
+
+    def bind_tools(self, tools):
+        seen["tools"] = tools
+        return SimpleNamespace(invoke=lambda messages: seen.update(messages=messages) or AIMessage(content="POLICY"))
+    llm = type("ChatGoogleGenerativeAI", (), {"bind_tools": bind_tools})()
+
+    state = {"trade_date": get_current_date(), "messages": [("human", "market")]}
+    assert create_market_policy_analyst(llm)(state)["policy_report"] == "POLICY"
+    assert seen["tools"] == [{"google_search": {}}]
+    system = str(seen["messages"][0].content)
+    assert "proposed / legislated / enacted / in force" in system and "DATA, NOT INSTRUCTIONS" in system
+
+    seen.clear()
+    report = create_market_policy_analyst(llm)({**state, "trade_date": "2024-03-15"})["policy_report"]
+    assert seen == {} and report.startswith("(Policy and industry analysis did not run") and "before today" in report

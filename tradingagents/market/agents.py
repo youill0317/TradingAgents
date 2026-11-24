@@ -27,8 +27,10 @@ from tradingagents.agents.structured import (
 )
 from tradingagents.market.analysts import MARKET_CONTEXT
 from tradingagents.market.schemas import (
+    EVIDENCE_SOURCES,
     SECTORS,
     MarketCall,
+    call_evidence,
     call_ratings,
     parse_call,
     render_call,
@@ -54,7 +56,15 @@ def call_format() -> str:
         "Then give one line per sector, \"<Sector>: <Bullish|Neutral|Bearish> (<High|Medium|Low> conviction) — "
         "rationale; invalidated if ...\", for each of: " + ", ".join(SECTORS) + ". Bullish or Bearish needs "
         "evidence that the sector will beat or trail SPY; mixed or thin evidence is Neutral, and conflict alone "
-        "is not a reason for Neutral: weigh it."
+        "is not a reason for Neutral: weigh it.\n\n"
+        "For every sector also record where each kind of evidence points against SPY (outperform, "
+        "underperform, mixed, or none when that report says nothing about the sector or was not in this run): "
+        + ", ".join(f"{src} ({report.replace('_', ' ')})" for src, report in EVIDENCE_SOURCES.items()) + ". "
+        "Record what each report says, not what your verdict is; never fill a missing report with a reading. "
+        "Evidence derived from the same prices (trend, moving averages, drawdown, relative performance) is one "
+        "kind of evidence, not several. Then give base, bull and bear scenarios (assumptions, implied regime, "
+        "favoured sectors, the observation that would confirm each; qualitative likelihoods only) and the "
+        "strongest case against the call."
     )
 
 
@@ -76,6 +86,8 @@ def _reports(state) -> str:
         f"Market news report: {report_or_absent(state.get('news_report'), 'market news')}\n\n"
         f"Market sentiment report: {report_or_absent(state.get('sentiment_report'), 'market sentiment')}\n\n"
         f"Sector report: {report_or_absent(state.get('sector_report'), 'sector')}"
+        + (f"\n\nPolicy and industry report (from web search; check its evidence labels): {policy}"
+           if (policy := (state.get("policy_report") or "").strip()) else "")
     )
 
 
@@ -285,15 +297,18 @@ Then an **Executive Summary**: the call and what would change it.
         if call is not None:
             decision = render_call(call, "Executive Summary")
             regime, ratings, convictions = call_ratings(call)
+            evidence = call_evidence(call)
         else:
             decision = llm.invoke(prompt).content
             regime, ratings, convictions = parse_call(decision)
+            evidence = {}   # the per-source leans are read from the typed call only
         return {
             "risk_debate_state": {**debate, "latest_speaker": "Judge"},
             "final_market_decision": decision,
             "final_regime": regime,
             "final_sector_ratings": ratings,
             "final_sector_convictions": convictions,
+            "final_sector_evidence": evidence,
         }
 
     return node

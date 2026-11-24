@@ -60,6 +60,7 @@ from tradingagents.market.analysts import ANALYST_SPECS
 from tradingagents.market.graph import ASSET_TYPE, SUBJECT, MarketAnalysisGraph, market_call
 from tradingagents.market.memory import MarketMemoryLog
 from tradingagents.market.scoring import market_horizon_days, summarize_market
+from tradingagents.market.setup import OPT_IN_ANALYSTS
 
 WORKFLOW_STEPS = ("I. Analyst Team → II. Research Team → III. Sector Strategist → "
                   "IV. Risk Management → V. Chief Market Strategist")
@@ -169,8 +170,9 @@ def get_market_selections(flags) -> dict:
         console.print(_box("Step 3: Analysts Team", "Select your market analysts"))
         analysts = questionary.checkbox(
             "Select Your [Market Analysts]:",
-            choices=[questionary.Choice(spec.agent_node, value=key, checked=True)
-                     for key, spec in ANALYST_SPECS.items()],
+            choices=[questionary.Choice(
+                spec.agent_node + (" (web search; today's date only)" if key in OPT_IN_ANALYSTS else ""),
+                value=key, checked=key not in OPT_IN_ANALYSTS) for key, spec in ANALYST_SPECS.items()],
             validate=lambda x: len(x) > 0 or "You must select at least one analyst.",
         ).ask()
         if not analysts:
@@ -480,6 +482,7 @@ def run_market_analysis(checkpoint: bool | None = None, flags=None):
                     view.take_state(chunk)
                     final_state.update(chunk)
                     for key in ("macro_report", "market_report", "news_report", "sentiment_report", "sector_report",
+                                "policy_report",
                                 "market_plan", "sector_proposal", "final_market_decision"):
                         if chunk.get(key):
                             (report_dir / f"{key}.md").write_text(chunk[key], encoding="utf-8")

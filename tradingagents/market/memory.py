@@ -132,10 +132,12 @@ class MarketMemoryLog:
 
 
 def call_record(final_state: dict) -> tuple[str, dict[str, dict]]:
-    """The final call's regime and, per sector, its outlook and conviction."""
+    """The final call's regime and, per sector, its outlook, conviction and evidence leans by source."""
     ratings = final_state.get("final_sector_ratings") or {}
     convictions = final_state.get("final_sector_convictions") or {}
-    sectors = {name: {"outlook": ratings.get(name, RATING_REVIEW), "conviction": convictions.get(name, "")}
+    evidence = final_state.get("final_sector_evidence") or {}
+    sectors = {name: {"outlook": ratings.get(name, RATING_REVIEW), "conviction": convictions.get(name, ""),
+                      "evidence": evidence.get(name, {})}
                for name in SECTOR_ETFS}
     return final_state.get("final_regime") or RATING_REVIEW, sectors
 

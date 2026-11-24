@@ -20,6 +20,7 @@ class MarketAgentState(MessagesState):
     news_report: Annotated[str, "Report from the Market News Analyst"]
     sentiment_report: Annotated[str, "Report from the Market Sentiment Analyst"]
     sector_report: Annotated[str, "Report from the Sector Analyst"]
+    policy_report: Annotated[str, "Report from the Policy Analyst, when selected; it works from web search"]
 
     # research debate step
     investment_debate_state: Annotated[InvestDebateState, "The bull/bear debate on the market"]
@@ -33,5 +34,6 @@ class MarketAgentState(MessagesState):
     final_regime: Annotated[str, "The final market regime, or REVIEW when it has none"]
     final_sector_ratings: Annotated[dict, "Sector -> Bullish / Neutral / Bearish against SPY, or REVIEW when it has none"]
     final_sector_convictions: Annotated[dict, "Sector -> High / Medium / Low, empty where none was given"]
+    final_sector_evidence: Annotated[dict, "Sector -> {evidence source -> outperform / underperform / mixed / none}"]
     past_context: Annotated[str, "Lessons from settled past market calls, written by the Memory Log step"]
     memory_note: Annotated[str, "What the Memory Log step could not settle or read this run; empty when all went well"]

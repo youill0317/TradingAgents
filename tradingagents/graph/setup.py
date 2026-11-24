@@ -10,6 +10,7 @@ from tradingagents.agents import (
     create_aggressive_debator,
     create_bear_researcher,
     create_bull_researcher,
+    create_business_analyst,
     create_conservative_debator,
     create_fundamentals_analyst,
     create_market_analyst,
@@ -117,6 +118,7 @@ class GraphSetup:
                 - "social": Sentiment analyst
                 - "news": News analyst
                 - "fundamentals": Fundamentals analyst
+                - "business": Business analyst (web search; not selected by default)
             memory_node: Node that settles past decisions and returns the run's
                 ``past_context``. It runs alongside the analysts.
         """
@@ -127,6 +129,7 @@ class GraphSetup:
             "social": lambda: create_sentiment_analyst(self.quick_thinking_llm),
             "news": lambda: create_news_analyst(self.quick_thinking_llm),
             "fundamentals": lambda: create_fundamentals_analyst(self.quick_thinking_llm),
+            "business": lambda: create_business_analyst(self.quick_thinking_llm),
         }
 
         bull_researcher_node = create_bull_researcher(self.quick_thinking_llm)

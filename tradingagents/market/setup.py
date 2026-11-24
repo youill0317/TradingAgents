@@ -31,7 +31,11 @@ from tradingagents.market.state import MarketAgentState
 
 logger = logging.getLogger(__name__)
 
-ANALYST_ORDER = tuple(ANALYST_SPECS)
+# Analysts that run only when named: the Policy Analyst works from web search.
+OPT_IN_ANALYSTS = frozenset({"policy"})
+# Every analyst, in order, and the ones a run gets when none are named.
+ALL_ANALYSTS = tuple(ANALYST_SPECS)
+ANALYST_ORDER = tuple(key for key in ALL_ANALYSTS if key not in OPT_IN_ANALYSTS)
 
 # ConditionalLogic returns the ticker workflow's node names; each maps to its
 # market counterpart, every target mapped so no return can miss (#1088).

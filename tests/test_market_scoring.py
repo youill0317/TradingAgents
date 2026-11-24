@@ -153,3 +153,21 @@ def test_horizon_is_ten_trading_days_unless_configured():
     assert scoring.market_horizon_days({"holding_period_days": 5, "market_holding_period_days": 20}) == 20
     assert "next 10 trading days" in scoring.regime_definitions(10)
     assert "RELATIVE TO SPY over the next 10 trading days" in scoring.verdict_definition(10)
+
+
+def test_each_evidence_source_is_scored_by_whether_it_pointed_the_way_the_sector_went():
+    calls = dict.fromkeys(SECTORS, {"outlook": "Neutral", "conviction": "", "evidence": {}})
+    calls |= {"Energy": {"outlook": "Bullish", "conviction": "High",
+                         "evidence": {"macro": "outperform", "news": "underperform", "sector": "mixed",
+                                      "policy": "none"}},
+              "Utilities": {"outlook": "Bearish", "conviction": "Low",
+                            "evidence": {"macro": "underperform", "news": "underperform"}}}
+    outcome = _outcome(dict.fromkeys(SECTORS, 0.0) | {"Energy": 0.02, "Utilities": 0.01})
+    card = score_call("Risk-On", calls, outcome)
+    assert card["sectors"]["Energy"]["evidence"] == {"macro": True, "news": False, "sector": None, "policy": None}
+    assert card["sectors"]["Utilities"]["evidence"] == {"macro": False, "news": False}
+    summary = summarize_market([{"date": "2024-03-01", "regime": "Risk-On", "pending": False, "outcome": outcome,
+                                 "scorecard": card}])
+    assert summary.by_source["macro"].hit_rate == 0.5 and summary.by_source["news"].hit_rate == 0.0
+    assert "sector" not in summary.by_source, "a mixed or missing lean is not scored"
+    assert "Evidence by source" in summary.render()

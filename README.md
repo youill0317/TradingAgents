@@ -80,6 +80,7 @@ Our framework decomposes complex trading tasks into specialized roles.
 - Sentiment Analyst: Aggregates news headlines, StockTwits, and Reddit chatter into a single sentiment read to gauge short-term market mood.
 - News Analyst: Monitors global news and macroeconomic indicators, interpreting the impact of events on market conditions.
 - Technical Analyst: Utilizes technical indicators (like MACD and RSI) to detect trading patterns and forecast price movements.
+- Business Analyst (opt-in, `--analysts ...,business`): Assesses the business and its price from the web: what it sells and to whom, the company type and thesis, industry and competitors, the economic moat (Wide / Moderate / Narrow / None, or Withheld), management's capital allocation and governance, growth drivers, a valuation fitted to the company type, bear/base/bull scenarios and the case against. It uses the model provider's built-in web search (OpenAI, Anthropic, Google), so it runs only on an analysis dated today, labels each statement as fact, issuer's claim, consensus, estimate or unconfirmed, and lists the pages it cited. On a past date or another provider it files a note that it did not run instead of answering from memory. It is never part of the default selection.
 
 The selected analysts work at the same time, each on its own tools, and the research debate starts once all of their reports are in.
 
@@ -235,18 +236,21 @@ It runs the same way as a ticker analysis, step for step:
 | News Analyst | Market News Analyst: global news, the economic calendar, prediction markets |
 | Sentiment Analyst | Market Sentiment Analyst: VIX, StockTwits on SPY and each sector ETF, Reddit |
 | — | Sector Analyst: each sector's performance and rotation against SPY (reports, does not judge) |
+| Business Analyst (opt-in, web search) | Policy Analyst (opt-in, web search): monetary, fiscal, trade and industrial policy with its stage (proposed / legislated / enacted / in force), regulation, each sector's industry developments, social and demographic trends |
 | Bull / Bear Researchers, Research Manager | Market Bull / Bear Researchers, Market Research Manager |
 | Trader | Sector Strategist (overweight, market weight or underweight per sector) |
 | Aggressive / Conservative / Neutral Analysts | the same three, debating the sector proposal |
 | Portfolio Manager | Chief Market Strategist (the final regime and sector verdicts) |
 
-- **Analysts**: `--analysts macro,market,news,sentiment,sector` picks them. As in a ticker analysis, they report and leave the call to the managers; the Sector Analyst is the market analysis's own, because its call covers eleven sectors.
+- **Analysts**: `--analysts macro,market,news,sentiment,sector` picks them; add `policy` for the Policy Analyst, which like the ticker Business Analyst uses the provider's web search, runs only on today's date, and is never selected by default. As in a ticker analysis, they report and leave the call to the managers; the Sector Analyst is the market analysis's own, because its call covers eleven sectors.
 - **Data**: the analysts gather their data with tools, and the Sentiment Analyst takes its sources up front, as the ticker Sentiment Analyst does. Every source serves the analysis date at the latest.
 - **Dates**: any date up to today. Prices, FRED vintages and news are as of that date, and economic figures released after it are withheld. Community feeds and prediction markets only serve recent data, and say so for an older date.
+- **Cycle and transmission**: the Macro Analyst places the US in the business cycle (expansion, overheating, slowdown, recovery) from growth, inflation, jobs, debt and money supply, and every analyst writes its conclusions as a chain from a change to the sectors it helps or hurts.
+- **Evidence by source**: the final call records, for each sector, whether the macro, market, news, sentiment, sector and policy evidence pointed to outperformance or underperformance, and adds bear/base/bull scenarios and the strongest case against it.
 - **Debates**: the research depth sets the bull/bear rounds and the risk rounds, as `max_debate_rounds` and `max_risk_discuss_rounds` do for a ticker.
 - **What the call claims**: both results are claims about the next `market_holding_period_days` trading days (default 10; the ticker analysis's `holding_period_days` stays 5), and the managers are given the definitions they are scored on. A sector verdict is relative to SPY: Bullish outperforms it, Bearish underperforms it, so in a falling market a sector that falls less is Bullish; the market's own direction is the regime's claim. Risk-On / Risk-Off claim SPY moves up / down by more than an ordinary move, Stressed an unusually deep drawdown, Rotation that sector returns diverge more than usual, Range-Bound neither. "Ordinary", "usual" and "deep" are measured from the year before the call.
 - **Memory**: each call is one record in `~/.tradingagents/memory/market_memory.jsonl` (`market_memory_log_path`). Once its window has traded, a later run scores it the way a ticker decision is scored: sector verdicts by alpha against SPY (Neutral, like Hold, is not a hit or a miss), plus the regime against its claim, the Bullish-minus-Bearish alpha spread, and how far the Neutral sectors moved. One reflection is written on the whole call, and later runs' Chief Market Strategist reads the recent scorecards and lessons that were known by their date.
-- **Scorecard**: `tradingagents market --scorecard` prints the settled calls' regime hit rate and sector hit rates by outlook, conviction and sector, without running an analysis.
+- **Scorecard**: `tradingagents market --scorecard` prints the settled calls' regime hit rate, sector hit rates by outlook, conviction and sector, and how often each kind of evidence pointed the way the sector went, without running an analysis.
 - **Reading the call**: the final call is structured output; without it, the regime and verdicts are read from the text, and anything that cannot be read is recorded as `REVIEW`, as an unreadable rating is.
 - **Checkpoints**: `--checkpoint` saves state after each step so a crashed run resumes.
 

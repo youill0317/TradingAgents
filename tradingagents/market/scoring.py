@@ -44,6 +44,8 @@ STRESS_QUANTILE = 0.90
 DEFAULT_MARKET_HOLDING_PERIOD_DAYS = 10
 
 _DIRECTION = {"Bullish": 1, "Neutral": 0, "Bearish": -1}
+# What an evidence lean claims about a sector against SPY; mixed and none claim nothing.
+_LEAN = {"outperform": 1, "underperform": -1}
 
 
 def market_horizon_days(config: dict | None = None) -> int:
@@ -189,12 +191,16 @@ def score_call(regime: str, sectors: dict[str, dict], outcome: dict) -> dict:
         outlook, measured = call.get("outlook", RATING_REVIEW), outcome["sectors"].get(name)
         direction = _DIRECTION.get(outlook)
         alpha = measured["alpha"] if measured else None
+        leans = call.get("evidence") or {}
         rows[name] = {
             "outlook": outlook,
             "conviction": call.get("conviction", ""),
             "raw": measured["raw"] if measured else None,
             "alpha": alpha,
             "hit": (alpha * direction > 0) if direction and alpha is not None else None,
+            # Did each kind of evidence point the way the sector actually went against SPY?
+            "evidence": {source: (alpha * _LEAN[lean] > 0) if lean in _LEAN and alpha is not None else None
+                         for source, lean in leans.items()},
         }
         if alpha is not None and outlook in by_outlook:
             by_outlook[outlook].append(alpha)
@@ -286,6 +292,7 @@ class MarketSummary:
     by_outlook: dict[str, Tally]
     by_conviction: dict[str, Tally]
     by_sector: dict[str, Tally]
+    by_source: dict[str, Tally]
     spreads: list[float]
     neutral_misses: list[float]
     horizons: set[int]
@@ -311,6 +318,9 @@ class MarketSummary:
         lines += table("Sector verdicts by outlook (alpha vs SPY)", "Outlook", self.by_outlook)
         lines += table("Directional verdicts by conviction", "Conviction", self.by_conviction)
         lines += table("Directional verdicts by sector (mean alpha in the called direction)", "Sector", self.by_sector)
+        if self.by_source:
+            lines += table("Evidence by source (did its outperform/underperform lean match the sector's alpha?)",
+                           "Source", self.by_source, alpha=False)
         if self.spreads:
             lines.append(f"\nMean Bullish-minus-Bearish spread: {_pct(sum(self.spreads) / len(self.spreads))} "
                          f"over {len(self.spreads)} call(s) with both sides.")
@@ -327,7 +337,7 @@ def summarize_market(records: list[dict]) -> MarketSummary:
     settled = [r for r in records if r.get("scorecard")]
     summary = MarketSummary(
         settled=len(settled), pending=len(records) - len(settled), regime=Tally(), by_regime={},
-        by_outlook={name: Tally() for name in _DIRECTION}, by_conviction={}, by_sector={},
+        by_outlook={name: Tally() for name in _DIRECTION}, by_conviction={}, by_sector={}, by_source={},
         spreads=[], neutral_misses=[], horizons=set())
     for record in settled:
         card = record["scorecard"]
@@ -343,6 +353,9 @@ def summarize_market(records: list[dict]) -> MarketSummary:
                 signed = row["alpha"] * direction
                 summary.by_conviction.setdefault(row["conviction"] or "unstated", Tally()).add(row["hit"], signed)
                 summary.by_sector.setdefault(name, Tally()).add(row["hit"], signed)
+            for source, hit in (row.get("evidence") or {}).items():
+                if hit is not None:
+                    summary.by_source.setdefault(source, Tally()).add(hit)
         if card.get("spread") is not None:
             summary.spreads.append(card["spread"])
         if card.get("neutral_miss") is not None:

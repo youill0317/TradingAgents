@@ -7,7 +7,7 @@ from rich.markup import escape
 
 from cli.display import console
 from cli.market import market
-from cli.models import AnalystType, AssetType
+from cli.models import OPT_IN_ANALYSTS, AnalystType, AssetType
 from cli.prompts import filter_analysts_for_asset_type, parse_analysts
 from cli.run import run_analysis
 from tradingagents.backtest import iter_grid, run_backtest, summarize
@@ -131,7 +131,8 @@ def backtest(
         # The analysts are named and checked as for an analysis; without a
         # choice, every analyst the asset type allows runs.
         chosen = (parse_analysts(analysts, kind) if analysts
-                  else filter_analysts_for_asset_type(list(AnalystType), kind))
+                  else filter_analysts_for_asset_type(
+                      [a for a in AnalystType if a not in OPT_IN_ANALYSTS], kind))
     except ValueError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=1) from None

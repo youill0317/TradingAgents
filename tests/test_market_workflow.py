@@ -26,9 +26,13 @@ SENTIMENT = SentimentReport(overall_band="Mildly Bearish", overall_score=4.0, co
 
 def _call(**overrides):
     verdicts = [{"sector": s, "outlook": "Bullish" if s == "Energy" else "Neutral", "conviction": "Medium",
-                 "rationale": f"{s} figures", "invalidation": "Trend reverses"} for s in SECTORS]
+                 "rationale": f"{s} figures", "invalidation": "Trend reverses",
+                 "evidence": {"sector": "outperform" if s == "Energy" else "mixed", "macro": "underperform"}}
+                for s in SECTORS]
     return MarketCall(**{"regime": "Rotation", "regime_evidence": "Oil up, breadth narrow",
-                         "sector_verdicts": verdicts, "summary": "Summary text", **overrides})
+                         "sector_verdicts": verdicts, "summary": "Summary text",
+                         "scenarios": ["Base: oil holds", "Bull: breadth widens", "Bear: oil reverses"],
+                         "counter_case": "Oil could reverse on supply", **overrides})
 
 
 class FakeModel:
@@ -126,11 +130,16 @@ def test_a_past_dated_run_follows_the_ticker_workflow(monkeypatch, offline, deba
     # One call is one record: the regime, every sector's verdict against SPY and its conviction, pending.
     (record,) = graph.memory_log.load()
     assert record["date"] == "2024-03-15" and record["pending"] and record["regime"] == "Rotation"
-    assert record["sectors"]["Energy"] == {"outlook": "Bullish", "conviction": "Medium"}
+    assert record["sectors"]["Energy"]["outlook"] == "Bullish" and record["sectors"]["Energy"]["conviction"] == "Medium"
+    assert record["sectors"]["Energy"]["evidence"]["sector"] == "outperform"
+    assert record["sectors"]["Energy"]["evidence"]["policy"] == "none", "a report not in the run reads none"
     assert record["days"] == 10 and "Energy figures" in record["decision"]
     saved = json.loads((Path(config["results_dir"]) / "MARKET" / "MarketAnalysis_logs"
                         / "full_states_log_2024-03-15.json").read_text())
     assert saved["regime"] == "Rotation" and saved["sector_convictions"]["Energy"] == "Medium"
+    decision = state["final_market_decision"]
+    assert "**Scenarios**:\n- Base: oil holds" in decision and "**Strongest case against**:" in decision
+    assert "**Evidence by source**" in decision and "| Energy | - |  |  |  | + |  |" in decision
     # A second run of the same date records nothing more.
     graph.record_decision("2024-03-15", state)
     assert len(graph.memory_log.load()) == 1
@@ -159,7 +168,7 @@ def test_without_structured_output_the_call_is_read_from_text(monkeypatch, offli
     assert call["sector_ratings"]["Technology"] == "Bearish"
     assert call["sector_convictions"]["Technology"] == "Low"
     assert call["sector_ratings"][SECTORS[-1]] == "REVIEW", "a sector the text never rated is not guessed"
-    assert graph.memory_log.load()[0]["sectors"][SECTORS[-1]] == {"outlook": "REVIEW", "conviction": ""}
+    assert graph.memory_log.load()[0]["sectors"][SECTORS[-1]] == {"outlook": "REVIEW", "conviction": "", "evidence": {}}
 
 
 def _pending_call(graph, date="2024-01-02"):
@@ -167,6 +176,19 @@ def _pending_call(graph, date="2024-01-02"):
     sectors |= {"Energy": {"outlook": "Bullish", "conviction": "High"},
                 "Technology": {"outlook": "Bearish", "conviction": "Medium"}}
     graph.memory_log.store_call(date, "Risk-On", sectors, "THE CALL AS MADE", 5)
+
+
+def test_a_policy_report_reaches_the_debate_only_when_the_analyst_ran(monkeypatch, offline):
+    config, _ = offline
+    log = []
+    graph = _graph(monkeypatch, config, FakeModel(log), selected_analysts=("macro", "policy"))
+    state, _ = graph.propagate("2024-03-15")     # a past date: the Policy Analyst does not search
+    assert state["policy_report"].startswith("(Policy and industry analysis did not run")
+    assert any("Policy and industry report" in p for p in log if p.startswith("You are the Bull Analyst"))
+
+    log.clear()
+    _graph(monkeypatch, config, FakeModel(log), selected_analysts=("macro",)).propagate("2024-03-14")
+    assert not any("Policy and industry report" in p for p in log)
 
 
 def test_a_settled_call_is_scored_reflected_on_once_and_reaches_the_final_call(monkeypatch, offline):

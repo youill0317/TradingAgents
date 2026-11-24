@@ -15,6 +15,7 @@ _SECTIONS = (
         ("Market News Analyst", "news.md", ("news_report",)),
         ("Market Sentiment Analyst", "sentiment.md", ("sentiment_report",)),
         ("Sector Analyst", "sector.md", ("sector_report",)),
+        ("Policy Analyst", "policy.md", ("policy_report",)),
     )),
     ("II. Research Team Outlook", "2_research", (
         ("Market Bull Researcher", "bull.md", ("investment_debate_state", "bull_history")),
