@@ -11,8 +11,9 @@ from pathlib import Path
 _SECTIONS = (
     ("I. Analyst Team Reports", "1_analysts", (
         ("Macro Analyst", "macro.md", ("macro_report",)),
-        ("Global Markets Analyst", "global.md", ("global_report",)),
+        ("Market Analyst", "market.md", ("market_report",)),
         ("Market News Analyst", "news.md", ("news_report",)),
+        ("Market Sentiment Analyst", "sentiment.md", ("sentiment_report",)),
         ("Sector Analyst", "sector.md", ("sector_report",)),
     )),
     ("II. Research Team Outlook", "2_research", (

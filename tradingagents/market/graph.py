@@ -111,7 +111,8 @@ class MarketAnalysisGraph(TradingAgentsGraph):
                 aggressive_history="", conservative_history="", neutral_history="", history="",
                 latest_speaker="", current_aggressive_response="", current_conservative_response="",
                 current_neutral_response="", count=0),
-            "macro_report": "", "global_report": "", "news_report": "", "sector_report": "",
+            "macro_report": "", "market_report": "", "news_report": "", "sentiment_report": "",
+            "sector_report": "",
         }
 
     def _memory_step(self, state):
@@ -146,7 +147,7 @@ class MarketAnalysisGraph(TradingAgentsGraph):
         return {**super().run_settings(), "workflow": "market"}
 
     def _log_state(self, trade_date, final_state):
-        keys = ("trade_date", "macro_report", "global_report", "news_report", "sector_report",
+        keys = ("trade_date", "macro_report", "market_report", "news_report", "sentiment_report", "sector_report",
                 "market_plan", "sector_proposal", "final_market_decision")
         entry = {key: final_state.get(key, "") for key in keys}
         entry["investment_debate_state"] = {k: (final_state.get("investment_debate_state") or {}).get(k, "")

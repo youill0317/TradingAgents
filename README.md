@@ -230,13 +230,18 @@ It runs the same way as a ticker analysis, step for step:
 
 | Ticker analysis | Market analysis |
 | --- | --- |
-| Market, Sentiment, News, Fundamentals Analysts | Macro, Global Markets, Market News, Sector Analysts (`--analysts macro,global,news,sector`) |
+| Fundamentals Analyst | Macro Analyst: the US and major economies' growth, inflation, jobs and policy rates |
+| Market Analyst | Market Analyst: US trend, participation, volatility and credit; cross-asset returns; rates and the dollar |
+| News Analyst | Market News Analyst: global news, the economic calendar, prediction markets |
+| Sentiment Analyst | Market Sentiment Analyst: VIX, StockTwits on SPY and each sector ETF, Reddit |
+| — | Sector Analyst: each sector's performance and rotation against SPY (reports, does not judge) |
 | Bull / Bear Researchers, Research Manager | Market Bull / Bear Researchers, Market Research Manager |
 | Trader | Sector Strategist (overweight, market weight or underweight per sector) |
 | Aggressive / Conservative / Neutral Analysts | the same three, debating the sector proposal |
 | Portfolio Manager | Chief Market Strategist (the final regime and sector verdicts) |
 
-- **Data**: each analyst gathers its own data with tools: FRED series and regional macro, cross-asset returns, global news, the economic calendar, community posts, prediction markets, sector performance and market participation. Every tool serves the analysis date at the latest.
+- **Analysts**: `--analysts macro,market,news,sentiment,sector` picks them. As in a ticker analysis, they report and leave the call to the managers; the Sector Analyst is the market analysis's own, because its call covers eleven sectors.
+- **Data**: the analysts gather their data with tools, and the Sentiment Analyst takes its sources up front, as the ticker Sentiment Analyst does. Every source serves the analysis date at the latest.
 - **Dates**: any date up to today. Prices, FRED vintages and news are as of that date, and economic figures released after it are withheld. Community feeds and prediction markets only serve recent data, and say so for an older date.
 - **Debates**: the research depth sets the bull/bear rounds and the risk rounds, as `max_debate_rounds` and `max_risk_discuss_rounds` do for a ticker.
 - **Memory**: each sector verdict is logged in `~/.tradingagents/memory/market_memory.md` (`market_memory_log_path`). Once its holding period has traded, it is scored by the ETF's return and its alpha against SPY, a reflection is written, and later runs read the lessons that were known by their date.

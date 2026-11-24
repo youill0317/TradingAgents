@@ -73,6 +73,9 @@ def _analyst_graph(spec, agent, max_tool_rounds: int):
     graph = StateGraph(MarketAgentState, output_schema=output)
     graph.add_node("agent", agent)
     graph.add_edge(START, "agent")
+    if not spec.tools:   # takes its sources up front, like the ticker Sentiment Analyst
+        graph.add_edge("agent", END)
+        return graph.compile()
 
     def rounds(messages) -> int:
         return sum(1 for m in messages if getattr(m, "tool_calls", None))

@@ -60,8 +60,9 @@ def _language():
 def _reports(state) -> str:
     return (
         f"Macro report: {report_or_absent(state.get('macro_report'), 'macro')}\n\n"
-        f"Global markets report: {report_or_absent(state.get('global_report'), 'global markets')}\n\n"
+        f"Market report: {report_or_absent(state.get('market_report'), 'market')}\n\n"
         f"Market news report: {report_or_absent(state.get('news_report'), 'market news')}\n\n"
+        f"Market sentiment report: {report_or_absent(state.get('sentiment_report'), 'market sentiment')}\n\n"
         f"Sector report: {report_or_absent(state.get('sector_report'), 'sector')}"
     )
 

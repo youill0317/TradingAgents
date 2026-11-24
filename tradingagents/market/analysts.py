@@ -1,23 +1,45 @@
-"""The market analysts: each gathers its own data with tools, like the ticker analysts.
+"""The market analysts, one for each kind of evidence the ticker workflow's analysts cover.
 
-They run side by side, each on a private message history, and file one report.
+| Ticker analyst | Market analyst | Evidence |
+| --- | --- | --- |
+| Fundamentals | Macro | the economy behind the market |
+| Market | Market | prices, trend, participation, volatility, credit, rates |
+| News | Market News | news, scheduled releases, event odds |
+| Sentiment | Market Sentiment | what investors say and how much protection they buy |
+| (none) | Sector | each sector's performance relative to the market |
+
+The Sector Analyst is the market workflow's own: its call covers eleven sectors,
+where a ticker call covers one name. Like the ticker analysts, every analyst
+reports what its data shows and leaves the call to the managers. Each works on
+a private message history; the Sentiment Analyst takes its sources up front and
+answers in the ticker Sentiment Analyst's structured form.
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass
 
+from langchain_core.messages import AIMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
 from tradingagents.agents.analysts.turn import take_turn
 from tradingagents.agents.context import get_language_instruction
+from tradingagents.agents.schemas import SentimentReport, render_sentiment_report
+from tradingagents.agents.structured import (
+    NO_EXTERNAL_TOOLS,
+    bind_structured,
+    invoke_structured_or_freetext,
+)
 from tradingagents.agents.tools import get_global_news, get_macro_indicators, get_prediction_markets
 from tradingagents.dataflows.market_scan import SECTOR_ETFS
 from tradingagents.market.tools import (
+    COMMUNITY_SEARCHES,
+    collect_market_sentiment,
     get_economic_calendar,
     get_global_asset_returns,
-    get_market_community_posts,
-    get_market_participation,
+    get_market_internals,
     get_regional_macro,
     get_sector_performance,
+    get_sector_rotation,
 )
 
 MARKET_CONTEXT = (
@@ -25,6 +47,7 @@ MARKET_CONTEXT = (
     "global economy, the US equity market and its eleven sectors."
 )
 _TABLE = " Append a Markdown table at the end of the report organising its key points."
+_SECTOR_LIST = ", ".join(f"{name} ({etf})" for name, etf in SECTOR_ETFS.items())
 
 
 @dataclass(frozen=True)
@@ -32,79 +55,12 @@ class MarketAnalystSpec:
     key: str
     agent_node: str
     report_key: str
-    tools: tuple
-    instructions: str
+    tools: tuple = ()
+    instructions: str = ""
+    factory: Callable | None = None   # builds the node itself, for an analyst without tools
 
 
-ANALYST_SPECS: dict[str, MarketAnalystSpec] = {
-    spec.key: spec for spec in (
-        MarketAnalystSpec(
-            key="macro",
-            agent_node="Macro Analyst",
-            report_key="macro_report",
-            tools=(get_macro_indicators, get_regional_macro, get_prediction_markets),
-            instructions=(
-                "You are a macro economist. Establish the macro regime as of the analysis date: growth, "
-                "inflation, labour, policy rates and financial conditions in the US, and in the eurozone, UK, "
-                "China, Japan, Korea and India. Use get_macro_indicators(indicator, curr_date, look_back_days) "
-                "for US series from FRED (e.g. 'cpi', 'core_pce', 'unemployment', 'fed_funds_rate', "
-                "'10y_treasury', 'yield_curve', 'VIXCLS'), get_regional_macro(curr_date) for the other "
-                "economies, and get_prediction_markets(topic, limit) for market-implied odds of policy and "
-                "recession events. Explain how conditions abroad transmit to US markets. Where indicators "
-                "disagree, say so; a conflicted read is a finding. Cite figures with their dates."
-            ),
-        ),
-        MarketAnalystSpec(
-            key="global",
-            agent_node="Global Markets Analyst",
-            report_key="global_report",
-            tools=(get_global_asset_returns, get_macro_indicators),
-            instructions=(
-                "You are a cross-asset strategist. Read risk appetite across regions and assets as of the "
-                "analysis date. Use get_global_asset_returns(curr_date) for regional equity, FX, bond and "
-                "commodity returns, and get_macro_indicators(indicator, curr_date, look_back_days) for US "
-                "yields, the dollar index ('DTWEXBGS') and volatility ('VIXCLS'). Compare the same windows "
-                "across assets. ETF returns are proxies, not measured capital flows; futures are contract "
-                "prices, not spot. Say what the cross-asset picture implies for US equities and sectors."
-            ),
-        ),
-        MarketAnalystSpec(
-            key="news",
-            agent_node="Market News Analyst",
-            report_key="news_report",
-            tools=(get_global_news, get_economic_calendar, get_market_community_posts),
-            instructions=(
-                "You are a market news researcher. Cover the past week's global news that matters for "
-                "markets: central banks, growth, inflation, war, political conflict, trade and energy. Use "
-                "get_global_news(curr_date, look_back_days, limit), get_economic_calendar(curr_date) for "
-                "recent releases and their surprises and the releases due over the next two weeks, and "
-                "get_market_community_posts(curr_date) for what investors are discussing. Separate reported "
-                "facts from expectations and scenarios; headlines and summaries are not full articles, and "
-                "community posts are unverified opinion. Name the sectors each development affects."
-            ),
-        ),
-        MarketAnalystSpec(
-            key="sector",
-            agent_node="Sector Analyst",
-            report_key="sector_report",
-            tools=(get_sector_performance, get_market_participation, get_economic_calendar),
-            instructions=(
-                "You are a sector strategist. Assess each of the eleven US sectors, through their SPDR ETFs: "
-                + ", ".join(f"{name} ({etf})" for name, etf in SECTOR_ETFS.items()) + ". Use "
-                "get_sector_performance(curr_date, look_back_days) for trailing returns and spreads versus "
-                "SPY over several windows, get_market_participation(curr_date) for breadth, leadership "
-                "reversals, equal-weight vs cap-weight and credit, and get_economic_calendar(curr_date) for "
-                "catalysts. A sector up 3% while SPY is up 3.4% is lagging, not leading. Distinguish "
-                "persistent leadership, emerging reversals and fading leadership. For every sector, state its "
-                "lean for the next 1–4 weeks (Bullish, Neutral or Bearish), the figures behind it and what "
-                "would change it. Do not name individual stocks; a sector with missing data is uncertain."
-            ),
-        ),
-    )
-}
-
-
-def create_market_analyst(spec: MarketAnalystSpec, llm):
+def create_tool_analyst(spec: MarketAnalystSpec, llm):
     def analyst_node(state):
         prompt = ChatPromptTemplate.from_messages([
             (
@@ -130,3 +86,150 @@ def create_market_analyst(spec: MarketAnalystSpec, llm):
         return {"messages": [result], spec.report_key: report}
 
     return analyst_node
+
+
+def _sentiment_message(sources: dict[str, str]) -> str:
+    subreddits = sorted({f"r/{sub}" for _terms, subs in COMMUNITY_SEARCHES for sub in subs})
+    return f"""You are a financial market sentiment analyst. Produce a sentiment report on the US equity market and its sectors for {sources["start_date"]} to {sources["end_date"]}, from the sources already collected below. {MARKET_CONTEXT}
+
+## Data sources (pre-fetched, in this prompt)
+
+### Volatility — the VIX, from Yahoo Finance
+What investors pay for S&P 500 protection: a measured signal, available for any date.
+
+<start_of_vix>
+{sources["vix"]}
+<end_of_vix>
+
+### StockTwits messages — $SPY, then each sector ETF ({_SECTOR_LIST})
+Fast-moving retail signal. Each message carries a user-labeled sentiment tag (Bullish / Bearish / no-label).
+
+<start_of_stocktwits>
+{sources["stocktwits"]}
+<end_of_stocktwits>
+
+### Reddit posts — {", ".join(subreddits)} (past 7 days)
+Community discussion of the economy, rates, war and trade, without vote or comment counts.
+
+<start_of_reddit>
+{sources["reddit"]}
+<end_of_reddit>
+
+## How to analyze this data
+
+1. **Read the VIX as the measured anchor.** Its level and change say how much fear is priced; compare the community mood against it.
+2. **Read StockTwits Bullish/Bearish ratios by symbol.** $SPY gives the market's mood; each sector ETF's stream gives that sector's. Base rates on the message count: a handful of messages is no signal. A 70/30 split is moderately bullish; ≥90/10 may be over-extension and contrarian risk.
+3. **Look for divergences**: calm VIX with anxious posts, or one sector's crowd leaning against the market's. A divergence is itself a signal.
+4. **Read Reddit posts for substance**, judging a post by its body excerpt, not its title, and without inferring engagement.
+5. **Identify recurring themes** across sources, and the sectors they touch.
+6. **Be honest about data limits.** Public feeds serve recent posts only: for an older date they report the window as unavailable, and the VIX may be the only source. Flag thin or missing sources in `confidence` and the narrative.
+7. **Sentiment is not a price call.** Frame it as signal for the managers to weigh with the macro, market, news and sector evidence. Do not name individual stocks.
+
+## Output fields
+
+- **overall_band**: the US equity market's sentiment, exactly one of Bullish / Mildly Bullish / Neutral / Mixed / Mildly Bearish / Bearish.
+- **overall_score**: 0 (maximally bearish) to 10 (maximally bullish); 5 is neutral. Consistent with overall_band.
+- **confidence**: low / medium / high, from data quality and sample size.
+- **narrative**: source-by-source breakdown, the market's and each sector's crowd mood where the data supports it, divergences, themes, and a markdown summary table (signal, direction, source, evidence).
+
+{NO_EXTERNAL_TOOLS}{get_language_instruction()}"""
+
+
+def create_market_sentiment_analyst(llm):
+    structured_llm = bind_structured(llm, SentimentReport, "Market Sentiment Analyst")
+
+    def sentiment_node(state):
+        sources = collect_market_sentiment(state["trade_date"])
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", "You are a helpful AI assistant, collaborating with other assistants."
+                       " Today's date is {current_date}; treat it as 'now' for all analysis.\n{system_message}"),
+            MessagesPlaceholder(variable_name="messages"),
+        ]).partial(current_date=state["trade_date"], system_message=_sentiment_message(sources))
+        messages = prompt.format_messages(messages=state["messages"])
+        report = invoke_structured_or_freetext(
+            structured_llm, llm, messages, render_sentiment_report, "Market Sentiment Analyst")
+        return {"messages": [AIMessage(content=report)], "sentiment_report": report}
+
+    return sentiment_node
+
+
+ANALYST_SPECS: dict[str, MarketAnalystSpec] = {
+    spec.key: spec for spec in (
+        MarketAnalystSpec(
+            key="macro",
+            agent_node="Macro Analyst",
+            report_key="macro_report",
+            tools=(get_macro_indicators, get_regional_macro),
+            instructions=(
+                "You are a macro economist. Establish the state of the economy behind the market as of the "
+                "analysis date: growth, inflation, labour and policy rates in the US, and in the eurozone, UK, "
+                "China, Japan, Korea and India. Use get_macro_indicators(indicator, curr_date, look_back_days) "
+                "for US series from FRED (e.g. 'real_gdp', 'cpi', 'core_pce', 'unemployment', 'payrolls', "
+                "'initial_claims', 'fed_funds_rate', 'm2') and get_regional_macro(curr_date) for the other economies. Say "
+                "whether growth and inflation are accelerating or slowing, where policy is headed, and how "
+                "conditions abroad transmit to the US. Where indicators disagree, say so; a conflicted read is "
+                "a finding. Cite figures with their observation dates."
+            ),
+        ),
+        MarketAnalystSpec(
+            key="market",
+            agent_node="Market Analyst",
+            report_key="market_report",
+            tools=(get_market_internals, get_global_asset_returns, get_macro_indicators),
+            instructions=(
+                "You are a market technician and cross-asset strategist. Read the US equity market's own "
+                "condition as of the analysis date. Use get_market_internals(curr_date) for SPY, QQQ and IWM "
+                "trend, drawdown and volatility, participation across sectors, equal-weight vs cap-weight, "
+                "small vs large caps and high-yield vs investment-grade credit; get_global_asset_returns"
+                "(curr_date) for regional equities, FX, bonds and commodities; and get_macro_indicators"
+                "(indicator, curr_date, look_back_days) for market rates and stress gauges from FRED "
+                "('2y_treasury', '10y_treasury', 'yield_curve', 'dollar_index', 'vix'). Say whether the advance or "
+                "decline is broad or narrow, whether credit and other assets confirm it, and what risk appetite "
+                "the prices show. ETF ratios are proxies, not stock breadth or capital flows."
+            ),
+        ),
+        MarketAnalystSpec(
+            key="news",
+            agent_node="Market News Analyst",
+            report_key="news_report",
+            tools=(get_global_news, get_economic_calendar, get_prediction_markets),
+            instructions=(
+                "You are a market news researcher. Cover the past week's global news that matters for markets: "
+                "central banks, growth, inflation, war, political conflict, trade and energy. Use "
+                "get_global_news(curr_date, look_back_days, limit), get_economic_calendar(curr_date) for recent "
+                "releases with their surprises and the releases due over the next two weeks, and "
+                "get_prediction_markets(topic, limit) for market-implied odds of forward-looking events (e.g. "
+                "'Fed rate cut', 'recession', 'tariffs'). Separate reported facts from expectations and "
+                "scenarios; headlines and summaries are not full articles. Name the sectors each development "
+                "affects."
+            ),
+        ),
+        MarketAnalystSpec(
+            key="sentiment",
+            agent_node="Market Sentiment Analyst",
+            report_key="sentiment_report",
+            factory=create_market_sentiment_analyst,
+        ),
+        MarketAnalystSpec(
+            key="sector",
+            agent_node="Sector Analyst",
+            report_key="sector_report",
+            tools=(get_sector_performance, get_sector_rotation),
+            instructions=(
+                "You are a sector analyst. Report how each of the eleven US sectors is performing against the "
+                f"market, through their SPDR ETFs: {_SECTOR_LIST}. Use get_sector_performance(curr_date, "
+                "look_back_days) for trailing returns and spreads versus SPY over the windows you choose, and "
+                "get_sector_rotation(curr_date) for 1w/1mo/3mo spreads over the same sessions, week-on-week "
+                "spread changes and rank changes. A sector up 3% while SPY is up 3.4% is lagging, not leading. "
+                "For every sector, report whether its leadership is persistent, emerging, fading or absent, "
+                "with the figures behind it. Report what the data shows and do not give Bullish/Bearish "
+                "verdicts: the managers make the call. Do not name individual stocks; a sector with missing "
+                "data is uncertain, not quiet."
+            ),
+        ),
+    )
+}
+
+
+def create_market_analyst(spec: MarketAnalystSpec, llm):
+    return spec.factory(llm) if spec.factory else create_tool_analyst(spec, llm)

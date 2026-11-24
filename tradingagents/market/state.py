@@ -16,8 +16,9 @@ class MarketAgentState(MessagesState):
 
     # analyst step
     macro_report: Annotated[str, "Report from the Macro Analyst"]
-    global_report: Annotated[str, "Report from the Global Markets Analyst"]
+    market_report: Annotated[str, "Report from the Market Analyst"]
     news_report: Annotated[str, "Report from the Market News Analyst"]
+    sentiment_report: Annotated[str, "Report from the Market Sentiment Analyst"]
     sector_report: Annotated[str, "Report from the Sector Analyst"]
 
     # research debate step

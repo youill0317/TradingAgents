@@ -12,12 +12,16 @@ from langchain_core.messages import AIMessage
 from langchain_core.runnables import RunnableLambda
 
 import tradingagents.llm_clients.factory as factory
+import tradingagents.market.analysts as market_analysts
 import tradingagents.market.tools as market_tools
+from tradingagents.agents.schemas import SentimentReport
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.market import MarketAnalysisGraph
 from tradingagents.market.schemas import SECTORS, MarketCall
 
-FIRST_TOOL = ("get_regional_macro", "get_global_asset_returns", "get_sector_performance", "get_economic_calendar")
+FIRST_TOOL = ("get_regional_macro", "get_market_internals", "get_sector_performance", "get_economic_calendar")
+SENTIMENT = SentimentReport(overall_band="Mildly Bearish", overall_score=4.0, confidence="low",
+                            narrative="CROWD MOOD: anxious; VIX elevated")
 
 
 def _call(**overrides):
@@ -56,7 +60,7 @@ class FakeModel:
 
         def run(prompt):
             self.log.append(str(prompt))
-            return _call()
+            return SENTIMENT if schema is SentimentReport else _call()
         return RunnableLambda(run)
 
 
@@ -71,7 +75,10 @@ def offline(monkeypatch, tmp_path):
         return fn
 
     monkeypatch.setattr(market_tools, "get_regional_macro_report", record("macro", "MACRO DATA"))
-    monkeypatch.setattr(market_tools, "get_global_asset_report", record("global", "ASSET DATA"))
+    monkeypatch.setattr(market_tools, "collect_market_diagnostics",
+                        lambda d: dates.append(("internals", d)) or {"internals_report": "INTERNALS"})
+    monkeypatch.setattr(market_analysts, "collect_market_sentiment", lambda d: dates.append(("sentiment", d)) or {
+        "start_date": "2024-03-08", "end_date": d, "vix": "VIX 18", "stocktwits": "TWITS", "reddit": "POSTS"})
     monkeypatch.setattr(market_tools, "collect_market_events", lambda d: dates.append(("events", d)) or {"report": "EVENTS"})
     monkeypatch.setattr(market_tools, "_sector_performance", record("sector", "SECTOR DATA"))
     config = {**DEFAULT_CONFIG, "results_dir": str(tmp_path / "results"), "data_cache_dir": str(tmp_path / "cache"),
@@ -97,10 +104,14 @@ def test_a_past_dated_run_follows_the_ticker_workflow(monkeypatch, offline, deba
     state, call = graph.propagate("2024-03-15")
 
     # Every analyst gathered its own data, served as of the run's date though the model asked for 2099.
-    assert {name for name, _ in dates} == {"macro", "global", "events", "sector"}
+    assert {name for name, _ in dates} == {"macro", "internals", "events", "sentiment", "sector"}
     assert {date for _, date in dates} == {"2024-03-15"}
-    for key in ("macro_report", "global_report", "news_report", "sector_report"):
+    for key in ("macro_report", "market_report", "news_report", "sector_report"):
         assert state[key].startswith("REPORT")
+    # The sentiment analyst takes its sources up front and answers in the ticker workflow's structured form.
+    assert state["sentiment_report"].startswith("**Overall Sentiment:** **Mildly Bearish**")
+    assert any("VIX 18" in p and "TWITS" in p for p in log)
+    assert any("CROWD MOOD" in p for p in log if p.startswith("You are the Bull Analyst"))
 
     assert state["investment_debate_state"]["count"] == 2 * debate
     assert state["risk_debate_state"]["count"] == 3 * risk

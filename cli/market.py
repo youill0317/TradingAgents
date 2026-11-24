@@ -472,7 +472,7 @@ def run_market_analysis(checkpoint: bool | None = None, flags=None):
                 if chunk is not None:
                     view.take_state(chunk)
                     final_state.update(chunk)
-                    for key in ("macro_report", "global_report", "news_report", "sector_report",
+                    for key in ("macro_report", "market_report", "news_report", "sentiment_report", "sector_report",
                                 "market_plan", "sector_proposal", "final_market_decision"):
                         if chunk.get(key):
                             (report_dir / f"{key}.md").write_text(chunk[key], encoding="utf-8")

@@ -8,6 +8,7 @@ latest: a model asking for a later date, or for none, is served as of the run's
 from datetime import datetime, timedelta
 from typing import Annotated
 
+import pandas as pd
 from langchain_core.tools import tool
 from langgraph.prebuilt import InjectedState
 
@@ -16,12 +17,18 @@ from tradingagents.dataflows.errors import NoMarketDataError, VendorUnavailableE
 from tradingagents.dataflows.global_market import get_global_asset_report, get_regional_macro_report
 from tradingagents.dataflows.market_diagnostics import collect_market_diagnostics
 from tradingagents.dataflows.market_events import collect_market_events
-from tradingagents.dataflows.market_scan import get_sector_performance as _sector_performance
+from tradingagents.dataflows.market_scan import (
+    SECTOR_ETFS,
+    get_sector_performance as _sector_performance,
+)
 from tradingagents.dataflows.router import no_data_available, vendor_unavailable
 from tradingagents.dataflows.vendors.reddit import fetch_reddit_posts
 from tradingagents.dataflows.vendors.stocktwits import fetch_stocktwits_messages
+from tradingagents.dataflows.vendors.yahoo.ohlcv import load_ohlcv
 
 # Community searches for the market as a whole: (search terms, subreddits).
+# Read by the Sentiment Analyst, which, like the ticker workflow's, takes its
+# sources up front rather than through tools.
 COMMUNITY_SEARCHES = (
     ("inflation OR recession OR rates", ("Economics", "investing", "stocks")),
     ("war OR tariffs OR sanctions", ("geopolitics", "worldnews")),
@@ -93,23 +100,40 @@ def get_sector_performance(
 
 
 @tool
-def get_market_participation(
+def get_market_internals(
     curr_date: Annotated[str, "Current date in yyyy-mm-dd format"],
     trade_date: Annotated[str, InjectedState("trade_date")] = "",
 ) -> str:
     """
-    Retrieve market internals: how many sectors are rising or above their 50/200
-    session averages, each sector's 1w/1mo/3mo return and spread versus SPY,
-    rank changes, leadership reversals, equal-weight vs cap-weight, small vs
-    large caps, high-yield vs investment-grade credit, and SPY drawdown and
-    volatility.
+    Retrieve US market internals: how many sectors are rising or above their
+    50/200 session averages, equal-weight vs cap-weight, small vs large caps,
+    Nasdaq vs S&P 500, high-yield vs investment-grade credit, and SPY, QQQ and
+    IWM trend, drawdown and realized volatility.
     Args:
         curr_date (str): Current date in yyyy-mm-dd format
     Returns:
-        str: A formatted report of participation and rotation measures.
+        str: A formatted report of market-wide participation and risk measures.
     """
-    return _serve("get_market_participation",
-                  lambda date: collect_market_diagnostics(date)["report"], as_of(curr_date, trade_date))
+    return _serve("get_market_internals",
+                  lambda date: collect_market_diagnostics(date)["internals_report"], as_of(curr_date, trade_date))
+
+
+@tool
+def get_sector_rotation(
+    curr_date: Annotated[str, "Current date in yyyy-mm-dd format"],
+    trade_date: Annotated[str, InjectedState("trade_date")] = "",
+) -> str:
+    """
+    Retrieve each US sector's 1w/1mo/3mo return and spread versus SPY over the
+    same sessions, the week-on-week change in that spread, the change in its
+    1-month rank, and whether its leadership is persistent, reversing or fading.
+    Args:
+        curr_date (str): Current date in yyyy-mm-dd format
+    Returns:
+        str: A formatted sector rotation table.
+    """
+    return _serve("get_sector_rotation",
+                  lambda date: collect_market_diagnostics(date)["rotation_report"], as_of(curr_date, trade_date))
 
 
 @tool
@@ -130,30 +154,38 @@ def get_economic_calendar(
                   lambda date: collect_market_events(date)["report"], as_of(curr_date, trade_date))
 
 
-def _community(end_date: str) -> str:
+def _vix(end_date: str) -> str:
+    """The VIX's latest close, its 20-session range and its 1-month change, as of ``end_date``."""
+    data = load_ohlcv("^VIX", end_date)
+    closes = pd.to_numeric(data["Close"], errors="coerce").dropna()
+    if closes.empty:
+        return "VIX: no observations"
+    dates = pd.to_datetime(data.loc[closes.index, "Date"])
+    latest, last_date = float(closes.iloc[-1]), dates.iloc[-1].date().isoformat()
+    window = closes.iloc[-20:]
+    month = closes[dates <= dates.iloc[-1] - pd.DateOffset(months=1)]
+    change = f"{latest - float(month.iloc[-1]):+.2f} pts over 1 month" if not month.empty else "1-month change unavailable"
+    return (f"VIX {latest:.2f} on {last_date}; 20-session range {window.min():.2f}–{window.max():.2f}; {change}. "
+            "Above about 30 is stress, below about 15 complacency; it measures expected S&P 500 volatility.")
+
+
+def collect_market_sentiment(end_date: str) -> dict[str, str]:
+    """The Sentiment Analyst's sources for the week to ``end_date``, each a text block.
+
+    Every fetcher returns a placeholder instead of raising, as the ticker
+    workflow's sentiment sources do, so the analyst always sees what is missing.
+    """
     start_date = (datetime.strptime(end_date, "%Y-%m-%d") - timedelta(days=7)).strftime("%Y-%m-%d")
-    blocks = [f"## Market community posts, {start_date} to {end_date}",
-              "Unverified opinions, not representative polling; do not profile authors."]
-    for terms, subreddits in COMMUNITY_SEARCHES:
-        blocks.append(f"### Reddit: {terms}\n" + fetch_reddit_posts(
-            terms, subreddits, start_date=start_date, end_date=end_date))
-    blocks.append("### StockTwits: SPY\n" + fetch_stocktwits_messages(
-        "SPY", limit=20, start_date=start_date, end_date=end_date))
-    return "\n\n".join(blocks)
-
-
-@tool
-def get_market_community_posts(
-    curr_date: Annotated[str, "Current date in yyyy-mm-dd format"],
-    trade_date: Annotated[str, InjectedState("trade_date")] = "",
-) -> str:
-    """
-    Retrieve the past week's Reddit posts on the economy and geopolitics and
-    StockTwits messages on SPY. Public feeds serve recent posts only, so a past
-    window they cannot reach is reported as unavailable.
-    Args:
-        curr_date (str): Current date in yyyy-mm-dd format
-    Returns:
-        str: Formatted community posts, grouped by source.
-    """
-    return _serve("get_market_community_posts", _community, as_of(curr_date, trade_date))
+    reddit = "\n\n".join(
+        f"### {terms}\n" + fetch_reddit_posts(terms, subreddits, start_date=start_date, end_date=end_date)
+        for terms, subreddits in COMMUNITY_SEARCHES)
+    stocktwits = "\n\n".join(
+        f"### ${symbol}\n" + fetch_stocktwits_messages(symbol, limit=limit, start_date=start_date, end_date=end_date)
+        for symbol, limit in (("SPY", 30), *((etf, 10) for etf in SECTOR_ETFS.values())))
+    return {
+        "start_date": start_date,
+        "end_date": end_date,
+        "vix": _serve("vix", _vix, end_date),
+        "stocktwits": stocktwits,
+        "reddit": reddit,
+    }

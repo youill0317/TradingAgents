@@ -58,13 +58,17 @@ def test_depth_sets_both_round_counts_unless_the_environment_does(monkeypatch):
 
 def test_cli_run_streams_records_and_saves(monkeypatch, tmp_path):
     import tradingagents.llm_clients.factory as factory
+    import tradingagents.market.analysts as market_analysts
     import tradingagents.market.tools as market_tools
     from tests.test_market_workflow import FakeModel
     from tradingagents.default_config import DEFAULT_CONFIG
 
-    for name in ("get_regional_macro_report", "get_global_asset_report", "_sector_performance"):
+    for name in ("get_regional_macro_report", "_sector_performance"):
         monkeypatch.setattr(market_tools, name, lambda *a: "DATA")
     monkeypatch.setattr(market_tools, "collect_market_events", lambda d: {"report": "EVENTS"})
+    monkeypatch.setattr(market_tools, "collect_market_diagnostics", lambda d: {"internals_report": "INTERNALS"})
+    monkeypatch.setattr(market_analysts, "collect_market_sentiment", lambda d: {
+        "start_date": d, "end_date": d, "vix": "VIX", "stocktwits": "T", "reddit": "R"})
 
     class Client:
         def get_llm(self):
@@ -74,7 +78,7 @@ def test_cli_run_streams_records_and_saves(monkeypatch, tmp_path):
               "memory_log_path": str(tmp_path / "memory" / "trading_memory.md")}
     monkeypatch.setattr(cli.market, "DEFAULT_CONFIG", config)
     monkeypatch.setattr(cli.market, "get_market_selections", lambda flags: {
-        "analysis_date": "2024-03-15", "analysts": ["macro", "global", "news", "sector"], "research_depth": 1,
+        "analysis_date": "2024-03-15", "analysts": ["macro", "market", "news", "sentiment", "sector"], "research_depth": 1,
         "llm_provider": "openai", "backend_url": None, "quick_think_llm": "q", "deep_think_llm": "d",
         "output_language": "English"})
     monkeypatch.setattr(cli.market, "Live", lambda *a, **k: nullcontext())

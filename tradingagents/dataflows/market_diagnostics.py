@@ -162,25 +162,31 @@ def collect_market_diagnostics(trade_date):
             "prior_session": prior_end.date().isoformat() if prior_end is not None else None,
             "breadth": breadth, "sectors": sectors, "ratios": ratios,
             "benchmarks": {s: metrics[s] for s in ("SPY", "QQQ", "IWM")}}
-    out = [f"## Market internals and transitions — common session {data['session']}",
-           "Sector/ETF participation proxies, NOT counts of advancing stocks or measured capital flows.",
-           "Returns use calendar 1w/1mo/3mo windows; moving averages use 50/200 observations.",
-           "Rank change compares the same 1-month window one week apart; unavailable if coverage differs.",
-           "Weekly relative change compares two successive weekly spreads, not cumulative returns of different lengths.",
-           "Daily bars may be intraday. HYG/LQD includes duration effects; it is not a credit spread."]
-    for w, b in breadth.items():
-        out.append(f"- {w}: {b.get('positive', b.get('above'))}/{b['observed']} observed sectors positive/above MA; universe {b['total']}")
-    out += ["", "| Sector | 1w | 1mo | 3mo | vs SPY 1w / 1mo / 3mo (pp) | weekly spread change (pp) | rank change | observation |",
-            "| --- | --- | --- | --- | --- | --- | --- | --- |"]
+    notes = ["Sector/ETF participation proxies, NOT counts of advancing stocks or measured capital flows.",
+             "Returns use calendar 1w/1mo/3mo windows; moving averages use 50/200 observations."]
+    rotation_notes = ["Rank change compares the same 1-month window one week apart; unavailable if coverage differs.",
+                      "Weekly relative change compares two successive weekly spreads, not cumulative returns of different lengths."]
+    breadth_lines = [f"- {w}: {b.get('positive', b.get('above'))}/{b['observed']} observed sectors positive/above MA; universe {b['total']}"
+                     for w, b in breadth.items()]
+    table = ["| Sector | 1w | 1mo | 3mo | vs SPY 1w / 1mo / 3mo (pp) | weekly spread change (pp) | rank change | observation |",
+             "| --- | --- | --- | --- | --- | --- | --- | --- |"]
     for r in sorted(sectors, key=lambda r: r.get("rank_1mo", 99)):
         relative = " / ".join("n/a" if r["relative_spy_pp"][w] is None else f"{r['relative_spy_pp'][w]:+.2f}" for w in WINDOWS)
-        out.append(f"| {r['sector']} | " + " | ".join(_fmt(r['returns'][w]) for w in WINDOWS)
-                   + f" | {relative} | {r['weekly_relative_change_pp']} | {r['rank_change']} | {r['leadership']} |")
-    for r in ratios:
-        out.append(f"- {r['pair']} ({r['meaning']}), ratio changes: " + ", ".join(f"{w} {_fmt(r['returns'][w])}" for w in WINDOWS))
-    for symbol, m in data["benchmarks"].items():
-        out.append(f"- {symbol}: above MA50={m['above_ma50']}, MA200={m['above_ma200']}; "
-                   f"drawdown from 63-session high {_fmt(m['drawdown_63_sessions_pct'])}; realized 20-session annualized volatility {_fmt(m['realized_vol_20_sessions_pct'])}")
+        table.append(f"| {r['sector']} | " + " | ".join(_fmt(r['returns'][w]) for w in WINDOWS)
+                     + f" | {relative} | {r['weekly_relative_change_pp']} | {r['rank_change']} | {r['leadership']} |")
+    ratio_lines = [f"- {r['pair']} ({r['meaning']}), ratio changes: " + ", ".join(f"{w} {_fmt(r['returns'][w])}" for w in WINDOWS)
+                   for r in ratios]
+    benchmark_lines = [f"- {symbol}: above MA50={m['above_ma50']}, MA200={m['above_ma200']}; "
+                       f"drawdown from 63-session high {_fmt(m['drawdown_63_sessions_pct'])}; realized 20-session annualized volatility {_fmt(m['realized_vol_20_sessions_pct'])}"
+                       for symbol, m in data["benchmarks"].items()]
+    session = data["session"]
+    credit_note = "Daily bars may be intraday. HYG/LQD includes duration effects; it is not a credit spread."
+    out = [f"## Market internals and transitions — common session {session}", *notes, *rotation_notes, credit_note,
+           *breadth_lines, "", *table, *ratio_lines, *benchmark_lines]
+    # The market-wide half and the sector half, for the analyst of each.
+    internals = [f"## US market internals — common session {session}", *notes, credit_note,
+                 *breadth_lines, *ratio_lines, *benchmark_lines]
+    rotation = [f"## US sector rotation — common session {session}", *notes, *rotation_notes, "", *table]
     sector_report = [f"## Sector performance (1mo calendar trailing, as of {data['session']})",
                      "### Sectors (best to worst)", "| Rank | Sector | ETF | Return | vs SPY |", "| --- | --- | --- | --- | --- |"]
     for i, row in enumerate(sorted(sectors, key=lambda r: r.get("rank_1mo", 99)), 1):
@@ -189,4 +195,5 @@ def collect_market_diagnostics(trade_date):
         record["content"] = f"{record['target']}: {record['status']}; observed {record.get('observed_at')}; common session {data['session']}"
         record["metrics"] = metrics[record["target"]]
     return {"data": data, "report": "\n".join(out), "sector_report": "\n".join(sector_report),
+            "internals_report": "\n".join(internals), "rotation_report": "\n".join(rotation),
             "evidence": evidence, "warnings": warnings}
