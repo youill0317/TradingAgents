@@ -29,7 +29,7 @@ def _llm(cls_name, reply=None, **attrs):
 
 
 @pytest.mark.parametrize("cls_name,attrs,expected", [
-    ("ChatAnthropic", {}, {"type": "web_search_20250305", "name": "web_search", "max_uses": web_search.MAX_SEARCHES}),
+    ("ChatAnthropic", {}, {"type": "web_search_20250305", "name": "web_search"}),
     ("ChatGoogleGenerativeAI", {}, {"google_search": {}}),
     ("ChatOpenAI", {"use_responses_api": True}, {"type": "web_search"}),
     ("ChatOpenAI", {"use_responses_api": False}, None),       # Chat Completions has no search tool

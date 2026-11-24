@@ -21,9 +21,6 @@ from typing import Any
 from tradingagents.dataflows.date_window import is_historical
 from tradingagents.llm_clients.base_client import normalize_content
 
-# How many searches one report may make, where the provider takes a limit.
-MAX_SEARCHES = 12
-
 WEB_EVIDENCE_RULES = """\
 ## How to use what you find
 
@@ -52,7 +49,7 @@ def web_search_tool(llm: Any) -> dict | None:
     for cls in type(llm).__mro__:
         name = cls.__name__
         if name == "ChatAnthropic":
-            return {"type": "web_search_20250305", "name": "web_search", "max_uses": MAX_SEARCHES}
+            return {"type": "web_search_20250305", "name": "web_search"}
         if name == "ChatGoogleGenerativeAI":
             return {"google_search": {}}
         if name == "ChatOpenAI":
