@@ -1,4 +1,4 @@
-"""A fixed global baseline using the existing Yahoo and FRED clients."""
+"""Global cross-asset returns and regional macro from the existing Yahoo and FRED clients."""
 
 import math
 import os
@@ -162,33 +162,43 @@ def _report_content(item):
     return "\n".join(line for i, line in enumerate(lines) if i not in omitted) + "\n(Model context shows four latest rows; full returned table retained in evidence.)"
 
 
-def collect_global_snapshot(trade_date: str) -> dict:
-    """Collect bounded, deterministic evidence; a provider failure remains visible."""
-    pd.Timestamp(trade_date)
+_ASSET_NOTE = (
+    "Equity/bond ETFs are USD investor proxies, not local indexes or measured capital flows. "
+    "Futures are contract price proxies, not spot prices. FX quote directions are explicit. "
+    "Return windows end on each asset's latest observation on or before the date; dates can differ "
+    "across assets. A current-day bar can still be intraday."
+)
+_MACRO_NOTE = (
+    "FRED values are the vintage available as of the date. Observation dates are not publication "
+    "dates; compare changes within each series, not differently scaled GDP/CPI levels across countries. "
+    "China GDP is annual and India GDP is not seasonally adjusted. Emerging markets have no comparable "
+    "series here. Reserves exclude gold and include valuation effects. STALE observations are history, "
+    "not current conditions."
+)
+
+
+def _run_all(func, items, trade_date):
     with ThreadPoolExecutor(max_workers=4) as pool:
-        futures = [pool.submit(copy_context().run, _asset_observation, asset, trade_date) for asset in GLOBAL_ASSETS]
-        futures += [
-            pool.submit(copy_context().run, _macro_observation, f"{region}: {field}", series, trade_date)
-            for region, series_ids in REGIONAL_MACRO.items()
-            for field, series in zip(MACRO_FIELDS, series_ids, strict=True)
-        ]
-        futures += [pool.submit(copy_context().run, _macro_observation, f"US: {series}", series, trade_date) for series in US_FINANCIAL_SERIES]
-        futures += [pool.submit(copy_context().run, _macro_observation, f"{region}: reserves excluding gold", series, trade_date) for region, series in RESERVE_SERIES.items()]
-        evidence = [future.result() for future in futures]
-    warnings = [item.get("warning", f"{item['target']}: {item['status']}") for item in evidence if item["status"] not in ("success", "not_configured")]
-    report = (
-        f"## Global market baseline as of {trade_date}\n"
-        "Equity/bond ETFs are USD investor proxies, not local indexes or measured capital flows. "
-        "Futures are contract price proxies, not spot prices. FX quote directions are explicit. "
-        "Return windows end on each asset's latest observation; dates can differ across assets. "
-        "A current-day bar can still be intraday. Macro observation dates are not publication dates; "
-        "compare changes within each series, not differently scaled GDP/CPI levels across countries. "
-        "China GDP is annual and India GDP is not seasonally adjusted. Eurozone series use their "
-        "published country composition. Emerging markets are an ETF aggregate, not a country. "
-        "Reserves exclude gold; reserve changes include valuation effects, not only transactions. "
-        "STALE observations are historical context only: do not describe them as current conditions. "
-        "International capital flows and comprehensive global reserve coverage are not provided.\n\n"
-        + "\n\n".join(f"[{item['status']}] {_report_content(item)}" for item in evidence)
-    )
-    session = next((item.get("observed_at") for item in evidence if item["target"] == "SPY"), None)
-    return {"report": report, "evidence": evidence, "warnings": warnings, "effective_market_session": session}
+        futures = [pool.submit(copy_context().run, func, *item, trade_date) for item in items]
+        return [future.result() for future in futures]
+
+
+def get_global_asset_report(trade_date: str) -> str:
+    """1-week, 1-month and 3-month returns of regional equity, FX, bond and commodity proxies."""
+    pd.Timestamp(trade_date)
+    evidence = _run_all(lambda asset, date: _asset_observation(asset, date),
+                        [(asset,) for asset in GLOBAL_ASSETS], trade_date)
+    return (f"## Global cross-asset returns as of {trade_date}\n{_ASSET_NOTE}\n\n"
+            + "\n".join(f"- [{item['status']}] {item['content']}" for item in evidence))
+
+
+def get_regional_macro_report(trade_date: str) -> str:
+    """Growth, inflation, unemployment, policy rates and reserves for the major economies."""
+    pd.Timestamp(trade_date)
+    items = [(f"{region}: {field}", series)
+             for region, series_ids in REGIONAL_MACRO.items()
+             for field, series in zip(MACRO_FIELDS, series_ids, strict=True)]
+    items += [(f"{region}: reserves excluding gold", series) for region, series in RESERVE_SERIES.items()]
+    evidence = _run_all(_macro_observation, items, trade_date)
+    return (f"## Regional macro as of {trade_date}\n{_MACRO_NOTE}\n\n"
+            + "\n\n".join(f"[{item['status']}] {_report_content(item)}" for item in evidence))

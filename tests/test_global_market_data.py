@@ -69,33 +69,31 @@ def test_macro_preserves_metadata_and_distinguishes_missing(monkeypatch, content
     assert result["url"] == "https://fred.stlouisfed.org/series/GDPC1"
 
 
-def test_snapshot_records_every_region_and_retains_thread_context(monkeypatch):
-    monkeypatch.delenv("FRED_API_KEY", raising=False)
-    monkeypatch.setattr(gm, "GLOBAL_ASSETS", (("SPY", "US ETF", "USD"),))
+def test_asset_report_serves_the_run_config_and_every_asset(monkeypatch):
+    monkeypatch.setattr(gm, "GLOBAL_ASSETS", (("SPY", "US ETF", "USD"), ("EWJ", "Japan ETF", "USD")))
+
     def load(*args):
-        assert get_config()["data_cache_dir"] == "isolated-test-cache"
-        return pd.DataFrame({"Date": pd.to_datetime(["2026-06-09", "2026-08-07", "2026-09-02", "2026-09-09"]), "Close": [50, 80, 100, 110]})
+        assert get_config()["data_cache_dir"] == "isolated-test-cache", "worker threads keep the run's config"
+        return pd.DataFrame({"Date": pd.to_datetime(["2026-06-09", "2026-08-07", "2026-09-02", "2026-09-09"]),
+                             "Close": [50, 80, 100, 110]})
     monkeypatch.setattr(gm, "load_ohlcv", load)
     with config_context({"data_cache_dir": "isolated-test-cache"}):
-        result = gm.collect_global_snapshot("2026-09-09")
-    assert result["effective_market_session"] == "2026-09-09"
-    assert len(result["evidence"]) == 1 + 8 * 4 + len(gm.US_FINANCIAL_SERIES) + len(gm.RESERVE_SERIES)
-    assert result["evidence"][0]["status"] == "success"
-    assert result["warnings"]
-    for region in gm.REGIONAL_MACRO:
-        assert any(item["target"].startswith(region + ":") for item in result["evidence"])
+        report = gm.get_global_asset_report("2026-09-09")
+    assert report.startswith("## Global cross-asset returns as of 2026-09-09")
+    assert "US ETF (SPY)" in report and "Japan ETF (EWJ)" in report
+    assert "1w: +10.00%" in report
 
 
-def test_unselected_series_do_not_degrade_successful_collection(monkeypatch):
+def test_regional_macro_covers_every_region_and_marks_unselected_series(monkeypatch):
     original = gm._macro_observation
+
     def macro(target, series, date):
         if series is None:
             return original(target, series, date)
-        return {"source": "fred", "target": target, "status": "success", "content": "Available"}
+        return {"source": "fred", "target": target, "status": "success", "content": f"{target} available"}
     monkeypatch.setattr(gm, "_macro_observation", macro)
-    monkeypatch.setattr(gm, "_asset_observation", lambda asset, date: {
-        "source": "yfinance", "target": asset[0], "status": "success", "content": "Available"})
-    result = gm.collect_global_snapshot("2026-09-11")
-    assert not result["warnings"]
-    assert sum(r["status"] == "not_configured" for r in result["evidence"]) == 9
-    assert "no comparable series selected" in result["report"]
+    report = gm.get_regional_macro_report("2026-09-11")
+    for region in gm.REGIONAL_MACRO:
+        assert f"{region}:" in report
+    assert report.count("[not_configured]") == 9
+    assert "no comparable series selected" in report

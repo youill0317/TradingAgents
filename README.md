@@ -217,30 +217,33 @@ At start-up the interactive CLI mentions a newer release and notices from Tauric
 
 A saved report also includes `complete_report.html`, the report as one page with its sections listed beside the text, for reading in a browser, on a phone or in print. Answering the save question at the prompt also asks about the page and can open it in your browser; `--no-html` skips it, and so does `ta.save_reports(state, "NVDA", html=False)` from Python.
 
-### Market Scan
+### Market Analysis
 
-`tradingagents market` reads the whole market instead of a single name. It produces two results: the market regime (Risk-On, Risk-Off, Rotation, Range-Bound or Stressed) and a Bullish, Neutral or Bearish verdict on each of the eleven US sectors for the next 1–4 weeks, read through the SPDR sector ETFs (XLK, XLF, XLE, XLV, XLY, XLP, XLI, XLB, XLRE, XLU, XLC).
+`tradingagents market` analyses the market as a whole instead of a single name, and gives two results: the market regime (Risk-On, Risk-Off, Rotation, Range-Bound or Stressed) and a Bullish, Neutral or Bearish verdict on each of the eleven US sectors for the next 1–4 weeks, read through the SPDR sector ETFs (XLK, XLF, XLE, XLV, XLY, XLP, XLI, XLB, XLRE, XLU, XLC).
 
 ```bash
-tradingagents market                                  # current New York date
-tradingagents market --save
-tradingagents market --non-interactive --output reports/latest
+tradingagents market                                   # asks for the date, analysts, depth, provider and models
+tradingagents market --date 2024-03-15 --analysts macro,sector --save --no-show
 ```
 
-| Stage | Coverage | Existing sources |
-| --- | --- | --- |
-| Global baseline | US, eurozone, UK, China, Japan, Korea, India and emerging-market equity proxies; FX, bonds, commodities; 1-week, 1-month and 3-month returns | Yahoo Finance |
-| Regional macro | Available growth, inflation, employment, rates and selected reserves excluding gold; explicit coverage gaps | FRED, `FRED_API_KEY` |
-| Global context | Regional news, war, political conflict, trade and energy; optional community and prediction-market signals | Configured news provider, Reddit, StockTwits, Polymarket |
-| US sectors | Sector ETF performance relative to SPY across windows, informed by the global report | Yahoo Finance |
+It runs the same way as a ticker analysis, step for step:
 
-The Macro Analyst explains global conditions and their transmission to US markets; the Sector Analyst assesses every sector against that regime; a two-sided debate, a draft, an independent risk review and the Market Strategist then settle the regime and the eleven verdicts. Each verdict carries a conviction (High, Medium or Low), its rationale and the condition that would overturn it. ETF returns are proxies, not measured capital flows. Community posts are supporting signals, not verified facts. During a scan, global headlines are searched with the region-by-region queries in `market_global_news_queries` (defaults in `tradingagents/graph/market_graph.py`), not the per-ticker `global_news_queries`.
+| Ticker analysis | Market analysis |
+| --- | --- |
+| Market, Sentiment, News, Fundamentals Analysts | Macro, Global Markets, Market News, Sector Analysts (`--analysts macro,global,news,sector`) |
+| Bull / Bear Researchers, Research Manager | Market Bull / Bear Researchers, Market Research Manager |
+| Trader | Sector Strategist (overweight, market weight or underweight per sector) |
+| Aggressive / Conservative / Neutral Analysts | the same three, debating the sector proposal |
+| Portfolio Manager | Chief Market Strategist (the final regime and sector verdicts) |
 
-Market scans accept only the current date in `America/New_York`; omit `--date` for normal use. A scan that stops after analysis has started can be continued with `--resume`.
+- **Data**: each analyst gathers its own data with tools: FRED series and regional macro, cross-asset returns, global news, the economic calendar, community posts, prediction markets, sector performance and market participation. Every tool serves the analysis date at the latest.
+- **Dates**: any date up to today. Prices, FRED vintages and news are as of that date, and economic figures released after it are withheld. Community feeds and prediction markets only serve recent data, and say so for an older date.
+- **Debates**: the research depth sets the bull/bear rounds and the risk rounds, as `max_debate_rounds` and `max_risk_discuss_rounds` do for a ticker.
+- **Memory**: each sector verdict is logged in `~/.tradingagents/memory/market_memory.md` (`market_memory_log_path`). Once its holding period has traded, it is scored by the ETF's return and its alpha against SPY, a reflection is written, and later runs read the lessons that were known by their date.
+- **Reading the call**: the final call is structured output; without it, the regime and verdicts are read from the text, and anything that cannot be read is recorded as `REVIEW`, as an unreadable rating is.
+- **Checkpoints**: `--checkpoint` saves state after each step so a crashed run resumes.
 
-Every run saves reports, `global_data.md`, `global_context.md`, raw evidence and a structured `scan.json` (regime and sector verdicts) in its run directory. Missing or stale data is visible: a sector without collected data keeps its verdict at Low conviction, and partial evidence produces `DEGRADED` results; missing essential reports, sector data or verdicts produces `INCOMPLETE` with no verdicts, and the command exits unsuccessfully.
-
-**The regime and sector verdicts are not position calls.** To analyse a single name in depth, run `tradingagents --ticker <TICKER>`.
+Reports go under `results_dir`, laid out like a ticker report (`1_analysts` … `5_decision`, `complete_report.md`, `complete_report.html`) plus `market_call.json` with the regime and sector ratings. The regime and sector verdicts are not position calls; to analyse a single name, run `tradingagents --ticker <TICKER>`.
 
 ### Markets and tickers
 

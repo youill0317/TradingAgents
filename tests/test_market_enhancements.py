@@ -89,7 +89,7 @@ def test_calendar_pagination_failure_keeps_observations_and_fred_dates(monkeypat
         assert endpoint == "releases/dates" and args["include_release_dates_with_no_data"] == "true"
         return {"release_dates": [] if args["offset"] else [{"date": "2026-09-15", "release_name": "Industrial Production", "release_id": 13}]}
     monkeypatch.setattr(me, "_request", fred)
-    with config_context({"market_scan_as_of": "2026-09-10T14:00:00Z"}):
+    with config_context({"market_as_of": "2026-09-10T14:00:00Z"}):
         result = me.collect_market_events("2026-09-10")
     assert result["data"]["status"] == "partial"
     assert len(result["data"]["events"]) == 2
@@ -107,7 +107,7 @@ def test_calendar_empty_vs_invalid_dates(monkeypatch, frame, expected):
     monkeypatch.setattr(me.yf, "Calendars", Calendar)
     monkeypatch.setattr(me, "get_api_key", lambda: "test")
     monkeypatch.setattr(me, "_request", lambda *a: {"release_dates": []})
-    with config_context({"market_scan_as_of": "2026-09-10T14:00:00Z"}):
+    with config_context({"market_as_of": "2026-09-10T14:00:00Z"}):
         result = me.collect_market_events("2026-09-10")
     assert result["data"]["status"] == expected
 
@@ -116,7 +116,7 @@ def test_calendar_outages_are_not_no_events(monkeypatch):
     def offline(*a, **kw): raise RuntimeError("offline")
     monkeypatch.setattr(me.yf, "Calendars", offline)
     monkeypatch.setattr(me, "get_api_key", offline)
-    with config_context({"market_scan_as_of": "2026-09-10T14:00:00Z"}):
+    with config_context({"market_as_of": "2026-09-10T14:00:00Z"}):
         result = me.collect_market_events("2026-09-10")
     assert result["data"]["status"] == "unavailable"
     assert "EVENT_CALENDAR_UNAVAILABLE" in result["warnings"]
@@ -133,3 +133,15 @@ def test_different_baseline_session_cannot_drive_sector_rank(monkeypatch):
     assert energy["returns"]["1mo"] is None
     assert energy["relative_spy_pp"]["1mo"] is None
     assert energy["rank_change"] is None
+
+
+def test_calendar_cutoff_is_the_end_of_a_past_date_in_new_york():
+    cutoff = me._as_of("2024-03-15")
+    assert cutoff == pd.Timestamp("2024-03-16 04:00:00", tz="UTC")
+
+
+def test_calendar_cutoff_never_passes_now():
+    from datetime import UTC, datetime
+
+    today = datetime.now(UTC).date().isoformat()
+    assert me._as_of(today) <= pd.Timestamp(datetime.now(UTC))

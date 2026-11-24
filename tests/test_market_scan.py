@@ -53,61 +53,6 @@ class TestSectorPerformance:
         assert any("XLU" in r.getMessage() for r in caplog.records)
 
 
-def test_cli_streams_reports_and_saves_even_without_optional_export(monkeypatch, tmp_path):
-    from contextlib import nullcontext
-    from io import StringIO
-    from types import SimpleNamespace
-    from unittest.mock import Mock
-
-    from langchain_core.messages import AIMessage
-    from rich.console import Console
-
-    import cli.market as cli
-
-    monkeypatch.setenv("FRED_API_KEY", "offline-test")
-    reports = {field: agent + " report" for agent, field in cli.MARKET_STAGES}
-    state = {"scan_status": "COMPLETE", "run_id": "run-1", "as_of_utc": "2026-09-11T12:00:00+00:00",
-             "market_scan_result": {"sector_verdicts": [{"sector": "Energy", "outlook": "Bullish"}]}}
-    frames = []
-
-    def live(layout, **kwargs):
-        frames.append(layout)
-        return nullcontext()
-
-    def scan(**kwargs):
-        kwargs["on_progress"]("Collecting economic events")
-        with console.capture() as capture:
-            console.print(frames[0])
-        assert "Collecting economic events" in capture.get()
-        kwargs["on_progress"]("Analysis")
-        for key, content in reports.items():
-            state.update({key: content, "messages": [AIMessage(content=content)]})
-            kwargs["on_chunk"](state.copy())
-        with console.capture() as capture:
-            console.print(frames[0])
-        rendered = capture.get()
-        assert all(agent in rendered for agent, _ in cli.MARKET_STAGES)
-        assert frames[0]["progress"].renderable.title == "Progress"
-        return state
-
-    save = Mock(return_value=tmp_path / "complete_report.md")
-    monkeypatch.setattr(cli, "MarketAnalysisGraph", lambda **k: SimpleNamespace(scan=scan, save_reports=save, config=k["config"]))
-    monkeypatch.setattr(cli, "Live", live)
-    monkeypatch.setattr(cli, "get_market_selections", lambda: {})
-    monkeypatch.setattr(cli, "_build_market_config", lambda _: {"results_dir": str(tmp_path)})
-    answers = iter(["N", "Y"])
-    monkeypatch.setattr(cli.typer, "prompt", lambda *a, **k: next(answers))
-    console = Console(file=StringIO(), record=True, width=120, height=40)
-    monkeypatch.setattr(cli, "console", console)
-    assert cli.run_market_scan() == state
-    save.assert_called_once()
-    assert save.call_args.args[0] == state
-    run_dir = next((tmp_path / "market_scans").iterdir())
-    for _, field in cli.MARKET_STAGES:
-        assert (run_dir / cli.SCAN_REPORT_FILES[field]).read_text() == reports[field]
-    assert "not position calls" in console.export_text()
-
-
 @pytest.mark.parametrize("dates,prices,expected", [
     (["2026-09-10", "2026-09-11"], [100, 110], None),
     (["2026-08-11", "2026-08-13", "2026-09-11"], [100, 105, 110], 10),

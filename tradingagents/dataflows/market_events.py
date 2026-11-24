@@ -63,12 +63,24 @@ def _yahoo_row(name, row, as_of):
     return record
 
 
+def _as_of(trade_date):
+    """What was known by the end of ``trade_date`` in New York, and never later than now.
+
+    A past run sees an event after its date as upcoming, so its actual figure is
+    withheld. ``market_as_of`` (a timezone-aware timestamp) pins it explicitly.
+    """
+    pinned = get_config().get("market_as_of")
+    if pinned:
+        as_of = pd.Timestamp(pinned)
+        if as_of.tzinfo is None:
+            raise ValueError("market_as_of must include a timezone")
+        return as_of.tz_convert("UTC")
+    day_end = pd.Timestamp(trade_date).tz_localize(ZoneInfo("America/New_York")) + pd.Timedelta(days=1)
+    return min(day_end.tz_convert("UTC"), pd.Timestamp(datetime.now(UTC)))
+
+
 def collect_market_events(trade_date):
-    cfg = get_config()
-    as_of = pd.Timestamp(cfg.get("market_scan_as_of") or datetime.now(UTC))
-    if as_of.tzinfo is None:
-        raise ValueError("market_scan_as_of must include a timezone")
-    as_of = as_of.tz_convert("UTC")
+    as_of = _as_of(trade_date)
     start = (datetime.fromisoformat(trade_date).date() - timedelta(days=7)).isoformat()
     end = (datetime.fromisoformat(trade_date).date() + timedelta(days=14)).isoformat()
     events, evidence, warnings = [], [], []
@@ -152,7 +164,8 @@ def collect_market_events(trade_date):
     out = [f"## Economic catalysts — {start} to {end}",
            f"Retrieval cutoff: {as_of.isoformat()}. Calendar coverage: {status}.",
            "Actual minus consensus is a numeric surprise, not an automatic bullish/bearish signal.",
-           "Values are the latest retrieved snapshot, not archived pre-release forecasts. Do not backtest them as such.",
+           "Values are the latest retrieved snapshot, not archived pre-release forecasts: for a past date, "
+           "an expected figure may have been revised since. Actual figures after the cutoff are withheld.",
            "FRED supplements release dates only; it has no consensus or exact release time here.",
            "Time-unverified entries have no surprise calculation. Cross-provider entries may refer to the same event.",
            "Political events not listed here may still matter; use the collected news with explicit source uncertainty."]
