@@ -2,7 +2,8 @@
 
 The ticker workflow scores a rating by the instrument's alpha against its
 benchmark over ``holding_period_days``. A market call makes two kinds of claim
-over the same kind of window, and each is scored against what it claims:
+over the same kind of window, ``market_holding_period_days`` long, and each is
+scored against what it claims:
 
 - A sector verdict claims the sector ETF's performance RELATIVE TO SPY.
   Bullish is a hit when its alpha is positive and Bearish when negative, as
@@ -37,16 +38,23 @@ FLAT_BAND_SIGMAS = 0.43
 # year's same-length windows.
 STRESS_QUANTILE = 0.90
 
+# Trading days a market call looks ahead by default. Longer than the ticker
+# workflow's five: a regime and a sector's lead over the market move more slowly
+# than one name, and a week of them is mostly noise.
+DEFAULT_MARKET_HOLDING_PERIOD_DAYS = 10
+
 _DIRECTION = {"Bullish": 1, "Neutral": 0, "Bearish": -1}
 
 
 def market_horizon_days(config: dict | None = None) -> int:
     """Trading days a market call looks ahead and is scored over.
 
-    ``market_holding_period_days``, else the ticker workflow's ``holding_period_days``.
+    ``market_holding_period_days`` in the config, else ten. It is the market
+    workflow's own setting: the ticker workflow's ``holding_period_days`` does
+    not change it.
     """
     cfg = config if config is not None else get_config()
-    return int(cfg.get("market_holding_period_days") or cfg.get("holding_period_days", 5))
+    return int(cfg.get("market_holding_period_days") or DEFAULT_MARKET_HOLDING_PERIOD_DAYS)
 
 
 def regime_definitions(days: int) -> str:

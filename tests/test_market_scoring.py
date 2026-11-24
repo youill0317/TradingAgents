@@ -148,8 +148,8 @@ def test_summary_scores_regimes_and_verdicts_and_leaves_neutral_unscored():
     assert summarize_market([]).render().startswith("No settled market calls yet")
 
 
-def test_horizon_is_the_ticker_holding_period_unless_the_market_has_its_own():
-    assert scoring.market_horizon_days({"holding_period_days": 5}) == 5
-    assert scoring.market_horizon_days({"holding_period_days": 5, "market_holding_period_days": 10}) == 10
+def test_horizon_is_ten_trading_days_unless_configured():
+    assert scoring.market_horizon_days({"holding_period_days": 5}) == 10, "ten by default, whatever the ticker's is"
+    assert scoring.market_horizon_days({"holding_period_days": 5, "market_holding_period_days": 20}) == 20
     assert "next 10 trading days" in scoring.regime_definitions(10)
     assert "RELATIVE TO SPY over the next 10 trading days" in scoring.verdict_definition(10)

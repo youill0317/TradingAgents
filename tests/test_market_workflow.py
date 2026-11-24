@@ -127,7 +127,7 @@ def test_a_past_dated_run_follows_the_ticker_workflow(monkeypatch, offline, deba
     (record,) = graph.memory_log.load()
     assert record["date"] == "2024-03-15" and record["pending"] and record["regime"] == "Rotation"
     assert record["sectors"]["Energy"] == {"outlook": "Bullish", "conviction": "Medium"}
-    assert record["days"] == 5 and "Energy figures" in record["decision"]
+    assert record["days"] == 10 and "Energy figures" in record["decision"]
     saved = json.loads((Path(config["results_dir"]) / "MARKET" / "MarketAnalysis_logs"
                         / "full_states_log_2024-03-15.json").read_text())
     assert saved["regime"] == "Rotation" and saved["sector_convictions"]["Energy"] == "Medium"
@@ -139,14 +139,14 @@ def test_a_past_dated_run_follows_the_ticker_workflow(monkeypatch, offline, deba
 def test_every_manager_is_told_what_the_call_claims_over_the_scored_horizon(monkeypatch, offline):
     config, _ = offline
     log = []
-    graph = _graph(monkeypatch, {**config, "market_holding_period_days": 10}, FakeModel(log))
+    graph = _graph(monkeypatch, {**config, "market_holding_period_days": 15}, FakeModel(log))
     graph.propagate("2024-03-15")
     for manager in ("Market Research Manager", "Sector Strategist", "Chief Market Strategist"):
         prompt = next(p for p in log if manager in p[:400])
-        assert "next 10 trading days" in prompt
+        assert "next 15 trading days" in prompt
         assert "RELATIVE TO SPY" in prompt and "Rotation: the sectors' returns diverge more than usual" in prompt
-    assert any("over the next 10 trading days" in p for p in log if p.startswith("You are the Bull Analyst"))
-    assert graph.memory_log.load()[0]["days"] == 10, "the call is scored over the horizon it was made for"
+    assert any("over the next 15 trading days" in p for p in log if p.startswith("You are the Bull Analyst"))
+    assert graph.memory_log.load()[0]["days"] == 15, "the call is scored over the horizon it was made for"
 
 
 def test_without_structured_output_the_call_is_read_from_text(monkeypatch, offline):
