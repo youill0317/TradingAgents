@@ -31,6 +31,7 @@ class MarketAgentState(MessagesState):
     risk_debate_state: Annotated[RiskDebateState, "The risk analysts' debate on the proposal"]
     final_market_decision: Annotated[str, "Final call from the Chief Market Strategist"]
     final_regime: Annotated[str, "The final market regime, or REVIEW when it has none"]
-    final_sector_ratings: Annotated[dict, "Sector -> Bullish / Neutral / Bearish, or REVIEW when it has none"]
+    final_sector_ratings: Annotated[dict, "Sector -> Bullish / Neutral / Bearish against SPY, or REVIEW when it has none"]
+    final_sector_convictions: Annotated[dict, "Sector -> High / Medium / Low, empty where none was given"]
     past_context: Annotated[str, "Lessons from settled past market calls, written by the Memory Log step"]
     memory_note: Annotated[str, "What the Memory Log step could not settle or read this run; empty when all went well"]

@@ -123,14 +123,30 @@ def test_a_past_dated_run_follows_the_ticker_workflow(monkeypatch, offline, deba
     assert set(call["sector_ratings"]) == set(SECTORS)
     assert "**Market Regime**: Rotation" in state["final_market_decision"]
 
-    entries = graph.memory_log.load_entries()
-    assert len(entries) == len(SECTORS)
-    energy = next(e for e in entries if e["ticker"] == "XLE")
-    assert energy["rating"] == "Bullish" and energy["pending"] and energy["date"] == "2024-03-15"
-    assert "Energy figures" in energy["decision"]
+    # One call is one record: the regime, every sector's verdict against SPY and its conviction, pending.
+    (record,) = graph.memory_log.load()
+    assert record["date"] == "2024-03-15" and record["pending"] and record["regime"] == "Rotation"
+    assert record["sectors"]["Energy"] == {"outlook": "Bullish", "conviction": "Medium"}
+    assert record["days"] == 5 and "Energy figures" in record["decision"]
     saved = json.loads((Path(config["results_dir"]) / "MARKET" / "MarketAnalysis_logs"
                         / "full_states_log_2024-03-15.json").read_text())
-    assert saved["regime"] == "Rotation"
+    assert saved["regime"] == "Rotation" and saved["sector_convictions"]["Energy"] == "Medium"
+    # A second run of the same date records nothing more.
+    graph.record_decision("2024-03-15", state)
+    assert len(graph.memory_log.load()) == 1
+
+
+def test_every_manager_is_told_what_the_call_claims_over_the_scored_horizon(monkeypatch, offline):
+    config, _ = offline
+    log = []
+    graph = _graph(monkeypatch, {**config, "market_holding_period_days": 10}, FakeModel(log))
+    graph.propagate("2024-03-15")
+    for manager in ("Market Research Manager", "Sector Strategist", "Chief Market Strategist"):
+        prompt = next(p for p in log if manager in p[:400])
+        assert "next 10 trading days" in prompt
+        assert "RELATIVE TO SPY" in prompt and "Rotation: the sectors' returns diverge more than usual" in prompt
+    assert any("over the next 10 trading days" in p for p in log if p.startswith("You are the Bull Analyst"))
+    assert graph.memory_log.load()[0]["days"] == 10, "the call is scored over the horizon it was made for"
 
 
 def test_without_structured_output_the_call_is_read_from_text(monkeypatch, offline):
@@ -141,36 +157,95 @@ def test_without_structured_output_the_call_is_read_from_text(monkeypatch, offli
     state, call = graph.propagate("2024-03-15")
     assert call["regime"] == "Risk-Off"
     assert call["sector_ratings"]["Technology"] == "Bearish"
+    assert call["sector_convictions"]["Technology"] == "Low"
     assert call["sector_ratings"][SECTORS[-1]] == "REVIEW", "a sector the text never rated is not guessed"
-    assert len(graph.memory_log.load_entries()) == len(SECTORS) - 1
+    assert graph.memory_log.load()[0]["sectors"][SECTORS[-1]] == {"outlook": "REVIEW", "conviction": ""}
 
 
-def test_settled_verdicts_are_reflected_on_and_reach_the_final_call(monkeypatch, offline):
-    import tradingagents.memory.settlement as settlement
+def _pending_call(graph, date="2024-01-02"):
+    sectors = dict.fromkeys(SECTORS, {"outlook": "Neutral", "conviction": "Low"})
+    sectors |= {"Energy": {"outlook": "Bullish", "conviction": "High"},
+                "Technology": {"outlook": "Bearish", "conviction": "Medium"}}
+    graph.memory_log.store_call(date, "Risk-On", sectors, "THE CALL AS MADE", 5)
+
+
+def test_a_settled_call_is_scored_reflected_on_once_and_reaches_the_final_call(monkeypatch, offline):
+    import tradingagents.market.memory as memory
+    from tests.test_market_scoring import _prices
 
     config, _ = offline
-    log = []
+    log, reflections = [], []
     graph = _graph(monkeypatch, config, FakeModel(log))
-    graph.memory_log.store_decision("XLE", "2024-01-02", "Verdict: Bullish", rating="Bullish")
-    monkeypatch.setattr(settlement, "fetch_returns", lambda *a, **k: (0.05, 0.02, 5, "2024-01-10"))
-    graph.reflector.quick_thinking_llm = type("R", (), {"invoke": lambda self, m: AIMessage(content="LESSON: oil held")})()
+    _pending_call(graph)
+    monkeypatch.setattr(memory, "fetch_prices", lambda date, days: _prices({"Energy": 0.003, "Technology": -0.002}))
+
+    def reflect(self, messages):
+        reflections.append(messages)
+        return AIMessage(content="LESSON: energy leadership held")
+    graph.reflector.quick_thinking_llm = type("R", (), {"invoke": reflect})()
 
     state, _ = graph.propagate("2024-03-15")
 
-    settled = next(e for e in graph.memory_log.load_entries() if e["date"] == "2024-01-02")
-    assert not settled["pending"] and settled["reflection"] == "LESSON: oil held"
-    assert "LESSON: oil held" in state["past_context"]
-    assert any("Chief Market Strategist" in p and "LESSON: oil held" in p for p in log)
+    settled = next(r for r in graph.memory_log.load() if r["date"] == "2024-01-02")
+    assert not settled["pending"] and settled["resolved"] == "2024-01-10"
+    card = settled["scorecard"]
+    assert card["sectors"]["Energy"]["hit"] is True and card["sectors"]["Technology"]["hit"] is True
+    assert card["sectors"]["Utilities"]["hit"] is None
+    assert card["spread"] > 0 and card["regime"]["called"] == "Risk-On"
+    # One reflection for the whole call, shown the scorecard and the call together.
+    assert len(reflections) == 1
+    shown = reflections[0][1][1]
+    assert "Regime called: Risk-On" in shown and "- Energy: Bullish (High)" in shown and "THE CALL AS MADE" in shown
+    # The final decision-maker of the later run reads the scorecard and the lesson.
+    assert "LESSON: energy leadership held" in state["past_context"]
+    assert "Regime called: Risk-On" in state["past_context"]
+    assert any("Chief Market Strategist" in p[:400] and "LESSON: energy leadership held" in p for p in log)
+    # The run's own call stays pending until its window has traded.
+    assert graph.scorecard().settled == 1 and graph.scorecard().pending == 1
+
+
+def test_a_call_stays_pending_until_its_window_trades_or_when_settling_fails(monkeypatch, offline):
+    import tradingagents.market.memory as memory
+    from tests.test_market_scoring import _prices
+
+    config, _ = offline
+    graph = _graph(monkeypatch, config, FakeModel([]))
+    _pending_call(graph)
+
+    monkeypatch.setattr(memory, "fetch_prices", lambda date, days: None)   # the window cannot have traded
+    done = graph.settle_all_pending()
+    assert (done.settled, done.failed) == ([], []) and len(graph.memory_log.pending()) == 1
+
+    def offline_prices(date, days):
+        raise OSError("no network")
+    monkeypatch.setattr(memory, "fetch_prices", offline_prices)
+    done = graph.settle_all_pending()
+    assert done.failed[0][:2] == ("MARKET", "2024-01-02") and len(graph.memory_log.pending()) == 1
+    assert "could not be settled" in graph._memory_step({"trade_date": "2024-03-15"})["memory_note"]
+
+    monkeypatch.setattr(memory, "fetch_prices", lambda date, days: _prices())
+
+    def broken(self, messages):
+        raise RuntimeError("provider down")
+    graph.reflector.quick_thinking_llm = type("R", (), {"invoke": broken})()
+    done = graph.settle_all_pending()
+    assert "reflection failed" in done.failed[0][2] and len(graph.memory_log.pending()) == 1
 
 
 def test_lessons_not_known_by_a_past_date_stay_out(monkeypatch, offline):
+    import tradingagents.market.memory as memory
+    from tests.test_market_scoring import _prices
+
     config, _ = offline
     graph = _graph(monkeypatch, config, FakeModel([]))
-    graph.memory_log.store_decision("XLE", "2024-01-02", "Verdict: Bullish", rating="Bullish")
-    graph.memory_log.update_with_outcome("XLE", "2024-01-02", 0.05, 0.02, 5, "LATER LESSON",
-                                         resolution_date="2024-06-01")
-    assert graph._memory_step({"trade_date": "2024-03-15"})["past_context"] == ""
-    assert "LATER LESSON" in graph._memory_step({"trade_date": "2024-07-01"})["past_context"]
+    _pending_call(graph, "2024-03-01")
+    monkeypatch.setattr(memory, "fetch_prices", lambda date, days: _prices())
+    graph.reflector.quick_thinking_llm = type("R", (), {"invoke": lambda self, m: AIMessage(content="LATER LESSON")})()
+    graph.settle_all_pending()
+    assert graph.memory_log.load()[0]["resolved"] == "2024-03-11"
+    assert graph.memory_log.past_context(as_of="2024-03-08") == ""
+    assert "LATER LESSON" in graph.memory_log.past_context(as_of="2024-03-11")
+    assert "LATER LESSON" in graph.memory_log.past_context()
 
 
 def test_future_dates_and_unknown_analysts_are_refused(monkeypatch, offline):
@@ -201,5 +276,6 @@ def test_report_tree(monkeypatch, offline, tmp_path):
     assert (out / "4_risk" / "neutral.md").exists()
     assert (out / "5_decision" / "decision.md").exists()
     assert (out / "complete_report.html").exists()
-    assert json.loads((out / "market_call.json").read_text())["sector_ratings"]["Energy"] == "Bullish"
+    saved_call = json.loads((out / "market_call.json").read_text())
+    assert saved_call["sector_ratings"]["Energy"] == "Bullish" and saved_call["sector_convictions"]["Energy"] == "Medium"
     assert "Market regime: Rotation" in (out / "complete_report.md").read_text()

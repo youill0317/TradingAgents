@@ -22,18 +22,19 @@ from tradingagents.graph.propagation import Propagator
 from tradingagents.graph.trading_graph import TradingAgentsGraph, _validate_trade_date
 from tradingagents.llm_clients import create_tier_client
 from tradingagents.market.memory import (
+    SUBJECT,
+    MarketMemoryLog,
     MarketReflector,
-    market_memory_log,
-    past_market_context,
-    verdict_entries,
+    call_record,
+    settle_pending_calls,
 )
 from tradingagents.market.reporting import write_market_report_tree
 from tradingagents.market.schemas import SECTORS
+from tradingagents.market.scoring import market_horizon_days, summarize_market
 from tradingagents.market.setup import ANALYST_ORDER, MarketGraphSetup
 
 logger = logging.getLogger(__name__)
 
-SUBJECT = "MARKET"
 ASSET_TYPE = "market"
 
 
@@ -53,7 +54,7 @@ class MarketAnalysisGraph(TradingAgentsGraph):
         self.deep_thinking_llm = create_tier_client(self.config, "deep", **extra).get_llm()
         self.quick_thinking_llm = create_tier_client(self.config, "quick", **extra).get_llm()
 
-        self.memory_log = market_memory_log(self.config)
+        self.memory_log = MarketMemoryLog(self.config)
         self.reflector = MarketReflector(self.quick_thinking_llm)
         self.conditional_logic = ConditionalLogic(
             max_debate_rounds=self.config["max_debate_rounds"],
@@ -121,30 +122,43 @@ class MarketAnalysisGraph(TradingAgentsGraph):
         try:
             done = self.settle_all_pending(wait=False)
             if done.failed:
-                note = f"{len(done.failed)} past sector verdict(s) could not be settled this run and stay pending."
+                note = f"{len(done.failed)} past market call(s) could not be settled this run and stay pending."
         except Exception as exc:
             logger.warning("Settling past market calls failed: %s", exc)
             note = f"Past market calls could not be settled this run ({type(exc).__name__}); they stay pending."
         try:
-            past_context = past_market_context(self.memory_log, self._memory_as_of(state["trade_date"]))
+            past_context = self.memory_log.past_context(as_of=self._memory_as_of(state["trade_date"]))
         except Exception as exc:
             logger.warning("Reading the market memory log failed: %s", exc)
             past_context = ""
             note = note or f"The market memory log could not be read this run ({type(exc).__name__})."
         return {"past_context": past_context, "memory_note": note}
 
+    def settle_pending(self, *_args, wait: bool = True):
+        """Settle the market calls whose window has now traded. Returns what was settled and what failed."""
+        with run_config(self.config):
+            return settle_pending_calls(self.memory_log, self.reflector, wait=wait)
+
+    def settle_all_pending(self, wait: bool = True):
+        return self.settle_pending(wait=wait)
+
+    def scorecard(self):
+        """Every settled market call scored: regime and sector hit rates, spreads, by conviction and sector."""
+        return summarize_market(self.memory_log.load())
+
     def record_decision(self, trade_date, final_state, *_args):
-        """Record a finished run: its state log, and each sector verdict in the market memory log."""
+        """Record a finished run: its state log, and its call in the market memory log."""
         self._log_state(trade_date, final_state)
-        entries = verdict_entries(final_state)
-        if not entries:
-            logger.warning("No readable sector verdict for %s; nothing added to the market memory log", trade_date)
-        for etf, rating, text in entries:
-            self.memory_log.store_decision(ticker=etf, trade_date=trade_date,
-                                           final_trade_decision=text, rating=rating)
+        decision = final_state.get("final_market_decision")
+        if not decision:
+            logger.warning("No final market call for %s; nothing added to the market memory log", trade_date)
+            return
+        regime, sectors = call_record(final_state)
+        self.memory_log.store_call(trade_date, regime, sectors, decision, market_horizon_days(self.config))
 
     def run_settings(self) -> dict:
-        return {**super().run_settings(), "workflow": "market"}
+        return {**super().run_settings(), "workflow": "market",
+                "market_holding_period_days": market_horizon_days(self.config)}
 
     def _log_state(self, trade_date, final_state):
         keys = ("trade_date", "macro_report", "market_report", "news_report", "sentiment_report", "sector_report",
@@ -175,9 +189,11 @@ class MarketAnalysisGraph(TradingAgentsGraph):
 
 
 def market_call(final_state: dict) -> dict:
-    """The run's regime and sector ratings, ``REVIEW`` where there is none."""
+    """The run's regime and sector ratings, ``REVIEW`` where there is none, with each sector's conviction."""
     ratings = final_state.get("final_sector_ratings") or {}
+    convictions = final_state.get("final_sector_convictions") or {}
     return {
         "regime": final_state.get("final_regime") or RATING_REVIEW,
         "sector_ratings": {name: ratings.get(name, RATING_REVIEW) for name in SECTORS},
+        "sector_convictions": {name: convictions.get(name, "") for name in SECTORS},
     }

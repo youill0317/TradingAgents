@@ -92,4 +92,21 @@ def test_cli_run_streams_records_and_saves(monkeypatch, tmp_path):
     assert "Tool Call" in (run_dir / "message_tool.log").read_text()
     reports = list((tmp_path / "results" / "reports").iterdir())
     assert len(reports) == 1 and (reports[0] / "market_call.json").exists()
-    assert (tmp_path / "memory" / "market_memory.md").exists()
+    assert (tmp_path / "memory" / "market_memory.jsonl").exists()
+
+
+def test_scorecard_flag_prints_past_results_without_running_an_analysis(monkeypatch, tmp_path):
+    from tests.test_market_scoring import _record
+    from tradingagents.default_config import DEFAULT_CONFIG
+
+    config = {**DEFAULT_CONFIG, "market_memory_log_path": str(tmp_path / "market_memory.jsonl")}
+    monkeypatch.setattr(cli.market, "DEFAULT_CONFIG", config)
+    monkeypatch.setattr(cli.market, "run_market_analysis", lambda **k: pytest.fail("--scorecard runs no analysis"))
+    assert "No settled market calls yet" in CliRunner().invoke(m.app, ["market", "--scorecard"]).output
+
+    import json
+    records = [_record("2024-03-01", "Risk-On", True, ("Bullish", 0.02)),
+               {"date": "2024-03-08", "regime": "Rotation", "sectors": {}, "decision": "", "days": 5, "pending": True}]
+    (tmp_path / "market_memory.jsonl").write_text("".join(json.dumps(r) + "\n" for r in records))
+    output = CliRunner().invoke(m.app, ["market", "--scorecard"]).output
+    assert "Regime hit rate: 100% (1/1)" in output and "1 call(s) are pending" in output

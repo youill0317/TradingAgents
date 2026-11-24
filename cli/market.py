@@ -58,6 +58,8 @@ from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.llm_clients.factory import REASONING_EFFORT_PROVIDERS
 from tradingagents.market.analysts import ANALYST_SPECS
 from tradingagents.market.graph import ASSET_TYPE, SUBJECT, MarketAnalysisGraph, market_call
+from tradingagents.market.memory import MarketMemoryLog
+from tradingagents.market.scoring import market_horizon_days, summarize_market
 
 WORKFLOW_STEPS = ("I. Analyst Team → II. Research Team → III. Sector Strategist → "
                   "IV. Risk Management → V. Chief Market Strategist")
@@ -410,11 +412,16 @@ def show_call(final_state):
     call = market_call(final_state)
     table = Table(title=f"Market regime: {call['regime']}", box=box.SIMPLE_HEAD)
     table.add_column("Sector")
-    table.add_column("Outlook")
+    table.add_column("vs SPY")
+    table.add_column("Conviction")
     colors = {"Bullish": "green", "Bearish": "red", "Neutral": "yellow"}
     for sector, rating in call["sector_ratings"].items():
-        table.add_row(sector, f"[{colors.get(rating, 'magenta')}]{rating}[/]")
+        table.add_row(sector, f"[{colors.get(rating, 'magenta')}]{rating}[/]", call["sector_convictions"][sector])
     console.print(table)
+    days = final_state.get("horizon_days")
+    if days:
+        console.print(f"[dim]Both are claims about the next {days} trading days and are scored then: "
+                      "tradingagents market --scorecard[/dim]")
     if call["regime"] == RATING_REVIEW or RATING_REVIEW in call["sector_ratings"].values():
         console.print("[yellow]Some of the call could not be read from the final decision and is recorded "
                       "for review (REVIEW) rather than as a verdict. Re-run, or read the decision below.[/yellow]")
@@ -487,7 +494,7 @@ def run_market_analysis(checkpoint: bool | None = None, flags=None):
         render(layout, view, stats_handler, start_time)
 
     console.print("\n[bold cyan]Market Analysis Complete![/bold cyan]\n")
-    show_call(final_state)
+    show_call({**final_state, "horizon_days": market_horizon_days(config)})
     _offer_reports(final_state, graph, save=flags.get("save"), show=flags.get("show"), html=flags.get("html"))
     return final_state
 
@@ -516,6 +523,16 @@ def _offer_reports(final_state, graph, save=None, show=None, html=None):
         display_market_report(final_state)
 
 
+def show_scorecard():
+    """Print the settled market calls' scores from the market memory log. Calls no model."""
+    log = MarketMemoryLog(DEFAULT_CONFIG)
+    console.print(summarize_market(log.load()).render(), markup=False, highlight=False)
+    pending = len(log.pending())
+    if pending:
+        console.print(f"[dim]{pending} call(s) are pending; a call is settled by the next market analysis "
+                      "run after its window has traded.[/dim]")
+
+
 def market(
     date: str = typer.Option(None, "--date", help="Analysis date, YYYY-MM-DD (today or earlier); skips the prompt"),
     analysts: str = typer.Option(
@@ -527,7 +544,13 @@ def market(
         None, "--checkpoint/--no-checkpoint",
         help="Save state after each step so a crashed run can resume. Omit to honor "
              "TRADINGAGENTS_CHECKPOINT_ENABLED."),
+    scorecard: bool = typer.Option(
+        False, "--scorecard",
+        help="Show how past market calls turned out (regime and sector hit rates) and exit; runs no analysis."),
 ):
-    """Analyse the market: the regime and a Bullish/Neutral/Bearish verdict on each US sector."""
+    """Analyse the market: the regime, and each US sector's Bullish/Neutral/Bearish verdict against SPY."""
+    if scorecard:
+        show_scorecard()
+        return
     flags = {"date": date, "analysts": analysts, "save": save, "show": show, "html": html}
     run_market_analysis(checkpoint=checkpoint, flags=flags)

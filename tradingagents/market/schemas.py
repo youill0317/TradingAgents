@@ -41,8 +41,9 @@ class Conviction(StrEnum):
 class SectorVerdict(BaseModel):
     sector: str = Field(description="Exactly one of: " + ", ".join(SECTOR_ETFS) + ".")
     outlook: SectorOutlook = Field(
-        description="Expected direction of the sector ETF over the next 1–4 weeks. Neutral when the "
-                    "evidence is mixed, flat or too thin to call.")
+        description="The sector ETF's expected performance relative to SPY over the horizon the prompt states: "
+                    "Bullish outperforms SPY, Bearish underperforms it, Neutral is roughly in line or too thin "
+                    "to call. Not a call on whether the sector's price rises.")
     conviction: Conviction = Field(
         description="High only when macro, relative performance and catalysts agree; Low when the "
                     "verdict rests on a single signal.")
@@ -53,7 +54,9 @@ class SectorVerdict(BaseModel):
 class MarketCall(BaseModel):
     """A market regime and one verdict per US sector, with the reasoning around them."""
 
-    regime: MarketRegime = Field(description="The single regime label that best fits the market.")
+    regime: MarketRegime = Field(
+        description="The one regime, as the prompt defines them, you are most confident will come true over the "
+                    "horizon the prompt states.")
     regime_evidence: str = Field(
         description="Why that regime: the global and US evidence, its transmission to US markets, and "
                     "where the indicators disagree. Name the figures and their dates.")
@@ -81,10 +84,12 @@ def normalize_call(call: MarketCall) -> MarketCall:
     return call.model_copy(update={"sector_verdicts": [kept[n] for n in SECTORS if n in kept]})
 
 
-def call_ratings(call: MarketCall) -> tuple[str, dict[str, str]]:
-    """The regime and every sector's outlook; a sector without a verdict is ``REVIEW``."""
-    found = {v.sector: v.outlook.value for v in normalize_call(call).sector_verdicts}
-    return call.regime.value, {name: found.get(name, RATING_REVIEW) for name in SECTORS}
+def call_ratings(call: MarketCall) -> tuple[str, dict[str, str], dict[str, str]]:
+    """The regime, every sector's outlook and its conviction; a sector without a verdict is ``REVIEW``."""
+    found = {v.sector: v for v in normalize_call(call).sector_verdicts}
+    ratings = {name: found[name].outlook.value if name in found else RATING_REVIEW for name in SECTORS}
+    convictions = {name: found[name].conviction.value if name in found else "" for name in SECTORS}
+    return call.regime.value, ratings, convictions
 
 
 def _cell(text: str) -> str:
@@ -123,6 +128,8 @@ _REGIMES = {r.value.casefold().replace("-", ""): r.value for r in MarketRegime}
 _REGIME_RE = re.compile(r"(?<![a-z])regime\b(?!\s*evidence)[^:\n\-\u2010-\u2015]*[:\-\u2010-\u2015][\s*_]*([a-z]+(?:[\s-][a-z]+)?)",
                         re.IGNORECASE)
 _OUTLOOK_RE = re.compile(r"\b(bullish|neutral|bearish)\b", re.IGNORECASE)
+_CONVICTION_RE = re.compile(r"\b(high|medium|low)\b(?=\W*conviction)|(?<=\|\s)(high|medium|low)(?=\s*\|)",
+                            re.IGNORECASE)
 
 
 def extract_regime(text: str) -> str | None:
@@ -137,6 +144,27 @@ def extract_regime(text: str) -> str | None:
                 found.append(value)
                 break
     return found[0] if found and len(set(found)) == 1 else None
+
+
+def _sector_lines(text: str):
+    """``(sector, line)`` for every line that names exactly one sector."""
+    for line in unicodedata.normalize("NFKC", text or "").splitlines():
+        lowered = line.casefold()
+        named = [name for name in SECTORS
+                 if re.search(rf"(?<![a-z]){re.escape(name.casefold())}(?![a-z])", lowered)
+                 or re.search(rf"\b{SECTOR_ETFS[name].casefold()}\b", lowered)]
+        if len(named) == 1:
+            yield named[0], line
+
+
+def extract_sector_convictions(text: str, ratings: dict[str, str]) -> dict[str, str]:
+    """Each rated sector's conviction from its verdict line, empty where the line states none or several."""
+    seen: dict[str, set[str]] = {name: set() for name in SECTORS}
+    for name, line in _sector_lines(text):
+        if _OUTLOOK_RE.search(line):
+            seen[name] |= {next(g for g in m if g).capitalize() for m in _CONVICTION_RE.findall(line)}
+    return {name: next(iter(v)) if len(v) == 1 and ratings.get(name) != RATING_REVIEW else ""
+            for name, v in seen.items()}
 
 
 def extract_sector_ratings(text: str) -> dict[str, str]:
@@ -157,6 +185,7 @@ def extract_sector_ratings(text: str) -> dict[str, str]:
     return {name: next(iter(v)) if len(v) == 1 else RATING_REVIEW for name, v in seen.items()}
 
 
-def parse_call(text: str) -> tuple[str, dict[str, str]]:
-    """The regime and sector ratings read from free text; what cannot be read is ``REVIEW``."""
-    return extract_regime(text) or RATING_REVIEW, extract_sector_ratings(text)
+def parse_call(text: str) -> tuple[str, dict[str, str], dict[str, str]]:
+    """The regime, sector ratings and convictions read from free text; what cannot be read is ``REVIEW``."""
+    ratings = extract_sector_ratings(text)
+    return extract_regime(text) or RATING_REVIEW, ratings, extract_sector_convictions(text, ratings)

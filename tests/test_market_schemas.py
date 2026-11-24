@@ -48,8 +48,9 @@ def test_typed_call_is_canonicalised_and_missing_sectors_are_review():
                       sector_verdicts=[_verdict(" energy "), _verdict("XLK", "Bearish"), _verdict("Energy", "Bearish"),
                                        _verdict("Crypto")])
     assert [v.sector for v in normalize_call(call).sector_verdicts] == ["Technology", "Energy"]
-    regime, ratings = call_ratings(call)
+    regime, ratings, convictions = call_ratings(call)
     assert regime == "Stressed"
+    assert convictions["Energy"] == "High" and convictions["Utilities"] == ""
     assert ratings["Energy"] == "Bullish", "the first verdict for a sector stands"
     assert ratings["Technology"] == "Bearish"
     assert sum(r == "REVIEW" for r in ratings.values()) == len(SECTORS) - 2
@@ -62,3 +63,20 @@ def test_rendered_call_reads_back_to_the_same_ratings():
     assert extract_regime(text) == "Risk-Off"
     assert set(extract_sector_ratings(text).values()) == {"Neutral"}
     assert "**Executive Summary**:" in text
+
+
+def test_convictions_are_read_from_a_sector_verdict_line_only():
+    from tradingagents.market.schemas import parse_call
+
+    text = "\n".join([
+        "**Market Regime**: Rotation",
+        "Energy: Bullish (High conviction) — oil",
+        "Utilities: Neutral",
+        "Technology: Bearish, low conviction on valuation",
+        "| Healthcare | XLV | Bullish | Medium | r | i |",
+        "Energy has high volatility this month",
+    ])
+    regime, ratings, convictions = parse_call(text)
+    assert regime == "Rotation" and ratings["Healthcare"] == "Bullish"
+    assert convictions["Energy"] == "High" and convictions["Technology"] == "Low"
+    assert convictions["Healthcare"] == "Medium" and convictions["Utilities"] == ""

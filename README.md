@@ -219,7 +219,7 @@ A saved report also includes `complete_report.html`, the report as one page with
 
 ### Market Analysis
 
-`tradingagents market` analyses the market as a whole instead of a single name, and gives two results: the market regime (Risk-On, Risk-Off, Rotation, Range-Bound or Stressed) and a Bullish, Neutral or Bearish verdict on each of the eleven US sectors for the next 1–4 weeks, read through the SPDR sector ETFs (XLK, XLF, XLE, XLV, XLY, XLP, XLI, XLB, XLRE, XLU, XLC).
+`tradingagents market` analyses the market as a whole instead of a single name, and gives two results: the market regime (Risk-On, Risk-Off, Rotation, Range-Bound or Stressed) and a Bullish, Neutral or Bearish verdict on each of the eleven US sectors **relative to SPY**, read through the SPDR sector ETFs (XLK, XLF, XLE, XLV, XLY, XLP, XLI, XLB, XLRE, XLU, XLC).
 
 ```bash
 tradingagents market                                   # asks for the date, analysts, depth, provider and models
@@ -244,7 +244,9 @@ It runs the same way as a ticker analysis, step for step:
 - **Data**: the analysts gather their data with tools, and the Sentiment Analyst takes its sources up front, as the ticker Sentiment Analyst does. Every source serves the analysis date at the latest.
 - **Dates**: any date up to today. Prices, FRED vintages and news are as of that date, and economic figures released after it are withheld. Community feeds and prediction markets only serve recent data, and say so for an older date.
 - **Debates**: the research depth sets the bull/bear rounds and the risk rounds, as `max_debate_rounds` and `max_risk_discuss_rounds` do for a ticker.
-- **Memory**: each sector verdict is logged in `~/.tradingagents/memory/market_memory.md` (`market_memory_log_path`). Once its holding period has traded, it is scored by the ETF's return and its alpha against SPY, a reflection is written, and later runs read the lessons that were known by their date.
+- **What the call claims**: both results are claims about the next `market_holding_period_days` trading days (default: `holding_period_days`, 5), and the managers are given the definitions they are scored on. A sector verdict is relative to SPY: Bullish outperforms it, Bearish underperforms it, so in a falling market a sector that falls less is Bullish; the market's own direction is the regime's claim. Risk-On / Risk-Off claim SPY moves up / down by more than an ordinary move, Stressed an unusually deep drawdown, Rotation that sector returns diverge more than usual, Range-Bound neither. "Ordinary", "usual" and "deep" are measured from the year before the call.
+- **Memory**: each call is one record in `~/.tradingagents/memory/market_memory.jsonl` (`market_memory_log_path`). Once its window has traded, a later run scores it the way a ticker decision is scored: sector verdicts by alpha against SPY (Neutral, like Hold, is not a hit or a miss), plus the regime against its claim, the Bullish-minus-Bearish alpha spread, and how far the Neutral sectors moved. One reflection is written on the whole call, and later runs' Chief Market Strategist reads the recent scorecards and lessons that were known by their date.
+- **Scorecard**: `tradingagents market --scorecard` prints the settled calls' regime hit rate and sector hit rates by outlook, conviction and sector, without running an analysis.
 - **Reading the call**: the final call is structured output; without it, the regime and verdicts are read from the text, and anything that cannot be read is recorded as `REVIEW`, as an unreadable rating is.
 - **Checkpoints**: `--checkpoint` saves state after each step so a crashed run resumes.
 

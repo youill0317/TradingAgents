@@ -33,17 +33,29 @@ from tradingagents.market.schemas import (
     parse_call,
     render_call,
 )
+from tradingagents.market.scoring import market_horizon_days, regime_definitions, verdict_definition
 
 REGIMES = "Risk-On / Risk-Off / Rotation / Range-Bound / Stressed"
 
-CALL_FORMAT = (
-    "## Output\n\n"
-    f"Start with the regime on its own line, \"**Market Regime**: \" followed by exactly one of {REGIMES}. "
-    "Then give one line per sector, \"<Sector>: <Bullish|Neutral|Bearish> (<High|Medium|Low> conviction) — "
-    "rationale; invalidated if ...\", for each of: " + ", ".join(SECTORS) + ". A verdict is the expected "
-    "direction of the sector ETF over the next 1–4 weeks. Bullish or Bearish needs evidence pointing one way; "
-    "mixed, flat or thin evidence is Neutral, and conflict alone is not a reason for Neutral: weigh it."
-)
+
+
+def call_format() -> str:
+    """What a market call claims and how to write it, for the horizon the run is scored over.
+
+    The definitions are the ones ``tradingagents.market.scoring`` scores the
+    call against, so every manager knows what its regime and verdicts claim.
+    """
+    days = market_horizon_days()
+    return (
+        "## What the call claims\n\n"
+        f"{regime_definitions(days)}\n\n{verdict_definition(days)}\n\n"
+        "## Output\n\n"
+        f"Start with the regime on its own line, \"**Market Regime**: \" followed by exactly one of {REGIMES}. "
+        "Then give one line per sector, \"<Sector>: <Bullish|Neutral|Bearish> (<High|Medium|Low> conviction) — "
+        "rationale; invalidated if ...\", for each of: " + ", ".join(SECTORS) + ". Bullish or Bearish needs "
+        "evidence that the sector will beat or trail SPY; mixed or thin evidence is Neutral, and conflict alone "
+        "is not a reason for Neutral: weigh it."
+    )
 
 
 def _language():
@@ -84,9 +96,9 @@ def _create_researcher(llm, side: str):
     def node(state) -> dict:
         debate = state["investment_debate_state"]
         last = opponent_argument_or_opening(debate.get("current_response", ""), opponent)
-        prompt = f"""You are the {name} in a debate about the market over the next 1–4 weeks. Build {stance}. {MARKET_CONTEXT}
+        prompt = f"""You are the {name} in a debate about the market over the next {market_horizon_days()} trading days. Build {stance}. {MARKET_CONTEXT}
 
-Ground every claim in the analysts' figures and dates. Name the sectors your case favours and the ones it warns against. Engage directly with the {opponent}'s last argument, conceding where the evidence is against you, and debate conversationally rather than listing data.
+Ground every claim in the analysts' figures and dates. Say what you expect of the index, and name the sectors you expect to beat SPY and the ones you expect to trail it. Engage directly with the {opponent}'s last argument, conceding where the evidence is against you, and debate conversationally rather than listing data.
 
 {_reports(state)}
 
@@ -126,7 +138,7 @@ The debate always contains conflicting arguments; deciding which side is stronge
 **Debate History:**
 {debate.get("history", "")}
 
-{CALL_FORMAT}
+{call_format()}
 Then a **Rationale** section on which arguments decided it.
 
 {NO_EXTERNAL_TOOLS}""" + _language()
@@ -145,9 +157,9 @@ def create_sector_strategist(llm):
 
     def node(state) -> dict:
         sector_report = report_or_absent(state.get("sector_report"), "sector")
-        prompt = f"""You are the Sector Strategist. Turn the research team's market outlook into a concrete sector positioning proposal: which sectors to overweight, hold at market weight or underweight against SPY over the next 1–4 weeks, how strongly, and what hedges or exits apply. {MARKET_CONTEXT}
+        prompt = f"""You are the Sector Strategist. Turn the research team's market outlook into a concrete sector positioning proposal: which sectors to overweight, hold at market weight or underweight against SPY over the next {market_horizon_days()} trading days, how strongly, and what hedges or exits apply. {MARKET_CONTEXT}
 
-Ground relative strength in the sector report's figures, and take direction and strategy from the research outlook. A Bullish verdict is an overweight, Bearish an underweight, sized by conviction.
+Ground relative strength in the sector report's figures, and take direction and strategy from the research outlook. A Bullish verdict (the sector beats SPY) is an overweight, Bearish (it trails SPY) an underweight, sized by conviction.
 
 Sector report:
 {sector_report}
@@ -155,7 +167,7 @@ Sector report:
 Research team's market outlook:
 {state.get("market_plan", "")}
 
-{CALL_FORMAT}
+{call_format()}
 Then a **Positioning** section: the tilts, their sizes, and the conditions for exiting them.
 
 {NO_EXTERNAL_TOOLS}""" + _language()
@@ -262,7 +274,7 @@ def create_chief_market_strategist(llm):
 
 Ground every conclusion in specific evidence from the analysts. The risk debate always contains conflicting stances; deciding which is stronger is the job. Commit to the stronger case, sized by how decisively it wins, and do not force a direction to appear decisive. Weigh the analysts on their merits, independent of speaking order.
 
-{CALL_FORMAT}
+{call_format()}
 Then an **Executive Summary**: the call and what would change it.
 
 {NO_EXTERNAL_TOOLS}""" + _language()
@@ -272,15 +284,16 @@ Then an **Executive Summary**: the call and what would change it.
         call = invoke_structured(structured_llm, prompt, "Chief Market Strategist")
         if call is not None:
             decision = render_call(call, "Executive Summary")
-            regime, ratings = call_ratings(call)
+            regime, ratings, convictions = call_ratings(call)
         else:
             decision = llm.invoke(prompt).content
-            regime, ratings = parse_call(decision)
+            regime, ratings, convictions = parse_call(decision)
         return {
             "risk_debate_state": {**debate, "latest_speaker": "Judge"},
             "final_market_decision": decision,
             "final_regime": regime,
             "final_sector_ratings": ratings,
+            "final_sector_convictions": convictions,
         }
 
     return node
