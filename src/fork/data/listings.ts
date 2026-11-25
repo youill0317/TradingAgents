@@ -86,14 +86,16 @@ const KOREAN_CODE = /^[0-9][0-9A-Z]{5}$/;
 /** Crypto quotes Yahoo does not list a pair in, read as its USD pair. */
 const STABLECOINS = new Set(["USDT", "USDC"]);
 
-/** What `input` names; never throws (a key it cannot read is a listing of kind "invalid"). */
+/**
+ * What `input` names; never throws (a key it cannot read is a listing of kind "invalid"). The kind is read
+ * as upstream reads it (src/data/instrument-key.ts): "security:" names a security whatever follows it.
+ */
 export function parseListing(input: string): Listing {
   const trimmed = input.trim();
-  const unprefixed = trimmed.replace(/^security:/i, "");
-  if (!unprefixed || !isInstrumentKey(unprefixed)) {
+  if (!trimmed || !isInstrumentKey(trimmed)) {
     return { kind: "invalid", input: trimmed, reason: "not a ticker, MIC:SYMBOL or instrument key" };
   }
-  const { kind, id } = parseInstrument(unprefixed);
+  const { kind, id } = parseInstrument(trimmed);
   switch (kind) {
     case "security":
       return security(id);

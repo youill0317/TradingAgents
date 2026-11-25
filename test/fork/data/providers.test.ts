@@ -13,7 +13,7 @@ import { join } from "node:path";
 import { ROUTES } from "../../../src/data/routes.js";
 import { dataProviders } from "../../../src/engine/factory.js";
 import { forkProviders } from "../../../src/fork/data/index.js";
-import { fixtureFetch } from "./harness.js";
+import { buildTools, fixedClock, fixture, fixtureFetch, YAHOO_AAPL } from "./harness.js";
 
 let dir: string;
 beforeEach(async () => {
@@ -90,4 +90,39 @@ test("building them sends no request and writes no file", async () => {
   await Bun.sleep(0);
   expect(fetch.requests).toEqual([]);
   expect(existsSync(cacheDir)).toBe(false);
+});
+
+test("an answer yahoo-finance2's schema refuses is unavailable, and the library asks npm for nothing", async () => {
+  // Hand-made: the AAPL quote fixture with a market state the library's schema does not know.
+  const quote = JSON.parse(new TextDecoder().decode(fixture("yahoo/quote-aapl.json"))) as {
+    quoteResponse: { result: Record<string, unknown>[] };
+  };
+  (quote.quoteResponse.result[0] as Record<string, unknown>).marketState = "SOMETHING_NEW";
+  const fetch = fixtureFetch([
+    {
+      match: /\/v7\/finance\/quote\?/,
+      body: JSON.stringify(quote),
+      headers: { "content-type": "application/json" },
+    },
+    ...YAHOO_AAPL,
+  ]);
+  // The library's own version check would go through the global fetch, not the one it is given.
+  const outside: string[] = [];
+  const global = globalThis.fetch;
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    outside.push(input instanceof Request ? input.url : String(input));
+    throw new Error("these tests send no request");
+  }) as unknown as typeof globalThis.fetch;
+  try {
+    const clock = fixedClock("2026-11-25T22:00:00Z");
+    const { runTool } = buildTools(forkProviders({}, { fetch, clock }), { clock });
+    const run = await runTool("quote", { symbols: ["AAPL"] });
+    expect(run.failure).toBe("data_unavailable");
+    expect(run.text).toContain("Yahoo could not be read (Failed Yahoo Schema validation)");
+    await Bun.sleep(20);
+  } finally {
+    globalThis.fetch = global;
+  }
+  expect(outside).toEqual([]);
+  expect(fetch.unmatched).toEqual([]);
 });

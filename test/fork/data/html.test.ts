@@ -125,6 +125,32 @@ describe("markup no browser refuses", () => {
     expect(htmlToText("<p> </p><div>\n</div>")).toBe("");
   });
 
+  test("spaces and line breaks in runs collapse as a browser shows them, in time", () => {
+    expect(htmlToText("<p>a <b> </b> <i> b</i></p>")).toBe("a b");
+    expect(htmlToText(`x${"<br>".repeat(5)}y`)).toBe("x\n\ny");
+    const started = performance.now();
+    const page = `<p>start${"<b> </b>".repeat(100_000)}${"<br>".repeat(100_000)}${"<div></div>".repeat(100_000)}end</p>`;
+    expect(htmlToText(page)).toBe("start\n\nend");
+    const wide = `<table><tr><td>a</td>${"<td></td>".repeat(100_000)}</tr></table>`;
+    expect(htmlToText(wide)).toBe("a");
+    expect(performance.now() - started).toBeLessThan(5_000);
+  });
+
+  test("quotes that never close, inside tags that never end, read in one pass", () => {
+    const started = performance.now();
+    expect(htmlToText(`<p>x</p>${'<a "'.repeat(50_000)}`)).toBe("x");
+    expect(htmlToText(`<p>x</p>${"<!x ".repeat(50_000)}`)).toBe("x");
+    expect(performance.now() - started).toBeLessThan(5_000);
+  });
+
+  test("tables nested in cells, with text at each level, read in time", () => {
+    const depth = 2_000;
+    const started = performance.now();
+    const text = htmlToText(`${"<table><tr><td>a".repeat(depth)}${"</td></tr></table>".repeat(depth)}`);
+    expect(text).toBe(Array.from({ length: depth }, () => "a").join(" "));
+    expect(performance.now() - started).toBeLessThan(5_000);
+  });
+
   test("deep nesting and long pages read in time, without recursion", () => {
     const depth = 50_000;
     expect(htmlToText(`${"<div><span>".repeat(depth)}deep${"</span></div>".repeat(depth)}`)).toBe("deep");

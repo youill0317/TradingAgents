@@ -192,6 +192,48 @@ describe("what no well-formed document has, read without throwing", () => {
     expect(performance.now() - started).toBeLessThan(5_000);
   });
 
+  test("end tags that close nothing, under deep nesting, read in time (no search per stray end tag)", () => {
+    const depth = 50_000;
+    const started = performance.now();
+    const doc = parseXml(`${"<d>".repeat(depth)}${"</x>".repeat(depth)}${"</D>".repeat(2)}tail`);
+    expect(performance.now() - started).toBeLessThan(5_000);
+    expect(findAll(doc, "d")).toHaveLength(depth);
+    // The case-folded match closed the innermost <d> twice over; the text stays inside the rest.
+    expect(textOf(doc)).toBe("tail");
+  });
+
+  test("many declarations, and quotes that never close, read in one pass", () => {
+    const started = performance.now();
+    const declarations = parseXml(`${"<!ELEMENT a (b)>".repeat(50_000)}<r>end</r>`);
+    expect(valueAt(declarations, "r")).toBe("end");
+    const quotes = parseXml(`<a b="${'x"'.repeat(50_000)}>`);
+    expect(child(quotes, "a")).toBeDefined();
+    const stray = parseXml("<".repeat(200_000));
+    expect(textOf(stray)).toHaveLength(200_000);
+    expect(performance.now() - started).toBeLessThan(5_000);
+  });
+
+  test("an attribute named like an object's own property is an attribute, nothing more", () => {
+    const doc = parseXml(`<a __proto__="polluted" constructor="c" toString="t" hasOwnProperty="h"/>`);
+    const { attributes } = child(doc, "a") as XmlElement;
+    expect(Object.entries(attributes)).toEqual([
+      ["__proto__", "polluted"],
+      ["constructor", "c"],
+      ["toString", "t"],
+      ["hasOwnProperty", "h"],
+    ]);
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+    expect(Object.getPrototypeOf({})).toBe(Object.prototype);
+  });
+
+  test("an entity bomb in the DOCTYPE stays unexpanded however it nests", () => {
+    const entities = Array.from({ length: 10 }, (_, i) =>
+      i === 0 ? `<!ENTITY e0 "lol">` : `<!ENTITY e${i} "${`&e${i - 1};`.repeat(10)}">`,
+    ).join("");
+    const doc = parseXml(`<!DOCTYPE bomb [${entities}]><bomb>&e9;</bomb>`);
+    expect(valueAt(doc, "bomb")).toBe("&e9;");
+  });
+
   test("empty and whitespace input", () => {
     expect(parseXml("")).toEqual({ name: "#document", attributes: {}, children: [] });
     expect(parseXml("  \n ").children).toEqual([]);

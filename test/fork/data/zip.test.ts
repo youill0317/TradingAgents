@@ -202,6 +202,41 @@ describe("damaged or unread archives fail with a ZipError, never a crash or a wr
     failsWith(() => readZip(archive), "ZIP64");
   });
 
+  test("an end record that counts more entries than its directory holds", () => {
+    const archive = zip([{ name: "a.txt", data: "abc" }]);
+    const view = new DataView(archive.buffer, archive.byteOffset, archive.byteLength);
+    view.setUint16(archive.length - 22 + 10, 3, true);
+    failsWith(() => readZip(archive), "damaged at entry 2");
+  });
+
+  test("a name that runs past the archive", () => {
+    const archive = zip([{ name: "a.txt", data: "abc" }]);
+    const view = new DataView(archive.buffer, archive.byteOffset, archive.byteLength);
+    const directory = view.getUint32(archive.length - 22 + 16, true);
+    view.setUint16(directory + 28, 60_000, true);
+    failsWith(() => readZip(archive), "damaged at entry 1");
+  });
+
+  test("an archive split across disks", () => {
+    const archive = zip([{ name: "a.txt", data: "abc" }]);
+    const view = new DataView(archive.buffer, archive.byteOffset, archive.byteLength);
+    view.setUint16(archive.length - 22 + 4, 1, true);
+    failsWith(() => readZip(archive), "split across disks");
+  });
+
+  test("two entries pointing at one local header read the same data, each checked", () => {
+    const archive = zip([
+      { name: "a.txt", data: "same" },
+      { name: "b.txt", data: "same" },
+    ]);
+    const view = new DataView(archive.buffer, archive.byteOffset, archive.byteLength);
+    const directory = view.getUint32(archive.length - 22 + 16, true);
+    const second = directory + 46 + "a.txt".length;
+    view.setUint32(second + 42, 0, true);
+    const entries = readZip(archive);
+    expect(entries.map((entry) => entry.text())).toEqual(["same", "same"]);
+  });
+
   test("an entry that declares more than may be inflated, refused before it is", () => {
     const big = "x".repeat(10_000);
     const [entry] = readZip(zip([{ name: "big.txt", data: big }]), { maxEntryBytes: 1_000 });

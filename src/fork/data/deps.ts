@@ -73,7 +73,9 @@ export function forkDeps(config: PublicDataConfig, options: ForkOptions = {}): F
 /**
  * A yahoo-finance2 client configured as upstream's Yahoo provider configures its own: the library's
  * User-Agent, its notices about surveys and removed modules suppressed, a silent logger, and every request
- * bounded and its failures turned into errors with their status by upstream's `answeredOrThrown`.
+ * bounded and its failures turned into errors with their status by upstream's `answeredOrThrown`. Beyond
+ * upstream's: an answer that fails the library's schema is not logged, which also stops the library from
+ * asking npm's registry for its latest version (a request of its own, through the global fetch, unbounded).
  */
 export function yahooClient(fetchImpl: typeof globalThis.fetch): YahooFinanceClient {
   const silent = { info() {}, warn() {}, error() {}, debug() {}, dir() {} };
@@ -81,5 +83,7 @@ export function yahooClient(fetchImpl: typeof globalThis.fetch): YahooFinanceCli
     suppressNotices: ["yahooSurvey", "ripHistorical"],
     logger: silent,
     fetch: answeredOrThrown(fetchImpl),
+    versionCheck: false,
+    validation: { logErrors: false },
   });
 }

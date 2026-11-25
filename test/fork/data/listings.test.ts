@@ -212,6 +212,12 @@ describe("keys no form takes", () => {
     }
   });
 
+  test("security: names a security whatever follows, as upstream reads it", () => {
+    expect(parseListing("SECURITY:aapl")).toMatchObject({ kind: "us", key: "AAPL" });
+    expect(parseListing("security:fx:EURUSD")).toMatchObject({ kind: "venue", mic: "FX", yahoo: null });
+    expect(parseListing("security:^GSPC")).toMatchObject({ kind: "invalid" });
+  });
+
   test("the symbol schema's upper-cased typed keys read as their kind", () => {
     expect(parseListing(symbol.parse("crypto:btc-usd"))).toMatchObject({
       kind: "crypto",

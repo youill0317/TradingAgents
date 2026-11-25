@@ -9,6 +9,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { NET_GUARD } from "../net-guard.js";
 
 /** One -p question with `env` (and no other environment): what the run printed on stderr. */
 async function start(env: Record<string, string>): Promise<string> {
@@ -31,7 +32,15 @@ async function start(env: Record<string, string>): Promise<string> {
   const home = await mkdtemp(join(tmpdir(), "fork-data-start-"));
   try {
     const run = Bun.spawn(
-      [process.execPath, join(import.meta.dir, "../../../src/cli/main.tsx"), "-p", "hi"],
+      // Behind the tests' network guard: the run may reach only the local chat server.
+      [
+        process.execPath,
+        "--preload",
+        NET_GUARD,
+        join(import.meta.dir, "../../../src/cli/main.tsx"),
+        "-p",
+        "hi",
+      ],
       {
         cwd: home,
         env: {
@@ -53,6 +62,7 @@ async function start(env: Record<string, string>): Promise<string> {
       run.exited,
     ]);
     expect({ code, stdout }).toEqual({ code: 0, stdout: "ok\n" });
+    expect(stderr).not.toContain("net-guard:");
     return stderr;
   } finally {
     await server.stop(true);

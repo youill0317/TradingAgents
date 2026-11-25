@@ -1,0 +1,7 @@
+# Copyright 2026 TradingAgents fork contributors
+# SPDX-License-Identifier: Apache-2.0
+# Added in this fork of TradingAgents 1.0.0.
+# For `bun test` only (the executable reads no bunfig.toml): every test file runs behind the network guard,
+# which refuses any request to a host other than 127.0.0.1 or localhost, so no test makes a real call.
+[test]
+preload = ["./test/fork/preload.ts"]

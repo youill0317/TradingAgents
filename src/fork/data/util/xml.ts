@@ -9,7 +9,9 @@
  * expanded). It never throws and never recurses: an end tag that closes nothing is ignored, one that
  * closes an outer element closes the elements left open inside it, anything still open at the end is
  * closed there, and a `<` that starts no tag is text. Names keep their case and prefix; the helpers
- * match a name without a prefix to an element's local name too.
+ * match a name without a prefix to an element's local name too. Reading takes time in proportion to the
+ * text, however the tags nest or fail to close, and attributes are kept in an object with no prototype
+ * (an attribute named `__proto__` is an attribute like any other).
  */
 import { decodeEntities, HTML_ENTITIES } from "./entities.js";
 
@@ -32,8 +34,8 @@ export function parseXml(
   { entities = HTML_ENTITIES }: { entities?: Readonly<Record<string, number>> } = {},
 ): XmlElement {
   const root: XmlElement = { name: "#document", attributes: {}, children: [] };
-  const open: XmlElement[] = [root];
-  const current = () => open[open.length - 1] as XmlElement;
+  const open: Open = { stack: [root], exact: new Map(), folded: new Map() };
+  const current = () => open.stack[open.stack.length - 1] as XmlElement;
   const addText = (raw: string, decode: boolean) => {
     if (!raw) return;
     if (/^\s*$/.test(raw) && /[\r\n]/.test(raw)) return;
@@ -83,17 +85,43 @@ export function parseXml(
     }
     const element: XmlElement = { name: tag.name, attributes: tag.attributes, children: [] };
     current().children.push(element);
-    if (!tag.selfClosing) open.push(element);
+    if (!tag.selfClosing) push(open, element);
     at = tag.end;
   }
   return root;
 }
 
+/**
+ * The elements open, innermost last (the document first), and how many of them carry each name, as
+ * written and in lower case: an end tag that matches none is passed over without a search.
+ */
+type Open = { stack: XmlElement[]; exact: Map<string, number>; folded: Map<string, number> };
+
+function count(names: Map<string, number>, name: string, by: number): void {
+  const next = (names.get(name) ?? 0) + by;
+  if (next > 0) names.set(name, next);
+  else names.delete(name);
+}
+
+function push(open: Open, element: XmlElement): void {
+  open.stack.push(element);
+  count(open.exact, element.name, 1);
+  count(open.folded, element.name.toLowerCase(), 1);
+}
+
 /** Where a declaration (`<!DOCTYPE ...>`, with any internal subset in brackets) ends. */
 function declarationEnd(text: string, from: number): number {
   const close = text.indexOf(">", from);
-  const bracket = text.indexOf("[", from);
-  if (bracket >= 0 && (close < 0 || bracket < close)) {
+  // A subset's bracket is looked for only up to the declaration's `>`, so many declarations read in one pass.
+  const head = close < 0 ? text.length : close;
+  let bracket = -1;
+  for (let at = from; at < head; at++) {
+    if (text.charCodeAt(at) === 91 /* [ */) {
+      bracket = at;
+      break;
+    }
+  }
+  if (bracket >= 0) {
     const subsetEnd = text.indexOf("]", bracket + 1);
     const after = subsetEnd < 0 ? -1 : text.indexOf(">", subsetEnd + 1);
     return after < 0 ? text.length : after + 1;
@@ -103,26 +131,29 @@ function declarationEnd(text: string, from: number): number {
 
 /**
  * Closes the innermost open element named `name` (exactly, else ignoring case) and every element opened
- * inside it; an end tag that matches nothing open is ignored.
+ * inside it; an end tag that matches nothing open is ignored. A search runs only when an element of that
+ * name is open, and every element it passes is closed, so each element is looked at once at most.
  */
-function close(open: XmlElement[], name: string): void {
+function close(open: Open, name: string): void {
+  const { stack } = open;
+  const lower = name.toLowerCase();
+  const exact = open.exact.has(name);
+  if (!exact && !open.folded.has(lower)) return;
   let index = -1;
-  for (let i = open.length - 1; i > 0; i--) {
-    if ((open[i] as XmlElement).name === name) {
+  for (let i = stack.length - 1; i > 0; i--) {
+    const candidate = (stack[i] as XmlElement).name;
+    if (exact ? candidate === name : candidate.toLowerCase() === lower) {
       index = i;
       break;
     }
   }
-  if (index < 0) {
-    const lower = name.toLowerCase();
-    for (let i = open.length - 1; i > 0; i--) {
-      if ((open[i] as XmlElement).name.toLowerCase() === lower) {
-        index = i;
-        break;
-      }
-    }
+  if (index < 1) return;
+  for (let i = stack.length - 1; i >= index; i--) {
+    const closed = (stack[i] as XmlElement).name;
+    count(open.exact, closed, -1);
+    count(open.folded, closed.toLowerCase(), -1);
   }
-  if (index > 0) open.length = index;
+  stack.length = index;
 }
 
 /** A name's first character: a letter, `_` or `:` (or any non-ASCII character). */
@@ -151,7 +182,8 @@ function readTag(
     at++;
   }
   const name = text.slice(nameStart, at);
-  const attributes: Record<string, string> = {};
+  // No prototype: a name such as `__proto__` or `constructor` is stored as an attribute, nothing more.
+  const attributes = Object.create(null) as Record<string, string>;
   while (at < text.length) {
     while (at < text.length && isSpace(text.charCodeAt(at))) at++;
     if (at >= text.length) break;

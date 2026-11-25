@@ -77,7 +77,11 @@ export function htmlToText(html: string): string {
   let pre = 0;
 
   const table = () => tables[tables.length - 1];
-  /** Text into the open cell, else the open table's next cell, else the page. */
+  /**
+   * Text into the open cell, else the open table's next cell, else the page. On the page, a space after a
+   * space or a line's end is dropped (as a browser collapses them across elements), so the page never ends
+   * in more than one space.
+   */
   const write = (text: string) => {
     const open = table();
     if (open) {
@@ -89,7 +93,16 @@ export function htmlToText(html: string): string {
       open.cell += text;
       return;
     }
-    out += text;
+    const last = out.charCodeAt(out.length - 1);
+    out += text.charCodeAt(0) === 32 && (out === "" || last === 32 || last === 10) ? text.slice(1) : text;
+  };
+  /** How many line ends close the page, past a space after them, counting to `most` at most. */
+  const trailingBreaks = (most: number) => {
+    let end = out.length;
+    if (end > 0 && out.charCodeAt(end - 1) === 32) end--;
+    let breaks = 0;
+    while (breaks < most && breaks < end && out.charCodeAt(end - breaks - 1) === 10) breaks++;
+    return breaks;
   };
   /**
    * A block's edge: the page goes on on a new line (`blank`: after a blank line), however many edges meet
@@ -101,21 +114,21 @@ export function htmlToText(html: string): string {
       if (open.cell !== null) open.cell += " ";
       return;
     }
-    let end = out.length;
-    while (end > 0 && out.charCodeAt(end - 1) === 32) end--;
-    let newlines = 0;
-    while (newlines < end && out.charCodeAt(end - newlines - 1) === 10) newlines++;
     const wanted = blank ? 2 : 1;
-    if (newlines < wanted) out += "\n".repeat(wanted - newlines);
+    const breaks = trailingBreaks(wanted);
+    if (breaks < wanted) out += "\n".repeat(wanted - breaks);
   };
-  /** A line break as written (`<br>`): each one counts. Within a cell, a space. */
+  /**
+   * A line break as written (`<br>`): each one counts, up to one blank line (the most the text keeps).
+   * Within a cell, a space.
+   */
   const newLine = () => {
     const open = table();
     if (open) {
       if (open.cell !== null) open.cell += " ";
       return;
     }
-    out += "\n";
+    if (trailingBreaks(2) < 2) out += "\n";
   };
   const endCell = (open: Table) => {
     if (open.cell === null) return;
@@ -126,9 +139,10 @@ export function htmlToText(html: string): string {
   const endRow = (open: Table) => {
     endCell(open);
     if (open.row) {
-      let cells = open.row;
-      while (cells.length && cells[cells.length - 1] === "") cells = cells.slice(0, -1);
-      if (cells.some((cell) => cell !== "")) open.lines.push(cells.join("\t"));
+      // Empty cells at the row's end are left out; a row of empty cells is no line.
+      let last = open.row.length;
+      while (last > 0 && open.row[last - 1] === "") last--;
+      if (last > 0) open.lines.push(open.row.slice(0, last).join("\t"));
     }
     open.row = null;
   };
@@ -278,9 +292,11 @@ function tagEnd(html: string, from: number): number {
     if (code === 62) return at + 1;
     if (code === 34 || code === 39) {
       const close = html.indexOf(String.fromCharCode(code), at + 1);
-      const gt = html.indexOf(">", at + 1);
-      // An unclosed quote runs to the next `>`.
-      if (close < 0) return gt < 0 ? html.length : gt + 1;
+      if (close < 0) {
+        // An unclosed quote runs to the next `>`.
+        const gt = html.indexOf(">", at + 1);
+        return gt < 0 ? html.length : gt + 1;
+      }
       at = close + 1;
       continue;
     }

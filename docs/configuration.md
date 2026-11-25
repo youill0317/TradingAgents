@@ -42,6 +42,23 @@ A complete `config.json`:
 
 Settings come from the command line first, then the environment, then `config.json`. TradingAgents reads no `.env` file: set the variables in your shell, or export them in your shell's profile.
 
+## Public data
+
+Market data comes from free public sources, added one by one (see [FORK.md](../FORK.md)). Some of them ask for a setting, read from the environment, else from a `"data"` object in `credentials.json` under the same name:
+
+```json
+{ "data": { "SEC_USER_AGENT": "Your Name you@example.com", "FRED_API_KEY": "..." } }
+```
+
+| Setting                                                                                                         | For                                                                                                                                                                                                                                                 |
+| --------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SEC_USER_AGENT`                                                                                                | SEC EDGAR (filings, financial statements, insider trades, sector screens): your name and email. SEC's fair-access rule asks every program that reads EDGAR to name its sender this way. It is not a secret, but it names you, so it is never shown. |
+| `FRED_API_KEY`                                                                                                  | FRED, the St. Louis Fed's economic data                                                                                                                                                                                                             |
+| `DART_API_KEY`, `ECOS_API_KEY`, `KOSIS_API_KEY`, `DATA_GO_KR_API_KEY`, `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET` | Korea's OpenDART, the Bank of Korea's ECOS, Statistics Korea's KOSIS, the FSC's data on data.go.kr, Naver's news search                                                                                                                             |
+| `BEA_API_KEY`, `EIA_API_KEY`                                                                                    | the U.S. Bureau of Economic Analysis and Energy Information Administration                                                                                                                                                                          |
+
+A note at the start says when `SEC_USER_AGENT` is not set or holds no email address, and when an entry under `"data"` cannot be used; a note names a setting, never its value. Answers worth keeping are cached in `~/.cache/tradingagents/fork-data` (under `XDG_CACHE_HOME` when it is set), or in `cache/fork-data` in the directory `TRADINGAGENTS_HOME` names.
+
 ## Web search
 
 With `TRADINGAGENTS_WEB_SEARCH` unset, every agent has a `web_search` tool when an Anthropic or OpenAI API key is set, in the environment or stored; a ChatGPT plan's sign-in is not one. It searches with the chat model's provider when that is Anthropic or OpenAI, else with the first of them that has a key, Anthropic first, using that provider's fast model. When the variable names a provider, only that provider's key is used, and there is no `web_search` without it; `off`, or a value that cannot be read, turns it off. Google Search grounding runs only when `TRADINGAGENTS_WEB_SEARCH` names `google` (or `google/<model>`): Google's terms ask that its search suggestions be shown, which a terminal app cannot do. A note at the start says when the setting cannot be read, when the provider it names has no key, when only a Google key is set, and which key pays when the search runs on another provider than the chat model's.

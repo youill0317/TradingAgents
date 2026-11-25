@@ -2,28 +2,32 @@
 // SPDX-License-Identifier: Apache-2.0
 // Added in this fork of TradingAgents 1.0.0.
 /**
- * Records the fork's data-test fixtures from the live sources:
+ * Records the fork's data-test fixtures from the live sources. It is the owner's tool, run on the owner's
+ * own machine; tests never record, and prove this script only against a local stub server.
  *
  *   bun scripts/fork/record-fixtures.ts [--only <source>[,<source>...]] [--dry-run]
+ *                                       [--cases <dir>] [--out <dir>]
  *
- * Each module in scripts/fork/fixture-cases/ exports `cases`: what to read (a URL, or a function given the
- * fork's HTTP client, its yahoo-finance2 client and `yahooAnswer`, which records Yahoo's raw answer to a
- * library call) and where it goes. Every request goes through the fork's own clients, so it is paced,
- * bounded and sent as the app sends it: SEC's hosts with SEC_USER_AGENT when it is set, Yahoo with the
- * library's own User-Agent, other hosts as `TradingAgents-fork-dev/1.0`.
- * Keys come from the environment (or credentials.json's "data"), as the app reads them.
+ * Each module in scripts/fork/fixture-cases/ (or --cases) exports `cases`: what to read (a URL, built from
+ * the settings when it needs a key, or a reading of its own given the fork's HTTP client, its yahoo-finance2
+ * client and `yahooAnswer`, which records Yahoo's raw answer to a library call) and where it goes. Every
+ * request goes through the fork's own clients, so it is paced, bounded and sent as the app sends it: SEC's
+ * hosts with SEC_USER_AGENT when it is set, Yahoo through yahoo-finance2 with the library's own
+ * User-Agent, other hosts as `TradingAgents-fork-dev/1.0`. Keys come from the environment, else
+ * credentials.json's "data" object, as the app reads them; never from a case module.
  *
- * A case writes test/fork/fixtures/<source>/<name>.<ext> and <name>.meta.json (the URL with its keys
- * removed, status, content type, when, bytes). Every configured key is removed from a text answer; a
- * binary answer that holds one is not written. A case that fails writes nothing, so a failed answer never
- * replaces a fixture; files are replaced whole. --dry-run sends nothing and writes nothing: it lists each
- * case, its URL (keys removed) and the files it would write. The exit status is 1 when any case failed.
+ * A case writes test/fork/fixtures (or --out) /<source>/<name>.<ext> and <name>.meta.json (the URL with its
+ * keys removed, status, content type, when, bytes, hand_made: false). Every configured key is removed from a
+ * text answer; a binary answer that holds one is not written. A case that fails writes nothing, so a failed
+ * answer never replaces a fixture; files are replaced whole. --dry-run sends nothing and writes nothing: it
+ * lists each case, its URL (keys removed) and the files it would write. The exit status is 1 when any case
+ * failed, 2 for an option this script does not take.
  */
 import { readdirSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { resolvePaths } from "../../src/config/paths.js";
-import { publicDataConfig, secretsOf } from "../../src/fork/data/config.js";
+import { type PublicDataConfig, publicDataConfig, secretsOf } from "../../src/fork/data/config.js";
 import { forkDeps, type YahooFinanceClient, yahooClient } from "../../src/fork/data/deps.js";
 import type { Http } from "../../src/fork/data/http.js";
 import { holdsSecret, redact, redactUrl } from "../../src/fork/data/redact.js";
@@ -61,8 +65,11 @@ export type FixtureCase = {
   source: string;
   /** Its file name without the extension, and its meta's ("exr-usd-last5"). */
   name: string;
-  /** A URL to read with the fork's HTTP client... */
-  url?: string;
+  /**
+   * A URL to read with the fork's HTTP client, or one built from the settings when it carries a key
+   * (`(config) => \`...&api_key=${config.fredKey}\``)...
+   */
+  url?: string | ((config: PublicDataConfig) => string);
   /** ...or a reading of its own: through the HTTP client, or yahoo-finance2 for Yahoo (`yahooAnswer`). */
   read?: (http: Http, more: ReadTools) => Promise<Recorded>;
   /** The file's name, extension included, when the content type would not give the right one. */
@@ -99,7 +106,7 @@ function textual(contentType: string | undefined, extension: string): boolean {
   );
 }
 
-/** Every case the case modules export, checked for a usable source, name and reading. */
+/** Every case the case modules in `dir` export, checked for a usable source, name and reading. */
 export async function loadCases(dir: string = CASES): Promise<FixtureCase[]> {
   const cases: FixtureCase[] = [];
   for (const file of readdirSync(dir)
@@ -122,6 +129,11 @@ export async function loadCases(dir: string = CASES): Promise<FixtureCase[]> {
     seen.add(where);
   }
   return cases;
+}
+
+/** The URL a case reads, with its keys in it (never said as it is: see redactUrl). */
+function urlOf(one: FixtureCase, config: PublicDataConfig): string | undefined {
+  return typeof one.url === "function" ? one.url(config) : one.url;
 }
 
 /** Yahoo's raw answers to calls made through `fetch` (see YahooAnswer). */
@@ -174,10 +186,12 @@ export async function recordOne(
   http: Http,
   tools: ReadTools,
   secrets: readonly string[],
+  config: PublicDataConfig = {},
 ): Promise<{ file: string; body: Uint8Array; meta: Record<string, string | number | boolean> }> {
   let read: Recorded;
-  if (one.url) {
-    const answer = await http.get(one.url, {
+  const url = urlOf(one, config);
+  if (url) {
+    const answer = await http.get(url, {
       source: one.source,
       ...(one.accept ? { accept: one.accept } : {}),
       ...(one.timeoutMs ? { timeoutMs: one.timeoutMs } : {}),
@@ -185,7 +199,7 @@ export async function recordOne(
     read = {
       body: await answer.bytes(),
       status: answer.status,
-      url: one.url,
+      url,
       ...(answer.headers.get("content-type")
         ? { contentType: answer.headers.get("content-type") as string }
         : {}),
@@ -218,60 +232,90 @@ export async function recordOne(
   return { file, body, meta };
 }
 
-async function main(argv: string[]): Promise<number> {
+/** A run of the recorder: its arguments, and what it reads and writes through. */
+export type RecordRun = {
+  argv: readonly string[];
+  /** Where keys and SEC_USER_AGENT are read (the process's environment, and its home's credentials.json). */
+  env?: NodeJS.ProcessEnv;
+  /** The fetch every request goes through (a stub server's, in a test). */
+  fetch?: typeof globalThis.fetch;
+  /** Lines said, and problems. */
+  out?: (line: string) => void;
+  err?: (line: string) => void;
+};
+
+/** One run of the recorder; it answers the exit status. */
+export async function record(run: RecordRun): Promise<number> {
+  const out = run.out ?? ((line: string) => console.log(line));
+  const err = run.err ?? ((line: string) => console.error(line));
+  const env = run.env ?? process.env;
   const only = new Set<string>();
   let dryRun = false;
+  let casesDir = CASES;
+  let outDir = FIXTURES;
+  const argv = run.argv;
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i] as string;
+    const value = argv[i + 1];
     if (arg === "--dry-run") dryRun = true;
-    else if (arg === "--only" && argv[i + 1]) {
-      for (const source of (argv[++i] as string).split(",")) if (source.trim()) only.add(source.trim());
+    else if (arg === "--only" && value) {
+      for (const source of value.split(",")) if (source.trim()) only.add(source.trim());
+      i++;
+    } else if (arg === "--cases" && value) {
+      casesDir = resolve(value);
+      i++;
+    } else if (arg === "--out" && value) {
+      outDir = resolve(value);
+      i++;
     } else {
-      console.error(`record-fixtures: ${arg} is not an option (--only <source>[,<source>], --dry-run)`);
+      err(
+        `record-fixtures: ${arg} is not an option (--only <source>[,<source>], --dry-run, --cases <dir>, --out <dir>)`,
+      );
       return 2;
     }
   }
-  const all = await loadCases();
+  const all = await loadCases(casesDir);
   const cases = only.size ? all.filter((one) => only.has(one.source)) : all;
   if (!cases.length) {
-    console.error(`record-fixtures: no case${only.size ? ` for ${[...only].join(", ")}` : ""}`);
+    err(`record-fixtures: no case${only.size ? ` for ${[...only].join(", ")}` : ""}`);
     return 1;
   }
-  const { config } = await publicDataConfig(process.env, resolvePaths(process.env));
+  const { config } = await publicDataConfig(env, resolvePaths(env));
   const secrets = secretsOf(config);
   if (dryRun) {
     for (const one of cases) {
+      const url = urlOf(one, config);
       const target = one.file ?? `${one.name}.<ext>`;
-      console.log(
-        `${one.source}/${target} and ${one.source}/${one.name}.meta.json <- ${one.url ? redactUrl(one.url, secrets) : "(its own reading)"}`,
+      out(
+        `${one.source}/${target} and ${one.source}/${one.name}.meta.json <- ${url ? redactUrl(url, secrets) : "(its own reading)"}`,
       );
     }
     return 0;
   }
   // No disk cache: a fixture is what the source answers now.
   const { cacheDir: _cache, ...live } = config;
-  const deps = forkDeps(live, { userAgent: DEV_USER_AGENT });
+  const deps = forkDeps(live, { userAgent: DEV_USER_AGENT, ...(run.fetch ? { fetch: run.fetch } : {}) });
   const tools: ReadTools = { yahoo: deps.yahoo, yahooAnswer: yahooAnswerer(deps.fetch) };
   let failed = 0;
   for (const one of cases) {
     const where = `${one.source}/${one.name}`;
     try {
-      const { file, body, meta } = await recordOne(one, deps.http, tools, secrets);
-      const dir = join(FIXTURES, one.source);
+      const { file, body, meta } = await recordOne(one, deps.http, tools, secrets, live);
+      const dir = join(outDir, one.source);
       await mkdir(dir, { recursive: true });
       await writeAtomic(join(dir, file), body);
       await writeAtomic(join(dir, `${one.name}.meta.json`), `${JSON.stringify(meta, null, 2)}\n`);
-      console.log(
+      out(
         `${one.source}/${file}: ${meta.status} ${meta.content_type || "(no content type)"}, ${meta.bytes} bytes`,
       );
     } catch (error) {
       failed++;
       const said = error instanceof Error ? error.message : String(error);
-      console.error(`FAILED ${where}: ${redact(said, secrets)} (its fixture, if any, is kept as it was)`);
+      err(`FAILED ${where}: ${redact(said, secrets)} (its fixture, if any, is kept as it was)`);
     }
   }
-  console.log(`record-fixtures: ${cases.length - failed} recorded, ${failed} failed`);
+  out(`record-fixtures: ${cases.length - failed} recorded, ${failed} failed`);
   return failed ? 1 : 0;
 }
 
-if (import.meta.main) process.exitCode = await main(process.argv.slice(2));
+if (import.meta.main) process.exitCode = await record({ argv: process.argv.slice(2) });

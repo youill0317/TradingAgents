@@ -12,7 +12,9 @@ or supported by Tauric Research.
 - Quotes and daily price history come from Yahoo, and prediction-market odds from Polymarket. Free
   public-data providers will be added; until one serves a capability, asking for it answers that it is not
   available in this setup. The built-in agents and skills are offered as the data they need becomes
-  available.
+  available. Their settings, SEC's User-Agent and the agencies' keys, are read from the environment or
+  from a `"data"` object in `credentials.json` ([configuration](docs/configuration.md#public-data)); how the
+  providers are built is in [docs/fork/data-architecture.md](docs/fork/data-architecture.md).
 - A `web_search` tool searches the web through Anthropic's or OpenAI's own search when a key for one of
   them is set (the chat model's provider first when it is one of them), or through Google Search grounding
   when `TRADINGAGENTS_WEB_SEARCH` names Google.
@@ -144,6 +146,9 @@ this fork.
    sh scripts/fork/check-no-tauric.sh dist-bin/tradingagents <scratch dir>
    sh scripts/fork/check-notices.sh main
    ```
+
+   The tests make no real call: `bunfig.toml` runs them behind a network guard (`test/fork/preload.ts`)
+   that fails any test reaching a host other than 127.0.0.1 or localhost.
 
    Then push the work branch, and no tags: `git push origin claude/dazzling-fermat-ik4q5y`. The Fork
    workflow runs the same checks on each push to it and each pull request into it.

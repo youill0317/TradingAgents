@@ -13,6 +13,7 @@ import {
   FORK_REQUEST_MS,
   Pacer,
   RETRY_PAUSE_MS,
+  requestTimeout,
   retryAfterMs,
   ruleFor,
 } from "../../../src/fork/data/http.js";
@@ -95,6 +96,24 @@ describe("answers", () => {
     expect(error.message).toBe("SEC EDGAR answered more than 1000 bytes.");
   });
 
+  test("the default bound fits the largest answer measured (SEC companyfacts, 9.3 MB) and stops a runaway", async () => {
+    const largest = 9_337_094;
+    const big = await client(scripted(ok("x".repeat(largest))).fetch).http.bytes(
+      "https://data.sec.gov/api/xbrl/companyfacts/CIK0001099219.json",
+      { source: "SEC EDGAR" },
+    );
+    expect(big.length).toBe(largest);
+    const runaway = await failure(
+      client(scripted(ok("x".repeat(16_777_217))).fetch).http.bytes("https://data.sec.gov/x", {
+        source: "SEC EDGAR",
+      }),
+    );
+    expect([runaway.kind, runaway.message]).toEqual([
+      "unavailable",
+      "SEC EDGAR answered more than 16777216 bytes.",
+    ]);
+  });
+
   test("statuses the caller reads itself are answered", async () => {
     const { fetch } = scripted(
       new Response('{"error_message":"Bad Request.  The series does not exist."}', { status: 400 }),
@@ -130,6 +149,25 @@ describe("failures, by kind", () => {
       client(scripted(status(404)).fetch).http.json(url, { source: "X", notFound: "invalid" }),
     );
     expect([invalid.kind, invalid.details.retry]).toEqual(["invalid", "change_request"]);
+  });
+
+  test("SEC's 404 is mapped by its status before its body, an S3 XML page, is read as anything", async () => {
+    // The saved shape of data.sec.gov's answer for a CIK it does not have (request and host ids shortened).
+    const body = `<?xml version="1.0" encoding="UTF-8"?>\n<Error><Code>NoSuchKey</Code><Message>The specified key does not exist.</Message><Key>submissions/CIK9999999999.json</Key><RequestId>R01</RequestId><HostId>h</HostId></Error>`;
+    const { fetch } = scripted(
+      new Response(body, { status: 404, headers: { "content-type": "application/xml" } }),
+    );
+    const error = await failure(
+      client(fetch).http.json("https://data.sec.gov/submissions/CIK9999999999.json", {
+        source: "SEC EDGAR",
+        notFoundMessage: "SEC EDGAR has no filer with CIK 9999999999",
+      }),
+    );
+    expect([error.kind, error.message, error.details.status]).toEqual([
+      "no_data",
+      "SEC EDGAR has no filer with CIK 9999999999",
+      404,
+    ]);
   });
 
   test("401 and 403 are refusals; SEC's 403 explains its User-Agent rule without quoting it", async () => {
@@ -250,6 +288,15 @@ describe("waits and retries", () => {
     expect(twice.requests).toHaveLength(2);
   });
 
+  test("each class of source has its deadline: the ECB's hosts the slow one; a caller's own wins", () => {
+    expect(requestTimeout("data.sec.gov")).toBe(FORK_REQUEST_MS.api);
+    expect(requestTimeout("markets.newyorkfed.org")).toBe(30_000);
+    expect(requestTimeout("data-api.ecb.europa.eu")).toBe(FORK_REQUEST_MS.slow);
+    expect(FORK_REQUEST_MS.slow).toBeGreaterThan(21_300);
+    expect(requestTimeout("data-api.ecb.europa.eu", 5_000)).toBe(5_000);
+    expect(requestTimeout("www.sec.gov", FORK_REQUEST_MS.bulk)).toBe(60_000);
+  });
+
   test("a request that hangs ends at its deadline, unavailable and not retried", async () => {
     const { fetch, requests } = scripted("hang");
     const error = await failure(
@@ -336,7 +383,7 @@ describe("the rates services publish", () => {
     expect(results[7]).toEqual({ kind: "rate_limited", retryAfterMs: 35_000 });
     expect(requests).toHaveLength(7);
     expect(timer.slept).toEqual([5_000, 10_000, 15_000, 20_000, 25_000, 30_000]);
-    expect(FORK_REQUEST_MS.read).toBe(30_000);
+    expect(FORK_REQUEST_MS.api).toBe(30_000);
   });
 
   test("GDELT: identical requests in flight share one answer; one caller cancelling leaves the others theirs", async () => {
@@ -415,6 +462,17 @@ describe("who is named, and what is never said", () => {
       "no series at https://ecos.bok.or.kr/api/StatisticSearch/***/json/kr/1/10 (key ***, ***)",
     );
     expect(client(scripted(ok("")).fetch).http.redact(`api_key=${KEY}`)).toBe("api_key=***");
+  });
+
+  test("Yahoo is never asked through this client: its address is refused before any request", async () => {
+    const { fetch, requests } = scripted(ok("{}"));
+    for (const url of [
+      "https://query2.finance.yahoo.com/v7/finance/quote?symbols=AAPL",
+      "https://finance.yahoo.com/quote/AAPL",
+    ]) {
+      await expect(client(fetch).http.get(url, { source: "Yahoo" })).rejects.toThrow("yahoo-finance2");
+    }
+    expect(requests).toEqual([]);
   });
 
   test("something that is not a URL is the caller's mistake, said without echoing it", async () => {

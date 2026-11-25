@@ -70,6 +70,8 @@ export type FixtureMeta = {
   recorded_at?: string;
   bytes?: number;
   hand_made?: boolean;
+  /** What a hand-made fixture is made from. */
+  note?: string;
 };
 
 /** The metadata beside fixture `file`, when it has one. */

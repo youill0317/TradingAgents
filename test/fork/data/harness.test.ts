@@ -10,7 +10,16 @@
  */
 import { describe, expect, test } from "bun:test";
 import { forkProviders } from "../../../src/fork/data/index.js";
-import { buildTools, fixedClock, fixtureFetch, readCheck, YAHOO_AAPL } from "./harness.js";
+import {
+  buildTools,
+  FIXTURES,
+  fixedClock,
+  fixture,
+  fixtureFetch,
+  fixtureMeta,
+  readCheck,
+  YAHOO_AAPL,
+} from "./harness.js";
 
 const clock = fixedClock("2026-11-25T22:00:00Z");
 
@@ -131,14 +140,34 @@ describe("the harness itself", () => {
     expect(((await answer.json()) as { quoteResponse: unknown }).quoteResponse).toBeDefined();
   });
 
-  test("a recorded error answer is served with its recorded status", async () => {
-    const fetch = fixtureFetch([{ match: /D\.XXX\.EUR/, file: "ecb/exr-unknown-currency.json" }]);
+  test("an answer written inline is served with the status and headers given", async () => {
+    // Hand-made in the ECB's documented problem+json form (its 404 for a series it does not have).
+    const fetch = fixtureFetch([
+      {
+        match: /D\.XXX\.EUR/,
+        body: JSON.stringify({ status: 404, title: "Not Found", detail: "No Series was returned" }),
+        status: 404,
+        headers: { "content-type": "application/problem+json" },
+      },
+    ]);
     const answer = await fetch(
       "https://data-api.ecb.europa.eu/service/data/EXR/D.XXX.EUR.SP00.A?format=csvdata&lastNObservations=1",
     );
     expect(answer.status).toBe(404);
     expect(answer.headers.get("content-type")).toBe("application/problem+json");
     expect(((await answer.json()) as { title: string }).title).toBe("Not Found");
+  });
+
+  test("every fixture under test/fork/fixtures has its meta, and a hand-made one says what it is made from", () => {
+    const files = [...new Bun.Glob("*/*").scanSync(FIXTURES)].filter((file) => !file.endsWith(".meta.json"));
+    expect(files.length).toBeGreaterThan(0);
+    for (const file of files) {
+      const meta = fixtureMeta(file);
+      expect(meta, file).toBeDefined();
+      expect(meta?.bytes, file).toBe(fixture(file).length);
+      if (meta?.hand_made) expect(meta.note, file).toStartWith("Hand-made");
+      else expect([typeof meta?.status, meta?.url?.startsWith("https://")], file).toEqual(["number", true]);
+    }
   });
 
   test("the read check logs each field read, and which held nothing", () => {

@@ -6,5 +6,6 @@
   "content_type": "application/json;charset=utf-8",
   "recorded_at": "2026-11-25T22:00:00.000Z",
   "bytes": 1245,
-  "hand_made": true
+  "hand_made": true,
+  "note": "Hand-made, not recorded: Yahoo's v8 chart answer (1d bars, adjclose) in the shape yahoo-finance2 4.0.6's chart module reads, with invented values for AAPL's sessions of 2026-11-16 to 2026-11-25; the first bar's adjclose is below its close, as after a dividend."
 }

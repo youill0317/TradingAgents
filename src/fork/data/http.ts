@@ -4,10 +4,11 @@
 /**
  * The one HTTP client every public-data source reads through. Yahoo is the exception: yahoo-finance2
  * makes its own requests with its own User-Agent, configured as upstream's Yahoo provider configures it
- * (deps.ts). A request here:
+ * (deps.ts), and a Yahoo address given here is refused (Yahoo answers 429 to any other User-Agent). A
+ * request here:
  *
  * - carries the caller's signal and a deadline covering the answer's body too (hang protection, the way
- *   upstream bounds each Yahoo request): FORK_REQUEST_MS by kind of read, or the caller's own;
+ *   upstream bounds each Yahoo request): FORK_REQUEST_MS by class of source, or the caller's own;
  * - waits for its turn where a service publishes a rate (HOST_RULES: SEC's 10 a second shared by its
  *   hosts, FRED's 120 a minute, GDELT's one per 5 seconds, whose identical requests in flight share one
  *   answer), and fails as rate_limited, without waiting, when its turn would come after its deadline;
@@ -28,16 +29,39 @@ import { DataError, type DataErrorDetails, type DataErrorKind } from "../../data
 import { redact } from "./redact.js";
 import { abortable, REAL_TIMER, type Timer } from "./timer.js";
 
-/** How long one request may take, its body included, by the kind of read: hang protection only. */
+/**
+ * How long one request may take, its body included, by class of source: hang protection only, never a
+ * limit on what is read. Upstream's bound for one Yahoo request (REQUEST_MS.yahoo, 30 s) is the base; every
+ * answer measured from these sources fits it many times over.
+ */
 export const FORK_REQUEST_MS = {
-  /** An API answer or a file of ordinary size: upstream's bound for one Yahoo request (30 s). */
-  read: REQUEST_MS.yahoo,
   /**
-   * A large file (a company's complete XBRL facts, a registry's ZIP) or a source measured slow (the ECB took
-   * 21 s for one day of every currency): twice that.
+   * An API answer or a file of ordinary size, the default: SEC's data.sec.gov (0.07-1.4 s, a 9.3 MB
+   * companyfacts included), the Treasury's yield-curve CSVs, the New York Fed's rates, FRED's API,
+   * Wikipedia's lists (0.1-1.0 s); GDELT's DOC API and SEC's www.sec.gov files likewise.
    */
+  api: REQUEST_MS.yahoo,
+  /**
+   * A source measured slow, the default for its hosts (SLOW_HOSTS): the ECB's data API took 1.1-7.4 s for
+   * one series and 21.3 s for every currency's latest rate.
+   */
+  slow: 2 * REQUEST_MS.yahoo,
+  /** A large document read whole when its source asks for it: a filing's primary document, an archive. */
   bulk: 2 * REQUEST_MS.yahoo,
 } as const;
+
+/** Hosts whose requests default to FORK_REQUEST_MS.slow. */
+export const SLOW_HOSTS: ReadonlySet<string> = new Set(["data-api.ecb.europa.eu"]);
+
+/** The deadline of a request to `host`: the caller's (`given`), else its class's. */
+export function requestTimeout(host: string, given?: number): number {
+  return given ?? (SLOW_HOSTS.has(host.toLowerCase()) ? FORK_REQUEST_MS.slow : FORK_REQUEST_MS.api);
+}
+
+/** Yahoo's hosts: read through yahoo-finance2 (deps.yahoo), never through this client. */
+function isYahoo(host: string): boolean {
+  return /(^|\.)yahoo\.com$/i.test(host);
+}
 
 /** The pause before the one retry of a transient failure. */
 export const RETRY_PAUSE_MS = 1_000;
@@ -115,7 +139,10 @@ export type HttpOptions = {
   /** The source as people read it ("SEC EDGAR"): its errors name it. */
   source: string;
   signal?: AbortSignal | undefined;
-  /** The request's deadline, its body included; FORK_REQUEST_MS.read unless given. */
+  /**
+   * The request's deadline, its body included: FORK_REQUEST_MS.slow for SLOW_HOSTS, else
+   * FORK_REQUEST_MS.api, unless given (FORK_REQUEST_MS.bulk for a large document).
+   */
   timeoutMs?: number;
   headers?: Readonly<Record<string, string>>;
   /** What a 404 (or 410) means for this request: no_data unless given. */
@@ -185,7 +212,7 @@ export function createHttp(deps: HttpDeps): Http {
     retried: boolean,
   ): Promise<Opened> {
     const { source, signal } = options;
-    const timeoutMs = options.timeoutMs ?? FORK_REQUEST_MS.read;
+    const timeoutMs = options.timeoutMs ?? FORK_REQUEST_MS.api;
     if (rule) {
       const turn = pacer.take(rule, timer.now(), timeoutMs);
       if (!turn.taken) {
@@ -341,13 +368,19 @@ export function createHttp(deps: HttpDeps): Http {
     return reading(status, headers, async () => body, options.source);
   }
 
-  const get = async (url: string, options: HttpOptions): Promise<Answer> => {
+  const get = async (url: string, given: HttpOptions): Promise<Answer> => {
     let host: string;
     try {
       host = new URL(url).hostname;
     } catch {
       throw new Error("the data client was given something that is not a URL");
     }
+    if (isYahoo(host)) {
+      throw new Error(
+        "Yahoo is read through yahoo-finance2 (deps.yahoo), with its own User-Agent, never here",
+      );
+    }
+    const options: HttpOptions = { ...given, timeoutMs: requestTimeout(host, given.timeoutMs) };
     const rule = ruleFor(host);
     if (rule?.coalesce) return shared(url, rule, options);
     return answerOf(await attempt(url, rule, options, false), options);

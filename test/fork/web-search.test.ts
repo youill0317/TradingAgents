@@ -21,6 +21,7 @@ import { chooseWebSearch, readChoice, webSearchFor } from "../../src/fork/web-se
 import { webSearchTool, webSearchTools } from "../../src/fork/web-search/tool.js";
 import { citationsOf, EvidenceStore } from "../../src/tools/evidence-store.js";
 import { ToolRegistry } from "../../src/tools/registry.js";
+import { NET_GUARD } from "./net-guard.js";
 
 type Sent = { url: string; headers: Headers; body: Record<string, unknown> };
 /** A JSON object as a provider sends one. */
@@ -1168,7 +1169,9 @@ describe("a session's start, run from source with no network", () => {
     });
     const home = await mkdtemp(join(tmpdir(), "web-search-start-"));
     try {
-      const run = Bun.spawn([process.execPath, join(import.meta.dir, "../../src/cli/main.tsx"), "-p", "hi"], {
+      // The run is behind the same network guard as the tests: it may reach only the local chat server.
+      const main = join(import.meta.dir, "../../src/cli/main.tsx");
+      const run = Bun.spawn([process.execPath, "--preload", NET_GUARD, main, "-p", "hi"], {
         cwd: home,
         env: {
           PATH: process.env.PATH ?? "",
@@ -1188,6 +1191,7 @@ describe("a session's start, run from source with no network", () => {
         run.exited,
       ]);
       expect({ code, stdout }).toEqual({ code: 0, stdout: "ok\n" });
+      expect(stderr).not.toContain("net-guard:");
       return { stderr, requests };
     } finally {
       await server.stop(true);
