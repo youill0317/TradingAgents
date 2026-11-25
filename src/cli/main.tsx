@@ -38,6 +38,7 @@ import {
   SessionError,
   savedRoute,
 } from "../engine/index.js";
+import { webSearchSetup } from "../fork/web-search/setup.js";
 import { EXIT, runHeadless } from "../headless/run.js";
 import { type Args, EXIT_USAGE, misuseOf, parse, USAGE } from "./args.js";
 import type { ChatControls } from "./ChatApp.js";
@@ -216,6 +217,7 @@ async function main(argv: string[]): Promise<number> {
   const runOn = async (chosen: Settings & { model: ModelRoute }): Promise<RunsOn> => {
     const { model } = chosen;
     const context = await resolveContextWindow(model, { chatgptAuthPath: paths.chatgptAuth });
+    const webSearch = await webSearchSetup(chosen, process.env, paths);
     const build: EngineBuilder = (init) =>
       createEngine({
         model,
@@ -229,6 +231,7 @@ async function main(argv: string[]): Promise<number> {
         dataDir: paths.home,
         chatgptAuthPath: paths.chatgptAuth,
         secrets: liveKeys,
+        ...(webSearch ? { webSearch } : {}),
         // A question the agent asks needs a person to answer it: none is there in a headless run.
         asks: !headless,
         ...(catalog ? { catalog } : {}),

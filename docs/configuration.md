@@ -41,5 +41,8 @@ A complete `config.json`:
 | `TRADINGAGENTS_SYNC`                                                                              | `on` or `off`, over the setting in `config.json`                                   |
 | `TRADINGAGENTS_HOME`                                                                              | one directory for configuration and data                                           |
 | `TRADINGAGENTS_NO_UPDATE_CHECK`                                                                   | any non-empty value turns off the check for a newer release                        |
+| `TRADINGAGENTS_WEB_SEARCH`                                                                        | `off`, or `web_search`'s provider (and model): `anthropic`, `openai/gpt-6-luna`    |
 
 Settings come from the command line first, then the environment, then `config.json`.
+
+Every agent has a `web_search` tool when a key for Anthropic, OpenAI or Google is set: it searches with the chat model's provider when that is one of them, else with the first of them that has a key, using that provider's fast model. Each call is a paid request to that provider.

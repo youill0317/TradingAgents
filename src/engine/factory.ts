@@ -17,6 +17,7 @@ import { PolymarketClient } from "../data/polymarket/client.js";
 import { polymarketProvider } from "../data/polymarket/provider.js";
 import { CAPABILITY_LABELS, type Providers, route } from "../data/router.js";
 import { yahooProvider } from "../data/yahoo/provider.js";
+import { type WebSearchSetup, webSearchTools } from "../fork/web-search/tool.js";
 import { ChatGPTAuth } from "../models/chatgpt-auth.js";
 import { type ProviderDeps, providerOf } from "../models/providers.js";
 import { computeTools, dataTools } from "../tools/catalog.js";
@@ -44,6 +45,8 @@ type EngineSettings = {
   chatgptAuthPath?: string;
   /** Every key the settings found, kept out of what the model's client says. */
   secrets?: readonly string[];
+  /** The provider search every agent's web_search runs on; no web_search without one (this fork). */
+  webSearch?: WebSearchSetup;
   /** Where notes, decisions and lessons are kept across sessions; no memory when unset. */
   dataDir?: string;
   /** The session to continue, and where it left off. */
@@ -156,11 +159,15 @@ export function createEngine(settings: EngineSettings): Engine {
   const hasMarketData = served.has("priceHistory");
   const missing = [...new Set(offered.map(([capability]) => capability))].filter((c) => !served.has(c));
   const registry = new ToolRegistry(tools);
+  const web = webSearchTools(settings);
 
   // The main agent thinks: it gets that mode's sampling, and the server is told to think when it can be.
   const main: AgentSpec = {
     name: "main",
-    system: mainPrompt({ missing: missing.map((capability) => CAPABILITY_LABELS[capability]) }),
+    system: mainPrompt({
+      missing: missing.map((capability) => CAPABILITY_LABELS[capability]),
+      web: web.length > 0,
+    }),
     tools: tools.map((tool) => tool.name),
     // The question's limits are applied by the engine for each question.
     caps: { steps: limits.question.steps },
@@ -194,7 +201,7 @@ export function createEngine(settings: EngineSettings): Engine {
     registry,
     core: (() => {
       const compute = computeTools();
-      return [...compute, evidenceTool([...tools, ...compute])];
+      return [...compute, ...web, evidenceTool([...tools, ...compute, ...web])];
     })(),
     main,
     agents,
