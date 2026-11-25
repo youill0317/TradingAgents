@@ -16,13 +16,9 @@ export const credentialKey = z
   .trim()
   .min(KEYS.minChars)
   .refine((value) => !/[\r\n]/.test(value));
-/** The keys credentials.json keeps: the compatible server's (`model`) and each hosted provider's, Tauric's among them. */
+/** The keys credentials.json keeps: the compatible server's (`model`) and each hosted provider's. */
 export type CredentialName = "model" | HostedProvider;
-export const CREDENTIAL_NAMES: readonly CredentialName[] = [
-  "tauric",
-  "model",
-  ...HOSTED_PROVIDERS.filter((provider) => provider !== "tauric"),
-];
+export const CREDENTIAL_NAMES: readonly CredentialName[] = ["model", ...HOSTED_PROVIDERS];
 const credentialFields = Object.fromEntries(CREDENTIAL_NAMES.map((name) => [name, credentialKey]));
 type FileCredentials = { [N in CredentialName]?: string };
 

@@ -30,7 +30,7 @@ export type Block = BlockBody & { gap: number };
 
 type BlockBody =
   /** The welcome block, written once before anything else; `news`: its one line of news, if any. */
-  | { id: string; kind: "header"; version: string; model: string; keyed: boolean; news?: string }
+  | { id: string; kind: "header"; version: string; model: string; news?: string }
   | { id: string; kind: "question"; text: string }
   /** Lines a command wrote (its output), shown as one quiet block; `links` on a row of their own after them. */
   | { id: string; kind: "lines"; lines: string[]; links?: Link[] }
@@ -113,7 +113,7 @@ export type GroupedCall = {
 
 /**
  * The sources a group's calls were answered by, in the order first used: a call that failed answered
- * nothing, and a source named after others failed ("Yahoo, after Tauric failed") counts as itself.
+ * nothing, and a source named after others failed ("Yahoo, after another source failed") counts as itself.
  */
 export function groupSources(calls: readonly GroupedCall[]): string[] {
   const named = calls.flatMap((call) =>
@@ -325,7 +325,6 @@ type LocalHeader = {
   type: "local.header";
   version: string;
   model: string;
-  keyed: boolean;
   news?: string | undefined;
 };
 export type LocalAction = StreamFailure | LocalNotice | LocalQuestion | LocalLines | LocalList | LocalHeader;
@@ -677,7 +676,6 @@ export function reduceTranscript(
           kind: "header",
           version: action.version,
           model: action.model,
-          keyed: action.keyed,
           ...(action.news ? { news: action.news } : {}),
         });
       case "local.question":

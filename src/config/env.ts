@@ -17,15 +17,12 @@ export const ENV = {
   baseURL: envName("BASE_URL"),
   model: envName("MODEL"),
   modelKey: envName("MODEL_API_KEY"),
-  tauricKey: "TAURIC_API_KEY",
-  sync: envName("SYNC"),
   /** Set to anything: no check for a newer release. */
   noUpdateCheck: envName("NO_UPDATE_CHECK"),
 } as const;
 
 /** Where each hosted provider's key is looked for in the environment, in order: the first set is used. */
 export const KEY_VARS: { readonly [P in HostedProvider]: readonly string[] } = {
-  tauric: [ENV.tauricKey],
   openai: ["OPENAI_API_KEY"],
   anthropic: ["ANTHROPIC_API_KEY"],
   google: ["GEMINI_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY", "GOOGLE_API_KEY"],

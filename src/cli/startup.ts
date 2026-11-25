@@ -109,6 +109,6 @@ export function setupHelp(): string {
     app: APP_NAME,
     baseUrlVar: ENV.baseURL,
     modelVar: ENV.model,
-    providers: HOSTED_PROVIDERS.filter((provider) => provider !== "tauric"),
+    providers: HOSTED_PROVIDERS,
   });
 }

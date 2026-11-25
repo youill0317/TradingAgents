@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 /**
  * What the tools can ask for, one interface per capability, with result types of our own. Providers
- * (data/tauric, data/yahoo, data/polymarket) implement the capabilities they offer; the router
+ * (data/yahoo, data/polymarket) implement the capabilities they offer; the router
  * (data/router.ts) picks among them by the routing table (data/routes.ts). Nothing above data/
  * knows which provider answered except through `source` and `notes` on each result.
  */
@@ -625,29 +625,6 @@ export interface CrossSections {
   ): Promise<Sourced<CrossSection>>;
 }
 
-// Tauric AI's synthesis -----------------------------------------------------------------------
-
-/** A piece of Tauric AI's writing: when it was written, whether a later version replaced it, and the content. */
-export type Synthesis = {
-  instrument?: Instrument | null;
-  /** The session or date it is for, when it says. */
-  for_date: string | null;
-  generated_at: string | null;
-  superseded: boolean | null;
-  /** The research report's stance on the expected 12-month return, when it has one. */
-  stance: string | null;
-  content: unknown;
-};
-export interface Syntheses {
-  /** One security's news digest, or the market's when no symbol is given. */
-  digest(symbol: string | undefined, call?: Call): Promise<Sourced<Synthesis>>;
-  thesis(symbol: string, call?: Call): Promise<Sourced<Synthesis>>;
-  /** The latest weekly themes across the news, largest first. */
-  themes(call?: Call): Promise<Sourced<Synthesis>>;
-  /** The latest daily research report on a covered security. */
-  research(symbol: string, call?: Call): Promise<Sourced<Synthesis>>;
-}
-
 // Technicals -----------------------------------------------------------------------------------
 
 /**
@@ -849,7 +826,6 @@ export type Capabilities = {
   profiles: Profiles;
   ownership: Ownership;
   corporateActions: CorporateActions;
-  syntheses: Syntheses;
   crossSections: CrossSections;
   technicals: Technicals;
   macroSeries: MacroSeries;
@@ -869,7 +845,6 @@ export const METHODS: { readonly [Name in Capability]: readonly (keyof Capabilit
   profiles: ["profile", "analyst", "calendar"],
   ownership: ["transactions", "holders"],
   corporateActions: ["list"],
-  syntheses: ["digest", "thesis", "themes", "research"],
   crossSections: ["financials"],
   technicals: ["latest"],
   macroSeries: ["search", "observations"],

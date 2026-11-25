@@ -6,8 +6,8 @@
 # - it carries React's production build;
 # - it prints its version and help, and answers one question (-p) from an OpenAI-compatible server, here a
 #   stub this script starts with Node;
-# - it reads no .env or bunfig.toml where it runs (a loaded .env would turn sync on; a loaded bunfig.toml
-#   would print first).
+# - it reads no .env or bunfig.toml where it runs (a loaded .env would name a home that is not absolute; a
+#   loaded bunfig.toml would print first).
 set -eu
 bin=$(cd "$(dirname "$1")" && pwd)/$(basename "$1")
 scratch=$2
@@ -41,7 +41,7 @@ stub=$!
 trap 'kill "$stub" 2>/dev/null || true' EXIT
 for _ in 1 2 3 4 5 6 7 8 9 10; do [ -s "$scratch/port" ] && break; sleep 1; done
 answer=$(TRADINGAGENTS_HOME="$scratch/home" TRADINGAGENTS_BASE_URL="http://127.0.0.1:$(cat "$scratch/port")/v1" \
-	TRADINGAGENTS_MODEL=stub TRADINGAGENTS_SYNC=off TRADINGAGENTS_NO_UPDATE_CHECK=1 "$bin" -p "Say the smoke answer.")
+	TRADINGAGENTS_MODEL=stub TRADINGAGENTS_NO_UPDATE_CHECK=1 "$bin" -p "Say the smoke answer.")
 case $answer in
 *"The smoke answer."*) ;;
 *)
@@ -53,12 +53,12 @@ esac
 dir="$scratch/cwd"
 mkdir -p "$dir"
 cd "$dir"
-echo TRADINGAGENTS_SYNC=on >.env
+echo TRADINGAGENTS_HOME=not-absolute >.env
 echo 'preload = ["./preload.js"]' >bunfig.toml
 echo 'console.log("preloaded")' >preload.js
-out=$(TRADINGAGENTS_HOME="$dir/home" "$bin" sync status)
+out=$(HOME="$dir" "$bin" sessions)
 case $out in
-"Sync is not set"*) ;;
+"No sessions yet."*) ;;
 *)
 	printf '%s\n' "$out" >&2
 	exit 1

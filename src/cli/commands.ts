@@ -11,7 +11,7 @@ import { errorText, message } from "../contracts/index.js";
 import { CHANGELOG } from "./changelog.generated.js";
 import type { Copied } from "./clipboard.js";
 import { BACK, type FormUI } from "./form/form-ui.js";
-import { type Link, REPO, SITE } from "./links.js";
+import { type Link, REPO } from "./links.js";
 import type { List, ListSection } from "./list.js";
 import { ranked } from "./match.js";
 import { homePath } from "./output.js";
@@ -26,11 +26,8 @@ export type SessionInfo = {
   provider: string;
   contextWindow?: number;
   session?: string;
-  /** Where data comes from: Tauric with a key, else Yahoo prices only. */
+  /** Where data comes from. */
   data: string;
-  /** Whether a Tauric API key is set. */
-  tauricKey: boolean;
-  sync: string;
   /** The agents and skills the session may offer, with where each comes from. */
   agents?: readonly CatalogItem[];
   skills?: readonly CatalogItem[];
@@ -110,13 +107,13 @@ export const COMMANDS: readonly Command[] = [
             { heading: message("app.helpKeys"), rows: KEYS.map(([name, text]) => ({ name, text })) },
           ],
         },
-        [REPO, SITE],
+        [REPO],
       );
     },
   },
   {
     name: "status",
-    summary: "model, data, sync and session",
+    summary: "model, data and session",
     whileRunning: true,
     run(context) {
       const { info } = context;
@@ -124,7 +121,6 @@ export const COMMANDS: readonly Command[] = [
         ["model", `${info.model} (${info.provider})`],
         ["context", info.contextWindow ? message("app.tokens", { count: info.contextWindow }) : undefined],
         ["data", info.data],
-        ["sync", info.sync],
         ["session", info.session],
         ["version", info.version],
       ];
@@ -148,7 +144,7 @@ export const COMMANDS: readonly Command[] = [
   },
   {
     name: "resume",
-    summary: "resume an earlier session, here or in your Tauric account",
+    summary: "resume an earlier session",
     whileRunning: false,
     run(context) {
       context.resume();
@@ -164,7 +160,7 @@ export const COMMANDS: readonly Command[] = [
   },
   {
     name: "login",
-    summary: "connect a provider, or add a Tauric API key",
+    summary: "connect a provider",
     whileRunning: false,
     run(context) {
       context.setup("login");

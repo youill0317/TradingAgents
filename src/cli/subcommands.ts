@@ -1,7 +1,7 @@
 // Copyright 2026 Tauric Research
 // SPDX-License-Identifier: Apache-2.0
 /**
- * The commands besides a question: login, logout, sync, sessions (and deleting one), key and update.
+ * The commands besides a question: login, logout, sessions (and deleting one), key and update.
  * Each returns its exit code.
  */
 import { createInterface } from "node:readline";
@@ -10,14 +10,12 @@ import {
   type CredentialName,
   ENV,
   KEY_VARS,
-  loadSettings,
   type Paths,
   saveCredential,
   saveModel,
-  saveSync,
 } from "../config/index.js";
 import { APP_NAME, errorText, type HostedProvider, message, VERSION } from "../contracts/index.js";
-import { allSessions, chatgptAuth, deleteSession, SessionError, tauricSessions } from "../engine/index.js";
+import { chatgptAuth, deleteSession, listSessions, SessionError } from "../engine/index.js";
 import { EXIT } from "../headless/run.js";
 import { EXIT_USAGE, USAGE } from "./args.js";
 import { homePath, print, toErr, toOut } from "./output.js";
@@ -73,44 +71,12 @@ export async function logoutChatGPT(paths: Paths): Promise<number> {
   return print(message(result === "revoked" ? "chatgpt.signedOut" : "chatgpt.signedOutUnconfirmed"));
 }
 
-export async function sync(choice: string | undefined, paths: Paths): Promise<number> {
-  if (choice === "on" || choice === "off") {
-    const path = await saveSync(choice === "on", paths);
-    const effective = (await loadSettings(process.env, { paths })).sync ? "on" : "off";
-    if (effective !== choice) {
-      return print(message("sync.setButOverridden", { choice, path, variable: ENV.sync, effective }));
-    }
-    return print(
-      choice === "on"
-        ? `${message("sync.isOn", { path })}\n\n${message("sync.sends")}`
-        : message("sync.isOff", { path }),
-    );
-  }
-  if (choice === "status" || choice === undefined) {
-    const settings = await loadSettings(process.env, { paths });
-    const state = !settings.syncAsked
-      ? "unset"
-      : settings.sync
-        ? settings.tauricKey
-          ? "on"
-          : "onWithoutKey"
-        : "off";
-    return print(
-      `${message("sync.status", { state })}\n\n${message("sync.sends")}\n\n${message("sync.turnItWith", { app: APP_NAME, to: settings.sync ? "off" : "on" })}`,
-    );
-  }
-  toErr(`${message("sync.sayWhich", { app: APP_NAME })}\n\n${USAGE}\n`);
-  return EXIT_USAGE;
-}
-
-/** Delete session `id`, here and (when sync is on) from the account; asks first at a terminal unless `yes`. */
+/** Delete session `id`; asks first at a terminal unless `yes`. */
 export async function deleteCommand(id: string | undefined, yes: boolean, paths: Paths): Promise<number> {
   if (!id) {
     toErr(`${message("cli.nameTheSession", { app: APP_NAME })}\n`);
     return EXIT_USAGE;
   }
-  const settings = await loadSettings(process.env, { paths });
-  const remote = settings.sync && settings.tauricKey ? tauricSessions(settings.tauricKey) : undefined;
   if (!yes) {
     if (!process.stdin.isTTY) {
       toErr(`${message("cli.deleteNeedsYes")}\n`);
@@ -118,7 +84,7 @@ export async function deleteCommand(id: string | undefined, yes: boolean, paths:
     }
     const input = createInterface({ input: process.stdin, output: process.stdout });
     try {
-      const asked = message(remote ? "cli.deleteEverywhere" : "cli.deleteHere", { id });
+      const asked = message("cli.deleteHere", { id });
       const answer = await new Promise<string>((resolve) => input.question(`${asked} [y/N] `, resolve));
       if (!/^y(es)?$/i.test(answer.trim())) return print(message("cli.nothingDeleted"));
     } finally {
@@ -126,8 +92,8 @@ export async function deleteCommand(id: string | undefined, yes: boolean, paths:
     }
   }
   try {
-    const where = await deleteSession(paths.home, id, remote);
-    return print(message(`app.deleted.${where}` as const));
+    await deleteSession(paths.home, id);
+    return print(message("app.deleted.here"));
   } catch (error) {
     if (!(error instanceof SessionError)) throw error;
     toErr(`${error.message}\n`);
@@ -140,10 +106,7 @@ export async function sessions(extra: string | undefined, paths: Paths): Promise
     toErr(`${message("cli.unexpectedArgument", { argument: extra })}\n\n${USAGE}\n`);
     return EXIT_USAGE;
   }
-  const settings = await loadSettings(process.env, { paths });
-  const remote = settings.sync && settings.tauricKey ? tauricSessions(settings.tauricKey) : undefined;
-  const { sessions: listed, problem } = await allSessions(paths.home, remote);
-  if (problem) toErr(`${message("cli.warning", { problem })}\n`);
+  const listed = await listSessions(paths.home);
   if (!listed.length) return print(message("cli.noSessions"));
   const lines = listed.map((s) => {
     const when = s.updated.toISOString().slice(0, 16).replace("T", " ");
@@ -152,8 +115,8 @@ export async function sessions(extra: string | undefined, paths: Paths): Promise
     const title =
       words.length > 70
         ? `${words.slice(0, 69).join("")}…`
-        : words.join("") || message(s.where === "account" ? "cli.untitledAccount" : "cli.untitledSession");
-    return `${s.id}  ${when}  ${title}${s.where === "account" ? `  ${message("cli.inAccount")}` : ""}`;
+        : words.join("") || message("cli.untitledSession");
+    return `${s.id}  ${when}  ${title}`;
   });
   return print(`${lines.join("\n")}\n\n${message("cli.continueOne", { app: APP_NAME })}`);
 }

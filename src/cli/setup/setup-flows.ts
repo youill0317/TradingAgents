@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 /**
  * The setups, as steps over a FormUI: the first run (where answers come from, its key or sign-in, the
- * model and how hard it reasons, then a Tauric key for data when another provider was chosen), `/login`
+ * model and how hard it reasons), `/login`
  * (one provider's key or sign-in) and `/model` (a provider, connected in place when it is not yet, then
  * the model new sessions use). Esc goes back one step; Ctrl+C ends a setup,
  * keeping what it saved, and a key is saved as soon as it is given. Nothing is checked over the network:
@@ -20,7 +20,7 @@ import {
   type ReasoningLevel,
   type RouteName,
 } from "../../contracts/index.js";
-import { type ModelOption, modelsOf, offeredLevels, RECOMMENDED } from "../../engine/index.js";
+import { type ModelOption, modelsOf, offeredLevels } from "../../engine/index.js";
 import type { FieldBuffer } from "../form/field-state.js";
 import { BACK, FlowCancelledError, type FormUI } from "../form/form-ui.js";
 import type { PickerOption } from "../form/picker-state.js";
@@ -95,7 +95,7 @@ function isReady(facts: SetupFacts, provider: ProviderId): boolean {
 
 /**
  * Every provider, in the order offered: those ready to use marked, and for `/model` the current one and
- * those to connect ("Connect"); a first setup marks the one it recommends.
+ * those to connect ("Connect").
  */
 function providerOptions(facts: SetupFacts, setup: "first" | "login" | "model"): PickerOption[] {
   return PROVIDER_IDS.map((provider) => {
@@ -104,11 +104,9 @@ function providerOptions(facts: SetupFacts, setup: "first" | "login" | "model"):
         ? message("setup.current")
         : isReady(facts, provider)
           ? message(provider === "chatgpt" ? "setup.signedIn" : "setup.ready")
-          : setup === "first" && provider === RECOMMENDED
-            ? message("setup.recommended")
-            : setup === "model"
-              ? message("setup.connect")
-              : undefined;
+          : setup === "model"
+            ? message("setup.connect")
+            : undefined;
     return {
       id: provider,
       label: PROVIDER_LABELS[provider],
@@ -162,29 +160,16 @@ function reasoningOptions(provider: ProviderId, model: string): PickerOption[] {
   ];
 }
 
-/**
- * Ask for a key for `name` and save it; BACK leaves it unsaved. A Tauric key asked for after another
- * provider was chosen is asked for its data.
- */
-async function askKey(
-  ui: FormUI,
-  actions: SetupActions,
-  name: CredentialName,
-  { optional = false, forData = false }: { optional?: boolean; forData?: boolean } = {},
-) {
-  const title =
-    forData || name === "tauric"
-      ? message("setup.tauricKey")
-      : message("setup.keyFor", { provider: PROVIDER_LABELS[name as HostedProvider] ?? name });
+/** Ask for a key for `name` and save it; BACK leaves it unsaved. */
+async function askKey(ui: FormUI, actions: SetupActions, name: CredentialName) {
   const field = await ui.field({
-    title,
+    title: message("setup.keyFor", { provider: PROVIDER_LABELS[name as HostedProvider] ?? name }),
     kind: "secret",
-    ...(optional ? { hint: message("setup.skipHint") } : {}),
   });
   if (field === BACK) return BACK;
   if (field.shown().text === "") {
     field.clear();
-    return optional ? "skipped" : "empty";
+    return "empty";
   }
   await actions.saveKey(name, field);
   return "saved";
@@ -266,9 +251,9 @@ function modelSteps(
   };
 }
 
-/** Text that looks like an API key (OpenAI's, Anthropic's, OpenRouter's, Google's, Tauric's): not an address or a model. */
+/** Text that looks like an API key (OpenAI's, Anthropic's, OpenRouter's, Google's): not an address or a model. */
 function looksLikeKey(text: string): boolean {
-  return /(^|[^A-Za-z0-9])(sk-|tk_|AIza)[A-Za-z0-9_-]{8,}/.test(text);
+  return /(^|[^A-Za-z0-9])(sk-|AIza)[A-Za-z0-9_-]{8,}/.test(text);
 }
 
 /** A server's address, model and optional key, saved together once all are given; then what `then` gives for it. */
@@ -319,28 +304,21 @@ function serverSteps(ui: FormUI, actions: SetupActions, then: (model: string) =>
 }
 
 export function firstRun(ui: FormUI, facts: SetupFacts, actions: SetupActions): Promise<string[]> {
-  // What is known, with the keys saved on the way.
-  const known: SetupFacts = { ...facts, keyFrom: { ...facts.keyFrom } };
-  const tauric: Step = async () => {
-    if (known.keyFrom.tauric !== undefined) return { done: [] };
-    const saved = await askKey(ui, actions, "tauric", { optional: true, forData: true });
-    return saved === BACK ? BACK : { done: [] };
-  };
+  const done: Step = async () => ({ done: [] });
   const credentials =
     (provider: ProviderId): Step =>
     async () => {
-      const models = modelSteps(ui, facts, actions, provider, () => tauric);
+      const models = modelSteps(ui, facts, actions, provider, () => done);
       if (provider === "chatgpt") {
         if (facts.signedIn) return { skip: models };
         // Signing in goes to the browser and back: on the way back, the step before it.
         const signedIn = (await actions.signIn?.()) ?? false;
         return signedIn ? { skip: models } : BACK;
       }
-      if (provider === "openai-compatible") return { skip: serverSteps(ui, actions, () => tauric) };
+      if (provider === "openai-compatible") return { skip: serverSteps(ui, actions, () => done) };
       if (!isHosted(provider)) return BACK;
       const enter: Step = async () => {
         const saved = await askKey(ui, actions, provider);
-        if (saved === "saved") known.keyFrom[provider] = "stored";
         return saved === BACK ? BACK : saved === "empty" ? { skip: enter } : models;
       };
       const from = facts.keyFrom[provider];
@@ -356,14 +334,12 @@ export function firstRun(ui: FormUI, facts: SetupFacts, actions: SetupActions): 
       return choice === "use" ? models : enter;
     };
   const provider: Step = async () => {
-    const start = RECOMMENDED;
     const chosen = await ui.pick({
       title: message("setup.chooseProvider"),
       options: providerOptions(facts, "first"),
-      // The flow's first step: Esc ends it. Eight providers: typing finds one.
+      // The flow's first step: Esc ends it. Seven providers: typing finds one.
       filter: true,
       esc: "close",
-      ...(start ? { start } : {}),
     });
     if (chosen === BACK) return BACK;
     return credentials(chosen as ProviderId);
@@ -380,7 +356,7 @@ export function loginFlow(ui: FormUI, facts: SetupFacts, actions: SetupActions):
     const chosen = await ui.pick({
       title: message("setup.chooseLogin"),
       options: providerOptions(facts, "login"),
-      // The flow's first step: Esc ends it. Eight providers: typing finds one.
+      // The flow's first step: Esc ends it. Seven providers: typing finds one.
       filter: true,
       esc: "close",
     });
@@ -403,10 +379,7 @@ export function loginFlow(ui: FormUI, facts: SetupFacts, actions: SetupActions):
       const saved = await askKey(ui, actions, chosen);
       if (saved === BACK) return BACK;
       if (saved === "empty") return { skip: key };
-      const said =
-        chosen === "tauric"
-          ? message("setup.tauricSaved")
-          : message("setup.connected", { provider: PROVIDER_LABELS[chosen] });
+      const said = message("setup.connected", { provider: PROVIDER_LABELS[chosen] });
       return { done: [said, ...envWins(chosen)] };
     };
     return key;
@@ -451,7 +424,7 @@ export function modelFlow(ui: FormUI, facts: SetupFacts, actions: SetupActions):
     const chosen = await ui.pick({
       title: message("setup.chooseProvider"),
       options: providerOptions(known, "model"),
-      // The flow's first step: Esc ends it. Eight providers: typing finds one.
+      // The flow's first step: Esc ends it. Seven providers: typing finds one.
       filter: true,
       esc: "close",
       ...(current ? { start: current.provider } : {}),

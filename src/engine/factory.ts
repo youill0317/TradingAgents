@@ -9,24 +9,12 @@ import { BUILT_IN, builtinCatalog, type Catalog, matchTools, withSkills } from "
 import type { AgentSpec } from "../agents/index.js";
 import { mainPrompt } from "../agents/prompts.js";
 
-import {
-  APP_NAME,
-  type Clock,
-  type ModelRoute,
-  message,
-  printable,
-  type RouteName,
-} from "../contracts/index.js";
-import { DEFAULT_LIMITS, type Limits, MODEL, SYNC } from "../contracts/limits.js";
-import type { Capability, DailyBars, PriceHistory } from "../data/capabilities.js";
-import { DataError } from "../data/errors.js";
+import { type Clock, type ModelRoute, message, type RouteName } from "../contracts/index.js";
+import { DEFAULT_LIMITS, type Limits, MODEL } from "../contracts/limits.js";
+import type { DailyBars, PriceHistory } from "../data/capabilities.js";
 import { PolymarketClient } from "../data/polymarket/client.js";
 import { polymarketProvider } from "../data/polymarket/provider.js";
-import { CAPABILITY_LABELS, type KeyFix, type Providers, route } from "../data/router.js";
-import { ROUTES } from "../data/routes.js";
-import { TauricApplications } from "../data/tauric/applications.js";
-import { TauricClient } from "../data/tauric/client.js";
-import { tauricProvider } from "../data/tauric/provider.js";
+import { CAPABILITY_LABELS, type Providers, route } from "../data/router.js";
 import { yahooProvider } from "../data/yahoo/provider.js";
 import { ChatGPTAuth } from "../models/chatgpt-auth.js";
 import { type ProviderDeps, providerOf } from "../models/providers.js";
@@ -36,13 +24,11 @@ import { evidenceTool, ToolRegistry } from "../tools/index.js";
 import { Engine, type RestoredState } from "./engine.js";
 import { Memory } from "./memory.js";
 import type { ClosesSource } from "./settlement.js";
-import type { RemoteSessions, RemoteSummary } from "./sync.js";
 
 type EngineSettings = {
   model: ModelRoute;
   /** What a question and its agents may use; the defaults (step guards only) unless given. */
   limits?: Limits;
-  tauricKey?: string;
   version: string;
   /** The clock turns are dated by (tests fix it). */
   today?: Date;
@@ -159,27 +145,11 @@ export function createEngine(settings: EngineSettings): Engine {
 
   const clock: Clock = () => settings.today ?? new Date();
   // The routing table decides which of this setup's providers serves what.
-  // A Tauric key adds what Tauric serves, in this setup's own providers without one (not in replayed data).
-  const keyFix: KeyFix | undefined =
-    settings.providers || settings.tauricKey
-      ? undefined
-      : {
-          app: APP_NAME,
-          capabilities: new Set(
-            (Object.keys(ROUTES) as Capability[]).filter((capability) =>
-              ROUTES[capability].includes("tauric"),
-            ),
-          ),
-        };
   const { capabilities: data, available: served } = route(
     settings.providers ?? dataProviders(settings, clock),
-    {
-      ...(keyFix ? { keyFix } : {}),
-    },
   );
   const offered = dataTools(data, clock);
-  // Every tool is offered; one whose data no source here serves says so when called, and the
-  // session shows the sign-up nudge then (once).
+  // Every tool is offered; one whose data no source here serves says so when called.
   const tools = offered.map(([, tool]) => tool);
   const capabilityOf = new Map(offered.map(([capability, tool]) => [tool.name, capability]));
   const hasMarketData = served.has("priceHistory");
@@ -189,14 +159,7 @@ export function createEngine(settings: EngineSettings): Engine {
   // The main agent thinks: it gets that mode's sampling, and the server is told to think when it can be.
   const main: AgentSpec = {
     name: "main",
-    system: mainPrompt({
-      app: APP_NAME,
-      missing: missing.map((capability) => CAPABILITY_LABELS[capability]),
-      keyAdds:
-        Boolean(keyFix) &&
-        missing.length > 0 &&
-        missing.every((capability) => keyFix?.capabilities.has(capability)),
-    }),
+    system: mainPrompt({ missing: missing.map((capability) => CAPABILITY_LABELS[capability]) }),
     tools: tools.map((tool) => tool.name),
     // The question's limits are applied by the engine for each question.
     caps: { steps: limits.question.steps },
@@ -227,7 +190,6 @@ export function createEngine(settings: EngineSettings): Engine {
   return new Engine({
     client,
     route: routeOf(model),
-    signUpNudge: Boolean(keyFix),
     registry,
     core: (() => {
       const compute = computeTools();
@@ -257,22 +219,12 @@ export function createEngine(settings: EngineSettings): Engine {
   });
 }
 
-/** The providers a setup has: Tauric with a key; Yahoo and Polymarket need none. */
+/** The providers a setup has: Yahoo and Polymarket, which need no key. */
 export function dataProviders(
-  settings: Pick<EngineSettings, "tauricKey" | "fetch">,
+  settings: Pick<EngineSettings, "fetch">,
   clock: Clock = () => new Date(),
 ): Providers {
   return {
-    ...(settings.tauricKey
-      ? {
-          tauric: tauricProvider(
-            new TauricClient({
-              apiKey: settings.tauricKey,
-              ...(settings.fetch ? { fetch: settings.fetch } : {}),
-            }),
-          ),
-        }
-      : {}),
     yahoo: yahooProvider({ now: clock, ...(settings.fetch ? { fetch: settings.fetch } : {}) }),
     polymarket: polymarketProvider(new PolymarketClient(settings.fetch ?? fetch)),
   };
@@ -292,72 +244,6 @@ function closesFrom(history: PriceHistory): ClosesSource {
       basis: bars.price_basis ?? "basis not stated",
     });
     return { stock: closesOf(answer.data[0]), benchmark: closesOf(answer.data[1]), source: answer.source };
-  };
-}
-
-/** Tauric, where sessions are copied when sync is on, under this application's own name. */
-export function tauricSessions(apiKey: string, fetchImpl?: typeof globalThis.fetch): RemoteSessions {
-  const client = new TauricApplications({
-    apiKey,
-    application: APP_NAME,
-    ...(fetchImpl ? { fetch: fetchImpl } : {}),
-  });
-  return {
-    application: APP_NAME,
-    async accepts(call) {
-      const { storage } = await client.account(call);
-      return storage.applications.some((application) => application.id === APP_NAME);
-    },
-    async describe(id, call) {
-      try {
-        const { size, metadata } = await client.session(id, call);
-        return { size, metadata };
-      } catch (error) {
-        // Only Tauric's own "not found" means no such session: sync asks this only once the account
-        // is known to keep this application's sessions, which a missing application answers the same.
-        // Any other 404 is not taken for an absence.
-        if (error instanceof DataError && error.details.status === 404 && error.details.code === "not_found")
-          return undefined;
-        throw error;
-      }
-    },
-    async list(limit, call) {
-      const found: RemoteSummary[] = [];
-      let after: string | null = null;
-      // Pages until the end or SYNC.listedPages of them; the newest of those are kept.
-      for (let page = 0; page < SYNC.listedPages; page++) {
-        let listed: Awaited<ReturnType<typeof client.listSessions>>;
-        try {
-          listed = await client.listSessions({ limit: 100, ...(after ? { after } : {}) }, call);
-        } catch (error) {
-          // An account that does not keep this application's sessions has none.
-          if (
-            error instanceof DataError &&
-            error.details.status === 404 &&
-            error.details.code === "not_found"
-          )
-            break;
-          throw error;
-        }
-        for (const one of listed.data) {
-          found.push({
-            id: one.id,
-            created: one.created_at,
-            updated: new Date(one.last_append_at ?? one.updated_at),
-            size: one.size,
-            // Any client of the account may write it: shown only as printable text.
-            title: printable(one.metadata.title ?? ""),
-          });
-        }
-        after = listed.next_cursor;
-        if (!after) break;
-      }
-      return found.sort((a, b) => b.updated.getTime() - a.updated.getTime()).slice(0, limit);
-    },
-    putSession: (id, metadata, call) => client.putSession(id, metadata, call),
-    readSession: (id, start, end, call) => client.readSession(id, start, end, call),
-    deleteSession: (id) => client.deleteSession(id),
-    append: (id, offset, lines, call) => client.append(id, offset, lines, call),
   };
 }
 

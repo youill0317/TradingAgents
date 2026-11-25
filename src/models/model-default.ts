@@ -11,8 +11,6 @@ import {
   offeredLevels,
   type Role,
 } from "./catalog.js";
-/** The provider a first setup recommends: Tauric, whose one key serves both data and a model. */
-export const RECOMMENDED: ProviderId = "tauric";
 
 /** A provider's default model as "provider/id", when the catalog lists one. */
 export function defaultOf(provider: ProviderId): string | undefined {
@@ -22,18 +20,15 @@ export function defaultOf(provider: ProviderId): string | undefined {
 }
 
 /**
- * With no model chosen: the default of the one provider that can be used (Tauric only when no other
- * can), else the providers to choose from (none, or several).
+ * With no model chosen: the default of the one provider that can be used, else the providers to choose
+ * from (none, or several).
  */
 export function defaultModel(usable: readonly ProviderId[]): { model: string } | { choices: ProviderId[] } {
   const choices = PROVIDER_IDS.filter(
     (provider) => usable.includes(provider) && defaultOf(provider) !== undefined,
   );
-  // A Tauric key also serves data: beside one other provider, that one's model is used.
-  const others = choices.filter((provider) => provider !== "tauric");
-  const pool = others.length ? others : choices;
-  const only = pool.length === 1 ? defaultOf(pool[0] as CatalogProvider) : undefined;
-  return only ? { model: only } : { choices: pool };
+  const only = choices.length === 1 ? defaultOf(choices[0] as CatalogProvider) : undefined;
+  return only ? { model: only } : { choices };
 }
 
 /** A model a provider offers, as a picker shows it. */

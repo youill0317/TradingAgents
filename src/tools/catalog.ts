@@ -21,7 +21,6 @@ import { quoteTool } from "./quote.js";
 import { betaTool, returnsRiskTool } from "./risk.js";
 import { screenTool } from "./screen.js";
 import { statementsTool } from "./statements.js";
-import { tauricViewTool } from "./tauric-view.js";
 import { technicalsTool } from "./technicals.js";
 import type { Tool } from "./tool.js";
 import { compsTool, dcfTool } from "./valuation.js";
@@ -63,7 +62,6 @@ export const DATA_TOOLS: readonly DataToolEntry[] = [
     make: (data) => findInstrumentTool(data.instruments),
   },
   { name: "markets", capability: "markets", make: (data) => marketsTool(data.markets) },
-  { name: "tauric_view", capability: "syntheses", make: (data) => tauricViewTool(data.syntheses) },
   {
     name: "screen",
     capability: "crossSections",

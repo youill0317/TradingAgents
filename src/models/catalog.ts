@@ -12,7 +12,6 @@ import providerFacts from "./provider-facts.json" with { type: "json" };
 
 /** Hosted providers with a curated list; a compatible server's models are its own. */
 export const CATALOG_PROVIDERS = [
-  "tauric",
   "chatgpt",
   "openai",
   "anthropic",
@@ -26,8 +25,6 @@ export type CatalogProvider = (typeof CATALOG_PROVIDERS)[number];
 export type Role = "default" | "alt" | "fast";
 
 export const CATALOG: { readonly [P in CatalogProvider]: readonly { id: string; role: Role }[] } = {
-  // One model, for every kind of work.
-  tauric: [{ id: "tauric", role: "default" }],
   chatgpt: [
     { id: "gpt-6.2-sol", role: "default" },
     { id: "gpt-6.2-astra", role: "alt" },
@@ -66,7 +63,6 @@ export const CATALOG: { readonly [P in CatalogProvider]: readonly { id: string; 
 
 /** Where each provider's metadata comes from in models.dev: a plan's models are OpenAI's. */
 export const METADATA_SOURCE: { readonly [P in CatalogProvider]: string } = {
-  tauric: "tauric",
   chatgpt: "openai",
   openai: "openai",
   anthropic: "anthropic",

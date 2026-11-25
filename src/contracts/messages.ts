@@ -17,19 +17,6 @@ const CAP_WORDS: Record<string, string> = {
   time: "time",
 };
 
-/** Where a person gets a Tauric API key. */
-export const SIGN_UP_URL = "https://tauric.ai/signup";
-/** What a Tauric API key is for, said the same way wherever its purpose is stated. */
-const KEY_PURPOSE = "AI and data";
-
-/**
- * Where to get a Tauric API key, its address last and whole (no punctuation after it), so a terminal that
- * finds addresses in text makes it clickable.
- */
-function getOne(): string {
-  return `Get one at ${SIGN_UP_URL}`;
-}
-
 const catalog = {
   // Command line
   "cli.usage": ({ app }: { app: string }) => usage(app),
@@ -82,14 +69,9 @@ const catalog = {
     `Name the session to delete: ${app} sessions delete <id>`,
   "cli.deleteNeedsYes": () => "Without a terminal to confirm, deleting needs --yes.",
   "cli.deleteHere": ({ id }: { id: string }) => `Delete session ${id}?`,
-  "cli.deleteEverywhere": ({ id }: { id: string }) =>
-    `Delete session ${id} here and from your Tauric account?`,
   "cli.nothingDeleted": () => "Nothing deleted.",
   "cli.failed": ({ reason }: { reason: string }) => `Stopped: ${reason}`,
   "cli.untitledSession": () => "(no question)",
-  "cli.inAccount": () => "(in your Tauric account)",
-  /** A session in the account synced before titles were. */
-  "cli.untitledAccount": () => "(untitled)",
   "cli.continueOne": ({ app }: { app: string }) => `Continue one with: ${app} --resume <id>`,
   "cli.nameTheKey": ({ app, names }: { app: string; names: string }) =>
     `Name the key to store: ${app} key <name>, one of ${names}`,
@@ -114,16 +96,13 @@ const catalog = {
   }) =>
     `No model is set yet. Choose one:
 
-  Tauric's AI and data          ${app} key tauric
-                                ${getOne()}
   Your ChatGPT plan             ${app} login chatgpt
   An API key                    ${app} key ${providers.join("|")},
                                 or its variable in the environment, such as OPENAI_API_KEY
   An OpenAI-compatible server   set ${baseUrlVar} and ${modelVar} (the model as the server names it),
                                 and if the server needs a key: ${app} key model
 
-A Tauric API key also brings filings, statements, news and more. Without one, prices come from Yahoo and
-event odds from Polymarket; the rest is not available.
+Prices come from Yahoo and event odds from Polymarket; the rest is not available.
 `,
 
   // ChatGPT sign-in commands
@@ -154,45 +133,8 @@ event odds from Polymarket; the rest is not available.
   "chatgpt.signedOutUnconfirmed": () =>
     "Signed out here; OpenAI could not be reached to revoke the sign-in, which ends when its token expires.",
 
-  // Sync
-  "sync.question": () => "Sync sessions to your Tauric account?",
-  "sync.questionSubtitle": () => "You can turn it off any time.",
-  "sync.turnOn": () => "Turn on",
-  "sync.keepOff": () => "Keep off",
-  "sync.sends": () =>
-    "Sync copies each session to your Tauric account as it is saved: your questions, the answers, the tools' arguments and results (market data, filings, news), the agents' work, anything recalled from memory, and, for DeepSeek models, their reasoning. The complete data behind each result from Tauric is included; for other sources, and for a result too large to sync, only the text the model read. Sessions in your account that are not on this computer show in /resume and in the sessions list; opening one copies it here, with what was synced. Turning it on copies the current session from its start; turning it off deletes nothing already copied.",
-  "sync.setButOverridden": ({
-    choice,
-    path,
-    variable,
-    effective,
-  }: {
-    choice: string;
-    path: string;
-    variable: string;
-    effective: string;
-  }) => `Sync is set ${choice} in ${path}, but ${variable} keeps it ${effective}.`,
-  "sync.isOn": ({ path }: { path: string }) => `Sync is on (${path}).`,
-  "sync.isOff": ({ path }: { path: string }) =>
-    `Sync is off (${path}). Sessions open now stop copying before their next upload.`,
-  "sync.status": ({ state }: { state: "unset" | "on" | "onWithoutKey" | "off" }) =>
-    `Sync is ${
-      {
-        unset: "not set, so nothing is copied; the first session started in a terminal asks",
-        on: "on",
-        onWithoutKey: "on, but there is no Tauric API key, so nothing is copied",
-        off: "off",
-      }[state]
-    }.`,
-  "sync.turnItWith": ({ app, to }: { app: string; to: "on" | "off" }) =>
-    `Turn it ${to} with: ${app} sync ${to}`,
-  "sync.sayWhich": ({ app }: { app: string }) => `Usage: ${app} sync on|off|status`,
-  "sync.onWithoutKey": () => "Sync is on, but there is no Tauric API key, so nothing is copied.",
-
   // The terminal app
   "app.placeholder": () => "Ask about a company, a market or a filing",
-  "app.getKey": () => `Get the Tauric API for ${KEY_PURPOSE}: ${SIGN_UP_URL}`,
-  "app.addKey": () => "Add your key with /login.",
   "app.tryLead": () => "Try: ",
   "app.tryExamples": () => "Is NVDA expensive vs its peers? | What's driving Treasury yields?",
   "app.keyHints": ({ separator }: { separator: string }) =>
@@ -222,17 +164,9 @@ event odds from Polymarket; the rest is not available.
   "app.noOtherSessions": () => "There is no other session here yet.",
   "app.resumeWhich": () => "Resume which session?",
   "app.deleteHere": () => "Delete this session? enter / esc",
-  "app.deleteEverywhere": () => "Delete this session here and from your Tauric account? enter / esc",
   "app.deleted.here": () => "Deleted the session.",
-  "app.deleted.everywhere": () => "Deleted the session here and from your Tauric account.",
-  "app.deleted.pending": () => "Deleted here; your account's copy is deleted when Tauric can be reached.",
-  "app.deleted.account": () => "Deleted the session from your Tauric account.",
-  "app.deleted.accountPending": () =>
-    "Your account's copy of the session is deleted when Tauric can be reached.",
   "app.sessionNote": ({ ago, turns }: { ago: string; turns: number }) =>
     `${ago}, ${turns} ${turns === 1 ? "turn" : "turns"}`,
-  "app.sessionInAccount": ({ ago }: { ago: string }) => `${ago}, in your Tauric account`,
-  "app.copiedFromAccount": () => "Copied the session from your Tauric account.",
   "app.whatsNew": ({ version, item }: { version: string; item: string }) => `New in ${version}: ${item}`,
   "app.noNotes": ({ version }: { version: string }) => `No notes for ${version}.`,
   "app.justNow": () => "just now",
@@ -250,13 +184,11 @@ event odds from Polymarket; the rest is not available.
   "setup.about.deepseek": () => "an API key from platform.deepseek.com",
   "setup.about.openrouter": () => "a key from openrouter.ai",
   "setup.about.openai-compatible": () => "vLLM, Ollama or any server with an OpenAI-style API",
-  "setup.about.tauric": () => `${KEY_PURPOSE}, with one key`,
   "setup.ready": () => "ready",
   "setup.signedIn": () => "signed in",
   "setup.current": () => "current",
   "setup.default": () => "default",
   "setup.fast": () => "fast",
-  "setup.recommended": () => "recommended",
   "setup.connect": () => "Connect",
   "setup.context": ({ tokens: count }: { tokens: number }) => `${tokens(count)} context`,
   "setup.cost": ({ input, output }: { input: number; output: number }) => `$${input}/$${output} per M tokens`,
@@ -269,7 +201,6 @@ event odds from Polymarket; the rest is not available.
   "setup.keyStored": () => "A key is stored. Use it?",
   "setup.useIt": () => "Use it",
   "setup.enterAnother": () => "Enter another",
-  "setup.tauricKey": () => `Paste your Tauric API key for ${KEY_PURPOSE}. ${getOne()}`,
   "setup.skipHint": () => "enter to skip | esc back",
   "setup.serverAddress": () => "The server's address, such as http://localhost:8000/v1",
   "setup.intro": ({ title }: { title: string }) =>
@@ -287,8 +218,6 @@ event odds from Polymarket; the rest is not available.
   "setup.serverSaved": ({ model }: { model: string }) =>
     `Saved the server. Using ${model} from the next question, in this session and new ones.`,
   "setup.looksLikeKey": () => "That looks like a key; the key is asked for after the address and the model.",
-  "setup.tauricSaved": () =>
-    "Connected Tauric. Its data is used from the next question; /model switches to its model.",
   "setup.signInElsewhere": ({ app }: { app: string }) => `Sign in from a terminal with: ${app} login chatgpt`,
   "setup.modelNamedElsewhere": ({ where }: { where: string }) =>
     `${where} names the model for new sessions while it is set.`,
@@ -327,15 +256,12 @@ event odds from Polymarket; the rest is not available.
   /** The last row of each question the agent asks: an answer of one's own. */
   "ask.own": () => "Type something…",
   "form.noMatch": ({ query }: { query: string }) => `nothing matches "${query}"`,
-  "app.syncState": ({ state }: { state: "unset" | "on" | "onWithoutKey" | "off" }) =>
-    ({ unset: "not set", on: "on", onWithoutKey: "on, but no Tauric API key", off: "off" })[state],
   "app.search": ({ query }: { query: string }) => `search earlier questions: ${query}`,
   "app.searchNone": ({ query }: { query: string }) => `search earlier questions: ${query} (no match)`,
   "app.historyUnsaved": ({ reason }: { reason: string }) => `Earlier questions could not be kept: ${reason}`,
   "app.queued": ({ text }: { text: string }) => `Queued: ${text}`,
   "app.queuedMore": ({ count }: { count: number }) => `+${count} more queued`,
   "app.queuePaused": () => "Queue paused: Enter sends the next one, Up takes it back",
-  "app.dataTauric": () => "Tauric Research",
   "app.dataYahoo": () => "Yahoo prices only",
   "app.interrupted": () => "This question did not finish: the session ended while it ran.",
   "app.stoppedUnexpectedly": ({ reason }: { reason: string }) => `The run stopped unexpectedly: ${reason}`,
@@ -366,7 +292,7 @@ event odds from Polymarket; the rest is not available.
   "app.linesAbove": ({ count }: { count: number }) => `… ${count} ${count === 1 ? "line" : "lines"} above`,
   "app.toolCount": ({ count }: { count: number }) => `${count} tool${count === 1 ? "" : "s"}`,
   /** A step's data calls folded into one row: "Fetched 3 datasets", "1 failed". */
-  /** "Fetched 4 from Tauric and Yahoo": how many, from the sources that answered in order of first use. */
+  /** "Fetched 4 from Yahoo and Polymarket": how many, from the sources that answered in order of first use. */
   "app.fetched": ({ count, sources = [] }: { count: number; sources?: readonly string[] }) =>
     sources.length
       ? `Fetched ${count} from ${
@@ -510,8 +436,6 @@ event odds from Polymarket; the rest is not available.
     `${provider} refused the key (${said}). Store a new key with /login. Get one at ${url}`,
   "model.noCredit": ({ provider, said }: { provider: string; said: string }) =>
     `${provider} says the account has no credit left (${said}). Add credit with ${provider}, then ask again.`,
-  "model.creditsSpent": ({ resets }: { resets?: string }) =>
-    `Your Tauric AI credits for today are spent${resets ? `; they reset at ${resets}` : ""}.`,
   "model.windowAssumedPlan": ({ tokens }: { tokens: string }) =>
     `The plan model's context window is not reported, so ${tokens} tokens is assumed; set providers.chatgpt.contextWindow in the config to use more.`,
   "model.windowAssumed": ({ tokens, provider }: { tokens: string; provider: string }) =>
@@ -540,36 +464,6 @@ event odds from Polymarket; the rest is not available.
     `Session ${id} is open on ${host} (process ${pid}); if it is not, remove ${path} to open it here.`,
   "session.lockUnreadable": ({ id, path }: { id: string; path: string }) =>
     `Session ${id} is locked by ${path}, which cannot be read; if no terminal has it open, remove it.`,
-
-  // Session sync while running
-  "sync.stoppedKey": ({ reason }: { reason: string }) =>
-    `Session sync stopped: Tauric refused the key (${reason}).`,
-  "sync.stoppedQuota": ({ reason }: { reason: string }) =>
-    `Session sync stopped: Tauric quota is spent (${reason}).`,
-  "sync.storageFull": ({ remainingBytes }: { remainingBytes?: number | undefined }) =>
-    `Session sync stopped: your Tauric storage is full${remainingBytes !== undefined ? ` (${formatBytes(remainingBytes)} left)` : ""}. Sessions already copied are kept; deleting old ones makes room.`,
-  "sync.copyFailed": ({ reason }: { reason: string }) =>
-    `The session could not be copied from your Tauric account (${reason}). Nothing was kept; try again.`,
-  "sync.copyNotThis": ({ id }: { id: string }) =>
-    `The copy of session ${id} in your Tauric account does not start as that session does. Nothing was kept.`,
-  "sync.deleteUnconfirmed": ({ id, reason }: { id: string; reason: string }) =>
-    `Session ${id} is not on this computer, and your Tauric account could not be asked for it (${reason}). Nothing was deleted.`,
-  "sync.listFailed": ({ reason }: { reason: string }) =>
-    `Your Tauric account's sessions could not be listed (${reason}); these are the ones on this computer.`,
-  "sync.copyIncomplete": ({ id, got, size }: { id: string; got: number; size: number }) =>
-    `Session ${id} could not be copied from your Tauric account: ${got} of its ${size} bytes came back. Nothing was kept; try again.`,
-  "sync.copyDamaged": ({ id, line }: { id: string; line: number }) =>
-    `Session ${id} in your Tauric account is not one this version can read (${line ? `line ${line}` : "its last line is incomplete"}). Nothing was kept.`,
-  "sync.paused": ({ reason }: { reason: string }) =>
-    `Session sync paused for this session: Tauric's copy differs from this file (${reason}). Both are kept.`,
-  "sync.refused": ({ reason }: { reason: string }) =>
-    `Session sync stopped: Tauric refused the request (${reason}).`,
-  "sync.unreachable": ({ reason }: { reason: string }) =>
-    `Session sync could not reach Tauric; it will try again after the next answer (${reason}).`,
-  "sync.lineTooLarge": () => "Session sync stopped: a line of this session is larger than one upload allows.",
-  "sync.turnedOff": () => "Session sync stopped: it was turned off.",
-  "sync.notOffered": ({ app }: { app: string }) =>
-    `Session sync is off for now: your Tauric account does not keep ${app} sessions, so nothing is copied.`,
 
   // ChatGPT sign-in
   "signin.hint": ({ app }: { app: string }) => `Not signed in to ChatGPT; run \`${app} login chatgpt\`.`,
@@ -669,7 +563,6 @@ event odds from Polymarket; the rest is not available.
   "config.notAUrl": () => "is not a URL",
   "config.urlScheme": () => "must start with http:// or https://",
   "config.urlCredentials": () => "must not hold credentials; set the model key instead",
-  "config.badSync": ({ where }: { where: string }) => `sync must be "on" or "off" (${where}); sync stays off`,
   "config.keyLength": ({ min }: { min: number }) => `a key has at least ${min} characters`,
   "config.fixFirst": ({ path }: { path: string }) => `${path} is not valid; fix or remove it first`,
   "config.notObjectFixFirst": ({ path }: { path: string }) =>
@@ -693,9 +586,7 @@ event odds from Polymarket; the rest is not available.
 
   // Data
   "data.notAvailable": ({ capability }: { capability: string }) =>
-    `${capability}: not available in this setup.`,
-  "data.needsKey": ({ capability, app }: { capability: string; app: string }) =>
-    `${capability}: needs a Tauric API key. Add one with \`${app} key tauric\` or TAURIC_API_KEY. ${getOne()}`,
+    `${capability}: not available; no data source here serves it.`,
   "data.listingNotServed": () => "it does not serve this listing",
   "data.attempt": ({ source, outcome, detail }: { source: string; outcome: string; detail: string }) =>
     `${source} ${
@@ -713,8 +604,6 @@ event odds from Polymarket; the rest is not available.
     } (${detail})`,
   "data.fellBack": ({ failed, source }: { failed: string; source: string }) =>
     `${failed}; this is from ${source}.`,
-  "data.signUp": ({ app }: { app: string }) =>
-    `A Tauric API key for ${KEY_PURPOSE} brings filings, statements, news and more. Add one with \`${app} key tauric\` or TAURIC_API_KEY. ${getOne()}`,
   "data.batchFellBack": ({
     instruments,
     source,
@@ -791,8 +680,6 @@ event odds from Polymarket; the rest is not available.
   "tool.corporateActions": ({ count }: { count: number }) =>
     `${count} corporate action${count === 1 ? "" : "s"}`,
   "tool.comps": ({ count }: { count: number }) => `${count} peers compared`,
-  "tool.tauricView": ({ written }: { written?: string }) =>
-    `Tauric AI's synthesis${written ? `, written ${written}` : ""}`,
   "tool.estimates": () => "consensus and calendar",
   "tool.holders": ({ count, quarter }: { count: number; quarter: string }) =>
     `${count} holders, quarter ending ${quarter}`,
@@ -827,20 +714,6 @@ event odds from Polymarket; the rest is not available.
     `${source} could not be reached or answered unreadably; this is not a fact about the market. ${detail}`,
 } satisfies Record<string, (params: never) => string>;
 
-/** Bytes as people say them: 1 GB, 1.5 GB, 512 MB. */
-export function formatBytes(bytes: number): string {
-  const units = ["bytes", "KB", "MB", "GB", "TB"];
-  let value = bytes;
-  let unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024;
-    unit++;
-  }
-  const shown =
-    Number.isInteger(value) || unit === 0 ? String(Math.round(value)) : value.toFixed(1).replace(/\.0$/, "");
-  return `${shown} ${units[unit]}`;
-}
-
 /** A length of time as people read it: "41s", "8m 41s", "1h 2m". */
 function duration(ms: number): string {
   const seconds = Math.round(ms / 1_000);
@@ -868,7 +741,6 @@ export function message<K extends MessageKey>(key: K, ...params: Params<K>): str
 
 /** Each provider as people see it named. */
 export const PROVIDER_LABELS = {
-  tauric: "Tauric",
   chatgpt: "ChatGPT plan",
   openai: "OpenAI",
   anthropic: "Anthropic",
@@ -890,12 +762,11 @@ function usage(app: string): string {
     ['-p "question"', "answer one question and print the answer"],
     ['-p "question" --json', "print every event as a JSON line instead"],
     ["--continue", "continue the latest session (with -p too)"],
-    ["--resume <id>", "continue a session, here or in your Tauric account (with -p too)"],
+    ["--resume <id>", "continue a session (with -p too)"],
     ["--limit key=value", "set a limit for this run, such as question.time=20m (repeatable)"],
-    ["sessions", "list sessions, newest first, with those in your Tauric account when sync is on"],
-    ["sessions delete <id> [--yes]", "delete a session (and its copy in your Tauric account)"],
-    ["sync on|off|status", "sync sessions with your Tauric account"],
-    ["key <name>", "store a key: tauric, model (a server's), or a provider's (typed hidden, or piped in)"],
+    ["sessions", "list sessions, newest first"],
+    ["sessions delete <id> [--yes]", "delete a session"],
+    ["key <name>", "store a key: model (a server's), or a provider's (typed hidden, or piped in)"],
     ["--model provider/id", "use this model for this run"],
     ["--reasoning level", "how hard the model reasons this run: none to max"],
     ["login chatgpt", "use your ChatGPT plan's models (prints an address to open)"],

@@ -38,7 +38,6 @@ export function parse(argv: string[]) {
 const ARGUMENTS: Record<string, number> = {
   key: 1,
   sessions: 2,
-  sync: 1,
   login: 2,
   logout: 1,
   update: 0,

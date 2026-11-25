@@ -72,15 +72,7 @@ function BlockView({ block, columns }: { block: Block; columns: number }) {
   const body = (() => {
     switch (block.kind) {
       case "header":
-        return (
-          <Welcome
-            version={block.version}
-            model={block.model}
-            keyed={block.keyed}
-            news={block.news}
-            columns={columns}
-          />
-        );
+        return <Welcome version={block.version} model={block.model} news={block.news} columns={columns} />;
       case "question": {
         // A block of its own across the window: shaded where the background is known, else the text in
         // bold; a blank row above and below either way. Lines after the first sit under the text.

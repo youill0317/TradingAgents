@@ -38,24 +38,20 @@ export async function whatsNew({
 }
 
 /**
- * The welcome's line of news, when it has one to show: with a Tauric key, what's new in this version (once,
- * and not for a resumed session), else a newer release (`updateNotice`). Without a key the welcome's slot says
- * where to get one, so nothing is read or recorded: a version's line counts as seen only once it is shown.
+ * The welcome's line of news, when it has one to show: what's new in this version (once, and not for a
+ * resumed session), else a newer release (`updateNotice`).
  */
 export async function welcomeNews({
-  keyed,
   resumed,
   updateNotice,
   ...seen
 }: {
-  keyed: boolean;
   resumed: boolean;
   updateNotice: string | undefined;
   version: string;
   statePath: string;
   notes: readonly VersionNotes[];
 }): Promise<string | undefined> {
-  if (!keyed) return undefined;
   return (resumed ? undefined : await whatsNew(seen)) ?? updateNotice;
 }
 

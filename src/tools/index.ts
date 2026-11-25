@@ -20,7 +20,6 @@ export { ToolRegistry } from "./registry.js";
 export { betaTool, returnsRiskTool } from "./risk.js";
 export { screenTool } from "./screen.js";
 export { statementsTool } from "./statements.js";
-export { tauricViewTool } from "./tauric-view.js";
 export { technicalsTool } from "./technicals.js";
 export {
   defineTool,

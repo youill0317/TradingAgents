@@ -29,7 +29,7 @@ import {
   type Question,
 } from "../contracts/index.js";
 import { APP } from "../contracts/limits.js";
-import type { AskOptions, Deleted, SessionSummary, Turn } from "../engine/index.js";
+import type { AskOptions, SessionSummary, Turn } from "../engine/index.js";
 import { CommandMenu, menuHeight } from "./CommandMenu.js";
 import { Composer, composerHeight } from "./Composer.js";
 import { copyText } from "./clipboard.js";
@@ -57,7 +57,6 @@ import { answerQuestions, pendingQuestions } from "./questions.js";
 import { lastReport } from "./report/report.js";
 import { StatusRow } from "./Status.js";
 import { loginFlow, modelFlow, type SetupActions, type SetupFacts } from "./setup/setup-flows.js";
-import { askSync } from "./setup/sync-question.js";
 import { liveLines, Transcript } from "./Transcript.js";
 import { useRoles } from "./theme-context.js";
 import { lastAnswerMarkdown, transcriptMarkdown } from "./transcript-export.js";
@@ -149,28 +148,14 @@ type RunsOn = { model: string; provider: string; contextWindow?: number };
 
 /** Switching the session the chat talks to: `/new` and `/resume`. */
 export type ChatSessions = {
-  /**
-   * The sessions to go on with, with those only in the Tauric account when sync is on; `problem` when the
-   * account could not be listed.
-   */
-  list(): Promise<{ sessions: SessionSummary[]; problem?: string }>;
+  /** The sessions to go on with, newest first. */
+  list(): Promise<SessionSummary[]>;
   current(): string;
-  /** Whether deleting a session deletes its copy in the Tauric account too (sync is on). */
-  deletesFromAccount: boolean;
-  /** Delete session `id`: where it took effect (Deleted). */
-  delete(id: string): Promise<Deleted>;
+  delete(id: string): Promise<void>;
   /** Each gives the session switched to and the model it runs on. */
   startNew(): Promise<{ id: string } & RunsOn>;
-  /** `copied` when the session was copied from the account first. */
-  open(id: string): Promise<{ id: string; earlier: Earlier; copied?: true } & RunsOn>;
+  open(id: string): Promise<{ id: string; earlier: Earlier } & RunsOn>;
 };
-
-/**
- * Whether to sync sessions to the Tauric account, asked once in the app: `wanted`, whether to ask now (a key
- * and no answer yet, and the account keeps this application's sessions); `answer` keeps the choice, and with
- * sync turned on copies the running session from its start.
- */
-export type ChatSync = { wanted(): Promise<boolean>; answer(on: boolean): Promise<void> };
 
 /** A resumed session's earlier turns, shown again; `interrupted` when its last turn never ended. */
 export type Earlier = { events: readonly EventEnvelope[]; interrupted: boolean };
@@ -196,7 +181,6 @@ export function ChatApp({
   history,
   setup,
   sessions,
-  sync,
   news,
 }: {
   engine: Asker;
@@ -211,8 +195,6 @@ export function ChatApp({
   setup: ChatSetup;
   /** `/new` and `/resume`. */
   sessions: ChatSessions;
-  /** The question whether to sync sessions, asked once the app is idle. */
-  sync: ChatSync;
   /** The welcome block's one line of news: what's new in this version (once), else a newer release. */
   news?: string | undefined;
 }) {
@@ -226,7 +208,6 @@ export function ChatApp({
       type: "local.header",
       version: info.version,
       model: info.model,
-      keyed: info.tauricKey,
       news,
     });
     let state = (earlier?.events ?? []).reduce(reduceTranscript, start);
@@ -399,8 +380,7 @@ export function ChatApp({
     await inFlow(async () => {
       // Deleting one lists the rest again; choosing one goes on with it.
       for (;;) {
-        const { sessions: all, problem } = await sessions.list();
-        if (problem) dispatch({ type: "local.notice", level: "warn", text: problem });
+        const all = await sessions.list();
         const listed = all.filter((summary) => summary.id !== sessions.current());
         if (!listed.length) {
           dispatch({ type: "local.notice", level: "info", text: message("app.noOtherSessions") });
@@ -417,21 +397,14 @@ export function ChatApp({
                 esc: "close",
                 options: listed.map((summary) => ({
                   id: summary.id,
-                  label:
-                    flat(summary.title) ||
-                    message(summary.where === "account" ? "cli.untitledAccount" : "cli.untitledSession"),
-                  note:
-                    summary.where === "account"
-                      ? message("app.sessionInAccount", { ago: ago(summary.updated.getTime(), now) })
-                      : message("app.sessionNote", {
-                          ago: ago(summary.updated.getTime(), now),
-                          turns: summary.turns,
-                        }),
+                  label: flat(summary.title) || message("cli.untitledSession"),
+                  note: message("app.sessionNote", {
+                    ago: ago(summary.updated.getTime(), now),
+                    turns: summary.turns,
+                  }),
                   detail: summary.id,
                 })),
-                deleteConfirm: message(
-                  sessions.deletesFromAccount ? "app.deleteEverywhere" : "app.deleteHere",
-                ),
+                deleteConfirm: message("app.deleteHere"),
               },
             }),
             done: resolve,
@@ -439,14 +412,12 @@ export function ChatApp({
           redraw();
         });
         if (ended.kind === "delete") {
-          const where = await sessions.delete(ended.id);
-          dispatch({ type: "local.notice", level: "info", text: message(`app.deleted.${where}` as const) });
+          await sessions.delete(ended.id);
+          dispatch({ type: "local.notice", level: "info", text: message("app.deleted.here") });
           continue;
         }
         if (ended.kind !== "chosen") return;
         const opened = await sessions.open(ended.id);
-        if (opened.copied)
-          dispatch({ type: "local.notice", level: "info", text: message("app.copiedFromAccount") });
         switched(opened.id, opened, opened.earlier);
         if (!opened.earlier.interrupted) unanswered = pendingQuestions(opened.earlier.events);
         return;
@@ -568,8 +539,6 @@ export function ChatApp({
               model: "",
               provider: "",
               data: "",
-              tauricKey: false,
-              sync: "",
             }),
             ...(sessionId.current ? { session: sessionId.current } : {}),
             ...(modelNow.current.model ? modelNow.current : {}),
@@ -711,26 +680,6 @@ export function ChatApp({
     if (phase === "idle" && state.planReady && written && planAskedFor.current !== planTurn.current)
       void offerPlan();
   }, [phase, state.planReady, written, offerPlan]);
-
-  // The sync question: asked once the account is known to keep sessions, when nothing else is in the
-  // way (a turn, another step). Left unanswered (Esc, Ctrl+C), it is asked at the next start.
-  const [syncDue, setSyncDue] = useState(false);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: asked about once, for the app's first session
-  useEffect(() => {
-    void sync.wanted().then(
-      (wanted) => wanted && setSyncDue(true),
-      () => {},
-    );
-  }, []);
-  const stepOpen = form.current !== undefined;
-  useEffect(() => {
-    if (!syncDue || phase !== "idle" || stepOpen || closing.current) return;
-    setSyncDue(false);
-    void inFlow(async () => {
-      const on = await askSync(formUI.current);
-      if (on !== undefined) await sync.answer(on);
-    }).then((asked) => asked || setSyncDue(true));
-  }, [syncDue, phase, stepOpen, inFlow, sync]);
 
   /** Stop the running turn once; with nothing running, leave. */
   const interrupt = useCallback(

@@ -42,7 +42,7 @@ function previewed(preview: Preview | undefined, indent = ""): string[] {
 function section(block: Block): string | undefined {
   switch (block.kind) {
     case "header":
-      return `# ${APP_TITLE} ${flat(block.version)}\n\n${flat(block.model)} | ${message(block.keyed ? "app.dataTauric" : "app.dataYahoo")}`;
+      return `# ${APP_TITLE} ${flat(block.version)}\n\n${flat(block.model)} | ${message("app.dataYahoo")}`;
     case "question":
       return `## › ${literal(printable(block.text)).split("\n").join("\n   ")}`;
     case "lines":

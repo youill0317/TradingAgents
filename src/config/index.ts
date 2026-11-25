@@ -42,5 +42,4 @@ export {
   saveCredential,
   saveModel,
   saveServer,
-  saveSync,
 } from "./settings.js";

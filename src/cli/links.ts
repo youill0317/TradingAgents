@@ -2,15 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 /** Links the app shows: the project's addresses, written as terminal hyperlinks. */
 import { REPOSITORY_URL } from "../config/index.js";
-import { SIGN_UP_URL } from "../contracts/index.js";
 
 /** A link: what is shown, and where it goes. */
 export type Link = { text: string; url: string };
 
 export const REPO: Link = { text: REPOSITORY_URL.replace(/^https:\/\//, ""), url: REPOSITORY_URL };
-export const SITE: Link = { text: "tauric.ai", url: "https://tauric.ai" };
-/** Where to sign up for a Tauric API key, written as its whole address. */
-export const SIGN_UP: Link = { text: SIGN_UP_URL, url: SIGN_UP_URL };
 
 /**
  * `text` as an OSC 8 hyperlink to `url`. A terminal without hyperlinks ignores the sequence, as it does any

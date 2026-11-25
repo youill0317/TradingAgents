@@ -3,13 +3,7 @@
 
 export { BUILT_IN, type Catalog, loadCatalog } from "../agents/catalog.js";
 export { offeredLevels } from "../models/catalog.js";
-export {
-  defaultModel,
-  defaultOf,
-  type ModelOption,
-  modelsOf,
-  RECOMMENDED,
-} from "../models/model-default.js";
+export { defaultModel, defaultOf, type ModelOption, modelsOf } from "../models/model-default.js";
 export { dataToolNames } from "../tools/catalog.js";
 export type { EvidenceRecord } from "../tools/evidence-store.js";
 export { renderResult } from "../tools/render.js";
@@ -29,18 +23,13 @@ export {
   modelReplayKey,
   resolveContextWindow,
   routeOf,
-  tauricSessions,
 } from "./factory.js";
-export { allSessions, download, isHere } from "./restore.js";
 export {
-  type Deleted,
   deleteSession,
   type EngineBuilder,
   listSessions,
   Session,
   SessionError,
   type SessionSummary,
-  type SyncSetup,
   savedRoute,
-  sendPendingDeletions,
 } from "./session.js";

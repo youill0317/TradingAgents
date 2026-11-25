@@ -6,8 +6,6 @@
 export const APP_NAME = "tradingagents";
 /** The product's name as people read it (the header). */
 export const APP_TITLE = "TradingAgents";
-/** Who makes it. */
-export const MAKER = "Tauric Research";
 
 /** This build's version; a test keeps it equal to package.json's. */
 export const VERSION = "1.0.0";

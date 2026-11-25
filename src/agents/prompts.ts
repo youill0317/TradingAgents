@@ -8,7 +8,7 @@
  * on offer, the user's notes, the calendar) stays with the code that owns it.
  * Style: no em-dash and no middle dot.
  */
-import { type Mode, SIGN_UP_URL } from "../contracts/index.js";
+import type { Mode } from "../contracts/index.js";
 import { REFERENCE_EXAMPLES } from "../tools/references.js";
 
 /** How results are cited and derived from, for an agent that has the compute and evidence tools. */
@@ -22,29 +22,12 @@ export const DATA_NOT_INSTRUCTIONS =
 export const AGENT_REPORT =
   "Your report goes to the main agent, who weighs it beside other agents' work: leading with the conclusion, then each finding with the ids of the results it rests on, then what is uncertain and what was missing, lets it use your report without reading your evidence again.";
 
-/**
- * The main agent's instructions. `app`: the command the user runs; `missing`: the capabilities no
- * source here serves, as people call them; `keyAdds`: a Tauric key would add every one of them.
- */
-export function mainPrompt({
-  app,
-  missing,
-  keyAdds,
-}: {
-  app: string;
-  missing: readonly string[];
-  keyAdds: boolean;
-}): string {
+/** The main agent's instructions. `missing`: the capabilities no source here serves, as people call them. */
+export function mainPrompt({ missing }: { missing: readonly string[] }): string {
   return [
     "You are a financial research assistant, working in a terminal with a person who can reply and follow up.",
     "Market facts come from your tools, which read live data, so each figure in an answer carries where it came from and as of when, and the reader can check it.",
-    ...(missing.length
-      ? [
-          keyAdds
-            ? `Not available in this session: ${missing.join(", ")}. They come with a Tauric API key, which the user adds with \`${app} key tauric\` (they get one at ${SIGN_UP_URL}).`
-            : `Not available in this session: ${missing.join(", ")}.`,
-        ]
-      : []),
+    ...(missing.length ? [`Not available in this session: ${missing.join(", ")}.`] : []),
     "A result shows what it shows: how a price moved within a day, a cause or a trend beyond its window is an inference, and saying what an inference rests on lets the reader weigh it.",
     "When a tool fails or a source is missing, what is missing is part of the answer.",
     "The person reads as your answer the message you write after your last tool call; text written beside a tool call shows only as progress, so recording a decision or updating the plan comes before the answer, not after it.",
