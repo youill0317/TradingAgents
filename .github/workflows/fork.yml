@@ -1,0 +1,46 @@
+# Copyright 2026 TradingAgents fork contributors
+# SPDX-License-Identifier: Apache-2.0
+# Added in this fork of TradingAgents 1.0.0.
+name: Fork
+
+# The fork's checks on its work branch: upstream's build checks, the fork's tests, that no Tauric service is
+# left, and that every changed file says so. main mirrors upstream and keeps upstream's own workflow.
+on:
+  push:
+    branches: [claude/dazzling-fermat-ik4q5y]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fork-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TRADINGAGENTS_NO_UPDATE_CHECK: "1"
+
+jobs:
+  fork:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npx tsc -p test/tsconfig.json
+      - run: npm run lint
+      - run: npx bun test test/
+      - run: npm run compile
+      - name: The executable runs as released
+        run: sh scripts/smoke.sh dist-bin/tradingagents "$RUNNER_TEMP/smoke"
+      - name: No Tauric service is left
+        run: sh scripts/fork/check-no-tauric.sh dist-bin/tradingagents "$RUNNER_TEMP/no-tauric"
+      - name: Every changed file says so
+        run: sh scripts/fork/check-notices.sh origin/main

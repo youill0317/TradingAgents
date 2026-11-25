@@ -9,7 +9,7 @@ import { homedir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { writeAtomic } from "../config/index.js";
 import { errorText, message } from "../contracts/index.js";
-import { CHANGELOG } from "./changelog.generated.js";
+import { NOTES } from "../fork/changelog.js";
 import type { Copied } from "./clipboard.js";
 import { BACK, type FormUI } from "./form/form-ui.js";
 import { type Link, REPO } from "./links.js";
@@ -217,7 +217,7 @@ export const COMMANDS: readonly Command[] = [
     whileRunning: true,
     run(context) {
       const { version } = context.info;
-      const notes = CHANGELOG.find((entry) => entry.version === version);
+      const notes = NOTES.find((entry) => entry.version === version);
       if (!notes?.sections.length) return context.say([message("app.noNotes", { version })]);
       // The version's own items under the version, then each group under its heading.
       context.list({

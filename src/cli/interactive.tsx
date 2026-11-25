@@ -19,8 +19,8 @@ import {
   routeOf,
   Session,
 } from "../engine/index.js";
+import { NOTES } from "../fork/changelog.js";
 import { ChatApp, type ChatControls, type ChatSessions, type InputHistory } from "./ChatApp.js";
-import { CHANGELOG } from "./changelog.generated.js";
 import type { SessionInfo } from "./commands.js";
 import type { SessionHost } from "./session-host.js";
 import { setupActions, setupFacts } from "./setup/setup-actions.js";
@@ -85,7 +85,7 @@ export async function openChat(wiring: ChatWiring): Promise<OpenChat> {
     updateNotice: wiring.updateNotice,
     version: VERSION,
     statePath: paths.state,
-    notes: CHANGELOG,
+    notes: NOTES,
   });
   // The welcome starts at the top: the visible screen is erased (ED 2) and the cursor homed (CUP). The
   // scrollback is left as it is.

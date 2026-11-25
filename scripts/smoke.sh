@@ -57,7 +57,7 @@ cd "$dir"
 echo TRADINGAGENTS_HOME=not-absolute >.env
 echo 'preload = ["./preload.js"]' >bunfig.toml
 echo 'console.log("preloaded")' >preload.js
-out=$(HOME="$dir" "$bin" sessions)
+out=$(env -u TRADINGAGENTS_HOME HOME="$dir" "$bin" sessions)
 case $out in
 "No sessions yet."*) ;;
 *)
