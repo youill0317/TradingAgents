@@ -3,8 +3,8 @@
 blank_issues_enabled: false
 contact_links:
   - name: Questions and ideas
-    url: https://github.com/TauricResearch/TradingAgents/discussions
+    url: https://github.com/youill0317/TradingAgents/discussions
     about: Ask a question or discuss an idea.
   - name: Security vulnerability
-    url: https://github.com/TauricResearch/TradingAgents/security/advisories/new
+    url: https://github.com/youill0317/TradingAgents/security/advisories/new
     about: Report it privately, as SECURITY.md says, not in an issue.

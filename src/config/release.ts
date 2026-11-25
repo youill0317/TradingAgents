@@ -8,13 +8,14 @@
 import { APP_NAME } from "../contracts/index.js";
 
 /** The public repository. */
-export const REPOSITORY_URL = "https://github.com/TauricResearch/TradingAgents";
+export const REPOSITORY_URL = "https://github.com/youill0317/TradingAgents";
 
 /** Where a newer release is looked up: the release the public repository marks latest. */
-export const RELEASE_URL = "https://api.github.com/repos/TauricResearch/TradingAgents/releases/latest";
+export const RELEASE_URL = "https://api.github.com/repos/youill0317/TradingAgents/releases/latest";
 
-/** How to install a release from scratch. */
-export const INSTALL_COMMAND = "curl -fsSL https://tauric.ai/tradingagents/install.sh | sh";
+/** How to install a release from scratch: the installer each release carries (release.yml attaches it). */
+export const INSTALL_COMMAND =
+  "curl -fsSL https://github.com/youill0317/TradingAgents/releases/latest/download/install.sh | sh";
 
 /** The npm package people install, and the start of each platform's package name (`<prefix><os>-<cpu>`). */
 export const NPM_PACKAGE = `@tauric/${APP_NAME}`;
