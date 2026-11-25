@@ -338,7 +338,7 @@ export function firstRun(ui: FormUI, facts: SetupFacts, actions: SetupActions): 
     const chosen = await ui.pick({
       title: message("setup.chooseProvider"),
       options: providerOptions(facts, "first"),
-      // The flow's first step: Esc ends it. Seven providers: typing finds one.
+      // The flow's first step: Esc ends it. Eight providers: typing finds one.
       filter: true,
       esc: "close",
     });
@@ -357,7 +357,7 @@ export function loginFlow(ui: FormUI, facts: SetupFacts, actions: SetupActions):
     const chosen = await ui.pick({
       title: message("setup.chooseLogin"),
       options: providerOptions(facts, "login"),
-      // The flow's first step: Esc ends it. Seven providers: typing finds one.
+      // The flow's first step: Esc ends it. Eight providers: typing finds one.
       filter: true,
       esc: "close",
     });
@@ -425,7 +425,7 @@ export function modelFlow(ui: FormUI, facts: SetupFacts, actions: SetupActions):
     const chosen = await ui.pick({
       title: message("setup.chooseProvider"),
       options: providerOptions(known, "model"),
-      // The flow's first step: Esc ends it. Seven providers: typing finds one.
+      // The flow's first step: Esc ends it. Eight providers: typing finds one.
       filter: true,
       esc: "close",
       ...(current ? { start: current.provider } : {}),

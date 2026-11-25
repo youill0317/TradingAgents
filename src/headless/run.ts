@@ -1,6 +1,5 @@
 // Copyright 2026 Tauric Research
 // SPDX-License-Identifier: Apache-2.0
-// Changed in this fork of TradingAgents 1.0.0.
 /**
  * Headless: one question, answered without a terminal UI. `jsonl` writes every event as one JSON
  * line, for programs and agents; `answer` writes only the final answer.
@@ -73,15 +72,15 @@ export async function runHeadless(
         unwritten = event.text;
       if (event.type === "turn.completed") sources = event.sources ?? [];
       if (format === "jsonl") write(out, `${JSON.stringify(envelope)}\n`);
-      // A person reading only the answer is told the main agent's warnings; a cap is said once at the end,
-      // as is an answer the time left unwritten.
+      // A person reading only the answer is told the main agent's warnings and the sign-up nudge (whoever
+      // met it); a cap is said once at the end, as is an answer the time left unwritten.
       else if (event.type === "notice") {
         const warning =
           !envelope.parent &&
           event.level !== "info" &&
           !event.code.startsWith("cap_") &&
           event.code !== NOTICE.answerEmpty;
-        if (warning) write(err, `${event.text}\n`);
+        if (warning || event.code === NOTICE.capabilityUnavailable) write(err, `${event.text}\n`);
       } else if (event.type === "compaction.failed")
         write(err, `${message("run.summaryFailed", { reason: event.error.message })}\n`);
     }

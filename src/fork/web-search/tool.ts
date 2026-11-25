@@ -136,7 +136,9 @@ export function webSearchTool(searcher: WebSearcher) {
         .int()
         .min(1)
         .optional()
-        .describe("The most pages to list; every page found when left out"),
+        .describe(
+          "The most pages to list, though every page a finding rests on is listed; every page found when left out",
+        ),
     }),
     output: OUT,
     label: ({ query }) => query,

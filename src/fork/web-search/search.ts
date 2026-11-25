@@ -58,7 +58,7 @@ export type WebSearchRequest = {
   query: string;
   since?: string;
   sites?: readonly string[];
-  /** The most pages to list; every page found when unset. */
+  /** The most pages to list, though every page a finding rests on is listed; every page found when unset. */
   limit?: number;
   /** The session's date (YYYY-MM-DD), which the search model is told. */
   today: string;
@@ -332,7 +332,8 @@ const SEARCH_FIX: Record<WebSearchProvider, string> = {
 
 /**
  * Search that is not on for this key's organization or not taken by its model: a setup no request
- * changes, so the session's later calls answer it at once (webSearcher). Its message is shown as it is.
+ * changes, so later calls answer it at once (webSearcher) until the engine is built again, as it is when a
+ * session is started or resumed or the model is switched. Its message is shown as it is.
  */
 function searchOff(
   { setup, source }: Asking,
@@ -341,7 +342,7 @@ function searchOff(
 ): DataError {
   return new DataError(
     "not_configured",
-    `${source} is not available to this key or to ${setup.model} (${said.replace(/[.\s]+$/, "")}). ${SEARCH_FIX[setup.provider]}; until then web_search answers this at once.`,
+    `${source} is not available to this key or to ${setup.model} (${said.replace(/[.\s]+$/, "")}). ${SEARCH_FIX[setup.provider]}; web_search answers this at once, without asking again, until a session is started or resumed or the model is switched.`,
     { source, ...details, code: NOTICE.capabilityUnavailable },
   );
 }
@@ -401,6 +402,8 @@ export type Gathered = {
   ran: number;
   /** The provider's codes for searches that failed (Anthropic's error blocks, OpenAI's failed calls). */
   errors: string[];
+  /** How much of the text came before the last search: what the model said while it searched is there. */
+  lastSearchAt: number;
 };
 
 type Part = Record<string, unknown>;
@@ -413,24 +416,34 @@ const textOf = (value: unknown): string | undefined =>
 /**
  * The text, citations, pages, searches and search failures of an answer: AI SDK content parts (text with
  * its citations, sources, the provider's own search calls and results) and the provider's metadata
- * (Google's grounding, Anthropic's count of searches). What the model wrote while it searched, before its
- * last search and citing nothing, is left out.
+ * (Google's grounding, Anthropic's count of searches). Every text part is kept, in order; a search or the
+ * model's reasoning between two of them ends a line, so what was written on either side never runs
+ * together. Which lines are findings answerOf decides.
  */
 export function gather(content: readonly unknown[], metadata: unknown): Gathered {
-  const parts = content.filter(isPart);
-  const searched = (part: Part) =>
-    (part.type === "tool-result" || part.type === "tool-error") && part.providerExecuted === true;
-  const lastSearch = parts.findLastIndex(searched);
-  const cites = (part: Part) => listOf(part.citations).length > 0;
-  // Where the text carries its citations (Anthropic, OpenAI), uncited text before the last search is what
-  // the model said while searching ("I'll search for ..."); Google's text is cited in its metadata.
-  const citing = parts.some((part) => part.type === "text" && cites(part));
-  const gathered: Gathered = { text: "", marks: [], pages: [], searches: [], ran: 0, errors: [] };
+  const gathered: Gathered = {
+    text: "",
+    marks: [],
+    pages: [],
+    searches: [],
+    ran: 0,
+    errors: [],
+    lastSearchAt: 0,
+  };
   let calls = 0;
-  parts.forEach((part, at) => {
+  let lineEnded = false;
+  content.filter(isPart).forEach((part) => {
+    const search =
+      (part.type === "tool-call" || part.type === "tool-result" || part.type === "tool-error") &&
+      part.providerExecuted === true;
+    if (search) gathered.lastSearchAt = gathered.text.length;
+    if (search || part.type === "reasoning") lineEnded = true;
     switch (part.type) {
       case "text": {
-        if (typeof part.text !== "string" || (citing && at < lastSearch && !cites(part))) return;
+        if (typeof part.text !== "string") return;
+        // Text the provider splits at its citations runs on; after a search or reasoning, a line starts.
+        if (lineEnded && gathered.text && !gathered.text.endsWith("\n")) gathered.text += "\n";
+        lineEnded = false;
         const offset = gathered.text.length;
         gathered.text += part.text;
         for (const citation of listOf(part.citations).map(partOf)) {
@@ -555,13 +568,16 @@ function within(site: string, sites: readonly string[]): boolean {
   return sites.some((allowed) => site === allowed || site.endsWith(`.${allowed}`));
 }
 
+/** A line of the model's list: a bullet or a number before its words. */
+const LIST_ITEM = /^\s*(?:[-*•]|\d+[.)])\s+/;
+
 /** A finding's line as people read it: no bullet, no markdown emphasis, links as their words. */
 function findingText(line: string): string {
   return line
     .replace(/\s*\(\s*\[[^\]]*\]\([^)]*\)\s*\)/g, "")
     .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
     .replace(/\*\*|__/g, "")
-    .replace(/^\s*(?:[-*•]|\d+[.)])\s+/, "")
+    .replace(LIST_ITEM, "")
     .trim();
 }
 
@@ -594,9 +610,26 @@ function usageNote(
 }
 
 /**
+ * Why an answer ended before the search model was done, from how the SDK reads its finish and how the
+ * provider said it; undefined for an answer that was finished.
+ */
+function stoppedEarly(finish: string, raw: string | undefined): string | undefined {
+  // Anthropic pauses a turn its server has run long; the search model may not have written all of it.
+  if (raw === "pause_turn") return "Anthropic paused the search model's turn";
+  if (finish === "stop") return undefined;
+  // The SDK reads Anthropic's full context window as it reads an output limit; the provider's word differs.
+  if (finish === "length")
+    return raw === "model_context_window_exceeded"
+      ? "the search model's context window filled"
+      : "the search model reached its output limit";
+  return `the search model stopped early (${raw ?? finish})`;
+}
+
+/**
  * The answer from what was gathered: pages the findings cite first (in the order cited), then the other
- * pages found, each once, kept to `sites` (and to `limit` when one is given); each finding with the numbers
- * of the pages it rests on. A search that found nothing because it failed is a failure, never "no pages".
+ * pages found, each once, kept to `sites`, and past `limit` when one is given only the pages a finding
+ * rests on; each finding with the numbers of the pages it rests on. A search that found nothing because it
+ * failed, or because the search model stopped before it was done, is a failure, never "no pages".
  */
 export function answerOf(
   gathered: Gathered,
@@ -626,10 +659,12 @@ export function answerOf(
     add(url, { ...(title ? { title } : {}), ...(quote ? { quote } : {}) });
   for (const { url, ...found } of gathered.pages) add(url, found);
   const sites = request.sites?.length ? request.sites : undefined;
+  // A limit never leaves out a page a finding rests on: each finding keeps its pages.
+  const cited = new Set(marks.map((mark) => cleanUrl(mark.url)));
   const results: WebPage[] = [];
   const numbers = new Map<string, number>();
   for (const draft of drafts.values()) {
-    if (request.limit !== undefined && results.length >= request.limit) break;
+    if (request.limit !== undefined && results.length >= request.limit && !cited.has(draft.url)) continue;
     const { site, title } = placeOf(draft.url, draft.title);
     if (sites && !within(site, sites)) continue;
     const n = results.length + 1;
@@ -652,26 +687,36 @@ export function answerOf(
     at = to + 1;
     const text = findingText(line);
     if (!text) continue;
-    const cited = marks
+    const pages = marks
       .filter((mark) => mark.from < Math.max(to, from + 1) && mark.to > from)
-      .map((mark) => numbers.get(cleanUrl(mark.url) ?? ""))
-      .filter((n): n is number => n !== undefined);
-    // A heading the model wrote over its list ("Findings:") is not a finding.
-    if (!cited.length && text.endsWith(":")) continue;
-    findings.push({ text, results: [...new Set(cited)].sort((a, b) => a - b) });
+      .map((mark) => cleanUrl(mark.url))
+      .filter((url): url is string => url !== undefined);
+    const numbered = pages.map((url) => numbers.get(url)).filter((n): n is number => n !== undefined);
+    if (pages.length) {
+      // A finding that rests only on pages off the sites asked for is left out with them.
+      if (!numbered.length) continue;
+    } else if (text.endsWith(":") || (to <= gathered.lastSearchAt && !LIST_ITEM.test(line))) {
+      // Not a finding: a heading the model wrote over its list ("Findings:"), or what it said while it
+      // searched ("I'll search for ..."), a line before its last search and outside its list.
+      continue;
+    }
+    findings.push({ text, results: [...new Set(numbered)].sort((a, b) => a - b) });
   }
   const failed = [...new Set(gathered.errors)];
-  if (!results.length && failed.length) {
-    if (failed.some((code) => OFF_CODE.test(code))) throw searchOff(context, failed.join(", "));
-    const known = failed.map((code) => SEARCH_ERRORS[code]).find(Boolean);
-    throw new DataError(
-      known?.kind ?? "unavailable",
-      known?.detail ?? `the search failed (${failed.join(", ")})`,
-      { source, code: failed[0] ?? "error" },
-    );
-  }
-  if (!results.length && finish === "content-filter") {
-    throw new DataError("invalid", "the search model declined this request", { source });
+  const stopped = stoppedEarly(finish, raw);
+  if (!results.length) {
+    if (failed.length) {
+      if (failed.some((code) => OFF_CODE.test(code))) throw searchOff(context, failed.join(", "));
+      const known = failed.map((code) => SEARCH_ERRORS[code]).find(Boolean);
+      throw new DataError(
+        known?.kind ?? "unavailable",
+        known?.detail ?? `the search failed (${failed.join(", ")})`,
+        { source, code: failed[0] ?? "error" },
+      );
+    }
+    if (finish === "content-filter")
+      throw new DataError("invalid", "the search model declined this request", { source });
+    if (stopped) throw new DataError("unavailable", `${stopped} before it found any page`, { source });
   }
   return {
     searches: gathered.searches,
@@ -682,11 +727,7 @@ export function answerOf(
       ...(failed.length
         ? [`some searches failed (${failed.join(", ")}); the pages are those the others found`]
         : []),
-      ...(finish === "length" ? ["the findings were cut at the search model's output limit"] : []),
-      // Anthropic pauses a turn its server has run long; the search model may not have written all of it.
-      ...(raw === "pause_turn"
-        ? ["Anthropic paused the search model's turn before it ended; the findings may be incomplete"]
-        : []),
+      ...(stopped ? [`${stopped}; the findings may be incomplete`] : []),
     ],
   };
 }

@@ -75,7 +75,7 @@ Every session is kept, on this computer, in `sessions/` in the [configuration di
 
 ## Agents and skills
 
-The main agent answers with its own tools: data tools, compute tools for arithmetic, statistics, technical indicators, portfolio risk and weights over what it has read, `web_search` when it is on (see [web search](configuration.md#web-search)), a plan, memory, and the results it has recorded. For depth it briefs a specialist agent (`run_agent`), which researches the brief in its own context with its own tools and reports back with its sources; a broad question can go to several at once. For a known kind of research it loads a skill: the method it follows.
+The main agent answers with its own tools: data tools, compute tools for arithmetic, statistics, technical indicators, portfolio risk and weights over what it has read, `web_search` when it is on (see [web search](configuration.md#web-search)), memory, the results it has recorded, and a plan when it has agents to brief. For depth it briefs a specialist agent (`run_agent`), which researches the brief in its own context with its own tools and reports back with its sources; a broad question can go to several at once. For a known kind of research it loads a skill: the method it follows.
 
 | Agent                      | Researches                                                                                                           |
 | -------------------------- | -------------------------------------------------------------------------------------------------------------------- |
@@ -103,7 +103,7 @@ The main agent answers with its own tools: data tools, compute tools for arithme
 | portfolio-review       | Risk      | how a set of holdings behaves together, and how other weights would compare |
 | thesis-review          | Risk      | a challenge to a view: the case against, a pre-mortem, what would break it  |
 
-An agent is offered when every data tool it names has a source here, and the built-in skills, written as briefs for the built-in agents, when one of those is. The data tools with a source today are `quote` and `price_history`, from Yahoo, and `prediction_markets`, from Polymarket; the others answer that no data source here serves them. So none of the agents and skills above is offered yet, and the main agent researches on its own; they are offered as the data they need becomes available, as free public sources are added.
+An agent is offered when every data tool it names has a source here, and the built-in skills, written as briefs for the built-in agents, when one of those is. The data tools with a source today are `quote` and `price_history`, from Yahoo, and `prediction_markets`, from Polymarket; the others answer that they are not available in this setup. So none of the agents and skills above is offered yet, and the main agent researches on its own; they are offered as the data they need becomes available, as free public sources are added.
 
 `/agents` and `/skills` list what a session has, where each comes from, and which are not available in it.
 

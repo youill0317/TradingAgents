@@ -7,10 +7,12 @@
 # - every tracked text file names Tauric, in any case, only where scripts/fork/tauric-allowlist.txt allows
 #   it (upstream's copyright lines, FORK.md, upstream's release notes, and lines kept on purpose); each
 #   other line is printed as path:line:text;
-# - the executable carries no Tauric site, endpoint, key variable or tool beyond the upstream release notes
-#   it embeds (src/cli/changelog.generated.ts, which src/fork/changelog.ts shows without their Tauric
-#   items): each may appear only as often as those notes hold it;
-# - nothing the executable sends a model mentions Tauric (one -p question to a recording stub).
+# - the executable carries no Tauric site, endpoint, key variable, tool, product or account beyond the
+#   upstream release notes it embeds (src/cli/changelog.generated.ts, which src/fork/changelog.ts shows
+#   without their Tauric items): each, in any case, may appear only as often as those notes hold it;
+# - nothing the executable sends a model mentions Tauric: one -p question to a recording stub, with a
+#   stand-in Anthropic key so that web_search, its description and its instructions are in the request
+#   (the stub answers without a tool call, so nothing is searched).
 set -eu
 bin=$(cd "$(dirname "$1")" && pwd)/$(basename "$1")
 mkdir -p "$2"
@@ -83,12 +85,12 @@ END {
 	status=1
 fi
 
-# The executable embeds upstream's release notes, which name Tauric's site: each of these may appear in it
-# as often as the notes hold it, and no more.
-for pattern in api.tauric.ai tauric.ai TauricResearch TAURIC_API_KEY tauric_view "key tauric" \
-	TRADINGAGENTS_SYNC .tauric/ '".tauric"'; do
-	found=$(grep -a -o -F -e "$pattern" "$bin" | wc -l)
-	kept=$(grep -o -F -e "$pattern" "$notes" | wc -l)
+# The executable embeds upstream's release notes, which name Tauric's site, key, model and account: each of
+# these may appear in it, in any case, as often as the notes hold it, and no more.
+for pattern in api.tauric.ai tauric.ai TauricResearch TAURIC_API_KEY tauric_view "key tauric" '".tauric"' \
+	"Tauric API key" "Tauric account" "Tauric AI" "Tauric's"; do
+	found=$(grep -a -o -i -F -e "$pattern" "$bin" | wc -l)
+	kept=$(grep -o -i -F -e "$pattern" "$notes" | wc -l)
 	if [ "$((found))" -gt "$((kept))" ]; then
 		echo "check-no-tauric: $pattern: $((found)) in the executable, $((kept)) in the release notes it embeds" >&2
 		status=1
@@ -119,13 +121,20 @@ trap 'kill "$stub" 2>/dev/null || true' EXIT
 for _ in 1 2 3 4 5 6 7 8 9 10; do [ -s "$scratch/port" ] && break; sleep 1; done
 env -u TRADINGAGENTS_WEB_SEARCH TRADINGAGENTS_HOME="$scratch/home" \
 	TRADINGAGENTS_BASE_URL="http://127.0.0.1:$(cat "$scratch/port")/v1" TRADINGAGENTS_MODEL=stub \
-	TRADINGAGENTS_NO_UPDATE_CHECK=1 "$bin" -p "What can you look up?" >/dev/null
+	ANTHROPIC_API_KEY=sk-ant-stand-in-0123456789 TRADINGAGENTS_NO_UPDATE_CHECK=1 \
+	"$bin" -p "What can you look up?" >/dev/null
 if [ ! -s "$scratch/requests" ]; then
 	echo "check-no-tauric: the executable sent the stub no model request" >&2
 	status=1
-elif grep -q -i tauric "$scratch/requests"; then
-	echo "check-no-tauric: a model request mentions Tauric" >&2
-	status=1
+else
+	if ! grep -q '"web_search"' "$scratch/requests"; then
+		echo "check-no-tauric: the model request offers no web_search, so its text went unchecked" >&2
+		status=1
+	fi
+	if grep -q -i tauric "$scratch/requests"; then
+		echo "check-no-tauric: a model request mentions Tauric" >&2
+		status=1
+	fi
 fi
 [ "$status" -eq 0 ] && echo "check-no-tauric: Tauric only where kept on purpose, and in no model request"
 exit "$status"

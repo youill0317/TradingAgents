@@ -17,7 +17,7 @@ key or plan, and keeps your sessions on this computer.
   model you serve yourself behind an OpenAI-compatible API (vLLM, Ollama, LM Studio).
 - **Market data**: quotes and daily price history from Yahoo (`quote`, `price_history`), and event odds from
   Polymarket's prediction markets (`prediction_markets`).
-- **Web search**: `web_search`, through Anthropic's, OpenAI's or Google's own web search
+- **Web search**: `web_search`, through Anthropic's or OpenAI's own web search, or Google's when named
   ([below](#web-search)).
 - **Compute**: arithmetic, statistics, returns and risk, correlation and beta, technical indicators,
   portfolio risk and weights, and DCF valuation, over the data read.
@@ -25,7 +25,7 @@ key or plan, and keeps your sessions on this computer.
 - **Sessions and output**: plan mode, sessions to resume, an answer saved as a PDF report or Markdown, and
   `tradingagents -p` for one question from a script.
 
-The other data tools answer that no data source here serves them yet: financial statements, SEC filings,
+The other data tools answer that they are not available in this setup: financial statements, SEC filings,
 news, company profiles and estimates, ownership, corporate actions, the `technicals` snapshot, macro series,
 instrument search, market overviews and sector screens.
 
@@ -153,6 +153,8 @@ answers one question and prints the answer, and `--json` prints every event as a
 - [Models](docs/models.md): providers, keys, reasoning and OpenAI-compatible servers.
 - [Configuration](docs/configuration.md): files, environment variables and web search.
 - [FORK.md](FORK.md): what this fork changed, and how it takes upstream's releases.
+- [CHANGELOG.md](CHANGELOG.md): upstream's release notes, as upstream wrote them. Some of their items are
+  upstream's own services, which this fork does not have; `/changelog` shows the notes without them.
 
 To report an issue or open a pull request, see [CONTRIBUTING.md](CONTRIBUTING.md); to report a security problem, [SECURITY.md](SECURITY.md).
 

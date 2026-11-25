@@ -7,6 +7,8 @@
 #   curl -fsSL https://github.com/youill0317/TradingAgents/releases/latest/download/install.sh | sh              the latest release
 #   curl -fsSL https://github.com/youill0317/TradingAgents/releases/latest/download/install.sh | sh -s -- 1.2.3  a given release
 #
+# This fork publishes no release yet, so there is nothing for it to install: build from source (docs/install.md).
+#
 # The latest release is the one GitHub marks latest. The download is checked against the release's
 # SHA256SUMS and installed into TRADINGAGENTS_INSTALL_DIR (default ~/.local/bin). It runs as your own user and
 # never asks for elevated rights.

@@ -21,11 +21,19 @@ scripts/fork/tauric-allowlist.txt
 FORK.md
 
 # Upstream's release notes, as upstream wrote them so its releases merge cleanly. The fork shows them without
-# their Tauric items (src/fork/changelog.ts, tested in test/fork/changelog.test.ts).
+# their Tauric items (src/fork/changelog.ts, tested in test/fork/changelog.test.ts); the README says the file
+# is upstream's.
 CHANGELOG.md
 src/cli/changelog.generated.ts
-src/fork/changelog.ts
 test/fork/changelog.test.ts
+
+# How src/fork/changelog.ts leaves those items out: its comments and its code, never the notes it shows.
+src/fork/changelog.ts	with every item about Tauric's services left out
+src/fork/changelog.ts	/** Items that name Tauric's services, products or sites. */
+src/fork/changelog.ts	const TAURIC = /tauric/i;
+src/fork/changelog.ts	function withoutTauric(
+src/fork/changelog.ts	!TAURIC.test(item)
+src/fork/changelog.ts	...withoutTauric(entry.sections)
 
 # Upstream's npm packaging and package names: this fork publishes no npm package, so nothing runs or
 # shows them.
@@ -33,9 +41,9 @@ scripts/npm-packages.ts
 scripts/npm/launcher.js
 src/config/release.ts	export const NPM_PACKAGE = `@tauric/${APP_NAME}`;
 
-# The README credits the original authors and links their repository.
-README.md	Tauric Research
-README.md	TauricResearch/TradingAgents
+# The README's attribution: the original work, its authors and their repository, and nothing else.
+README.md	This repository is a fork of [TradingAgents](https://github.com/TauricResearch/TradingAgents) 1.0.0 by
+README.md	Tauric Research, used under the Apache License 2.0. It is not made, endorsed or supported by Tauric Research.
 
 # biome.json's ignores for the removed Tauric files: they match nothing now, and upstream's merge cleanly.
 biome.json	"!src/data/tauric/schema.generated.ts"
@@ -58,3 +66,4 @@ src/tools/company.ts	/** The profile's fields Tauric serves as fractions (0.2762
 src/tools/evidence-store.ts	* only when its data may be copied with a synced session (Tauric's own, or computed from such alone)
 src/tools/tool.ts	/** The data may be copied with a synced session (Tauric's own, or computed from such); else it stays here. */
 src/tools/valuation.ts	/** Cash flow statement lines a DCF reads, by the names Tauric gives them. */
+src/cli/transcript-state.ts	* nothing, and a source named after others failed ("Yahoo, after Tauric failed") counts as itself.

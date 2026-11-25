@@ -263,7 +263,7 @@ Prices come from Yahoo and event odds from Polymarket; the rest is not available
   "app.queued": ({ text }: { text: string }) => `Queued: ${text}`,
   "app.queuedMore": ({ count }: { count: number }) => `+${count} more queued`,
   "app.queuePaused": () => "Queue paused: Enter sends the next one, Up takes it back",
-  "app.dataYahoo": () => "Yahoo prices only",
+  "app.dataYahoo": () => "Yahoo prices and Polymarket odds",
   "app.interrupted": () => "This question did not finish: the session ended while it ran.",
   "app.stoppedUnexpectedly": ({ reason }: { reason: string }) => `The run stopped unexpectedly: ${reason}`,
   "app.stoppedAtLimit": ({ cap }: { cap: string }) => `stopped at its ${CAP_WORDS[cap] ?? cap} limit`,
@@ -587,7 +587,7 @@ Prices come from Yahoo and event odds from Polymarket; the rest is not available
 
   // Data
   "data.notAvailable": ({ capability }: { capability: string }) =>
-    `${capability}: not available; no data source here serves it.`,
+    `${capability}: not available in this setup.`,
   "data.listingNotServed": () => "it does not serve this listing",
   "data.attempt": ({ source, outcome, detail }: { source: string; outcome: string; detail: string }) =>
     `${source} ${
@@ -714,6 +714,20 @@ Prices come from Yahoo and event odds from Polymarket; the rest is not available
   "call.unreachable": ({ source, detail }: { source: string; detail: string }) =>
     `${source} could not be reached or answered unreadably; this is not a fact about the market. ${detail}`,
 } satisfies Record<string, (params: never) => string>;
+
+/** Bytes as people say them: 1 GB, 1.5 GB, 512 MB. */
+export function formatBytes(bytes: number): string {
+  const units = ["bytes", "KB", "MB", "GB", "TB"];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit++;
+  }
+  const shown =
+    Number.isInteger(value) || unit === 0 ? String(Math.round(value)) : value.toFixed(1).replace(/\.0$/, "");
+  return `${shown} ${units[unit]}`;
+}
 
 /** A length of time as people read it: "41s", "8m 41s", "1h 2m". */
 function duration(ms: number): string {

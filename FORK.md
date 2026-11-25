@@ -9,19 +9,24 @@ or supported by Tauric Research.
 - Tauric's services are removed: the Tauric data provider, the Tauric AI model provider, Tauric keys, login
   and sign-up, session sync and account calls, and the `tauric_view` tool with the syntheses capability.
   Sessions stay on this computer.
-- Quotes and daily price history come from Yahoo, and prediction-market odds from Polymarket. The fork's
-  free public-data providers, under `src/fork/data/`, arrive in later commits; until one serves a
-  capability, asking for it answers that no data source here serves it. The built-in agents and skills are
-  offered as the data they need becomes available.
-- A `web_search` tool searches the web through Anthropic's, OpenAI's or Google's own search, the chat
-  model's provider first, when a key for one of them is set.
-- Releases, the update check, the installer and issue links point at this repository.
+- Quotes and daily price history come from Yahoo, and prediction-market odds from Polymarket. Free
+  public-data providers will be added; until one serves a capability, asking for it answers that it is not
+  available in this setup. The built-in agents and skills are offered as the data they need becomes
+  available.
+- A `web_search` tool searches the web through Anthropic's or OpenAI's own search when a key for one of
+  them is set (the chat model's provider first when it is one of them), or through Google Search grounding
+  when `TRADINGAGENTS_WEB_SEARCH` names Google.
+- Releases, the update check, the installer and issue links point at this repository. It publishes no
+  release yet: the update check finds none, `tradingagents update` says the release lookup failed and
+  changes nothing, and where upstream gives its install command, the app says how to build from source.
 - The default home is `~/.config/tradingagents`; `TRADINGAGENTS_HOME` still overrides it.
 
 ## Change notices
 
-Each upstream file this fork changed carries `Changed in this fork of TradingAgents 1.0.0.` under its
-license line, and each file it added carries `Added in this fork of TradingAgents 1.0.0.`;
+Each upstream file this fork changed, or moved, keeps upstream's copyright and SPDX lines as they were and
+carries `Changed in this fork of TradingAgents 1.0.0.` on the line under them. Each code, script or
+workflow file it added starts, after a `#!` line if it has one, with `Copyright 2026 TradingAgents fork
+contributors`, the SPDX line and `Added in this fork of TradingAgents 1.0.0.`.
 `scripts/fork/check-notices.sh` checks both. Changed files that cannot hold a comment are listed here:
 
 - `README.md`, `SECURITY.md`, `docs/configuration.md`, `docs/install.md`, `docs/models.md`, `docs/usage.md`
@@ -49,14 +54,18 @@ names and text are left as they are:
 - the `@tauric` npm names in `src/config/release.ts`, `scripts/npm-packages.ts` and `scripts/npm/launcher.js`
   (this fork publishes no npm package);
 - upstream's release notes in `CHANGELOG.md` and `src/cli/changelog.generated.ts`, shown without their
-  Tauric items (`src/fork/changelog.ts`);
-- seven code comments on upstream's data and session sync: one each in `src/cli/report/report.ts`,
-  `src/tools/company.ts`, `src/tools/evidence-store.ts`, `src/tools/tool.ts` and `src/tools/valuation.ts`,
-  and two in `src/contracts/citations.ts`.
+  Tauric items (`src/fork/changelog.ts`); the README says `CHANGELOG.md` is upstream's, as upstream wrote
+  it;
+- eight code comments on upstream's data and session sync: one each in `src/cli/report/report.ts`,
+  `src/cli/transcript-state.ts`, `src/tools/company.ts`, `src/tools/evidence-store.ts`, `src/tools/tool.ts`
+  and `src/tools/valuation.ts`, and two in `src/contracts/citations.ts`;
+- other comments and inert text of upstream's that the removal left behind, such as a count of providers
+  or a mention of syncing, so that its edits to them merge.
 
 `scripts/fork/tauric-allowlist.txt` lists each line that may still name Tauric, with the reason.
 `scripts/fork/check-no-tauric.sh` fails on any other line of a tracked file that does, on a Tauric name in
-the executable beyond the release notes it embeds, and on a model request that mentions Tauric.
+the executable beyond the release notes it embeds, and on a model request that mentions Tauric (with
+`web_search` offered, so its description and instructions are checked too).
 
 ## Taking an upstream release
 
@@ -97,7 +106,8 @@ this fork.
    ```
 
 3. Resolve the conflicts:
-   - A Tauric file this fork deleted and upstream changed stays deleted: `git rm <file>`.
+   - A file this fork deleted (listed under Change notices) and upstream changed stays deleted:
+     `git rm <file>`.
    - A file the removal of Tauric's services edited (likeliest `src/engine/session.ts`,
      `src/contracts/messages.ts`, `src/cli/main.tsx`, `src/cli/interactive.tsx`, `src/cli/ChatApp.tsx`,
      `src/cli/setup/setup-flows.ts`, `src/engine/factory.ts`): take upstream's change, then remove its

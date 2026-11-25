@@ -20,8 +20,8 @@ const FORK_NOTES: { readonly [version: string]: VersionNotes["sections"] } = {
       heading: "This fork",
       items: [
         "This fork needs no data account, and sessions stay on this computer.",
-        "Data: prices from Yahoo and event odds from Polymarket. Free public data sources are being added, and the built-in agents and skills are offered as the data they need becomes available.",
-        "Web search: `web_search` searches the web through Anthropic's, OpenAI's or Google's own search, with your key for it.",
+        "Data: prices from Yahoo and event odds from Polymarket. Free public data sources are being added; the built-in agents and skills listed below are offered once the data they need is, and none is yet.",
+        "Web search: `web_search` searches the web through Anthropic's or OpenAI's own search with your key for it, or through Google's when TRADINGAGENTS_WEB_SEARCH names it.",
         "Models: OpenAI, Anthropic, Google, DeepSeek, OpenRouter, AI subscriptions (ChatGPT), or self-hosted models.",
       ],
     },

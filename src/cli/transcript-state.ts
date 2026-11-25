@@ -114,7 +114,7 @@ export type GroupedCall = {
 
 /**
  * The sources a group's calls were answered by, in the order first used: a call that failed answered
- * nothing, and a source named after others failed ("Yahoo, after another source failed") counts as itself.
+ * nothing, and a source named after others failed ("Yahoo, after Tauric failed") counts as itself.
  */
 export function groupSources(calls: readonly GroupedCall[]): string[] {
   const named = calls.flatMap((call) =>

@@ -4,12 +4,18 @@
 /**
  * web_search with each provider's streamed answer recorded by hand in its wire format (no network): what
  * is asked of the provider, how pages, findings, usage and failures come back, how a cited search is
- * listed, which provider a session searches with and what its start says, and what the main agent is told.
+ * listed, which provider a session searches with and what its start says (also in a run of the command
+ * line against a local chat server), and what the main agent is told.
  */
 import { describe, expect, test } from "bun:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { mainPrompt } from "../../src/agents/prompts.js";
-import { sourceLine } from "../../src/contracts/index.js";
-import { CALLS } from "../../src/contracts/limits.js";
+import { writeCredentials } from "../../src/config/credentials.js";
+import { type ModelRoute, sourceLine } from "../../src/contracts/index.js";
+import { CALLS, DEFAULT_LIMITS } from "../../src/contracts/limits.js";
+import { createEngine } from "../../src/engine/factory.js";
 import type { WebSearchProvider, WebSearchSetup } from "../../src/fork/web-search/search.js";
 import { chooseWebSearch, readChoice, webSearchFor } from "../../src/fork/web-search/setup.js";
 import { webSearchTool, webSearchTools } from "../../src/fork/web-search/tool.js";
@@ -289,6 +295,62 @@ describe("Anthropic", () => {
     expect(outcome.output).not.toContain(long);
   });
 
+  test("findings written between searches keep their lines and pages; what was said while searching is left out", async () => {
+    const FT = "https://www.ft.com/content/acme-shares";
+    const cite = (url: string) => [
+      {
+        type: "web_search_result_location",
+        cited_text: "quoted",
+        url,
+        title: "T",
+        encrypted_index: "i1",
+      },
+    ];
+    const { fetch } = recording(
+      anthropicStream({
+        ...message,
+        content: [
+          { type: "text", text: "I'll search." },
+          {
+            type: "server_tool_use",
+            id: "srvtoolu_1",
+            name: "web_search",
+            input: { query: "acme guidance" },
+          },
+          anthropicResults([
+            { url: REUTERS, title: "Acme raises guidance" },
+            { url: CNBC, title: "Acme margins" },
+          ]),
+          { type: "text", text: "- " },
+          { type: "text", text: "Acme raised guidance to $5.1B", citations: cite(REUTERS) },
+          { type: "text", text: " (Nov 20).\n- " },
+          { type: "text", text: "Analysts expect margins to narrow", citations: cite(CNBC) },
+          {
+            type: "text",
+            text: " (Nov 21).\n- Acme gave no date for its investor day.\nLet me check for newer news.",
+          },
+          { type: "server_tool_use", id: "srvtoolu_2", name: "web_search", input: { query: "acme shares" } },
+          { ...anthropicResults([{ url: FT, title: "Acme shares rise" }]), tool_use_id: "srvtoolu_2" },
+          { type: "text", text: "- " },
+          { type: "text", text: "Acme shares rose 4%", citations: cite(FT) },
+          { type: "text", text: " (Nov 22)." },
+        ],
+        usage: { input_tokens: 900, output_tokens: 80, server_tool_use: { web_search_requests: 2 } },
+      }),
+    );
+    const { outcome, store } = await call(anthropic, fetch, { query: "Acme guidance" });
+    expect(outcome.failure).toBeUndefined();
+    expect(payloadOf(store).findings).toEqual([
+      { text: "Acme raised guidance to $5.1B (Nov 20).", results: [1] },
+      { text: "Analysts expect margins to narrow (Nov 21).", results: [2] },
+      { text: "Acme gave no date for its investor day.", results: [] },
+      { text: "Acme shares rose 4% (Nov 22).", results: [3] },
+    ]);
+    expect(outcome.output).toContain("2 searches ran");
+    expect(outcome.output).not.toContain("I'll search");
+    expect(outcome.output).not.toContain("Let me check");
+  });
+
   test("a limit lists that many pages, and takes any number", async () => {
     const { fetch } = recording(anthropicStream(message));
     const { outcome, store } = await call(anthropic, fetch, {
@@ -303,6 +365,65 @@ describe("Anthropic", () => {
     });
     expect(many.outcome.failure).toBeUndefined();
     expect(payloadOf(many.store).results).toHaveLength(2);
+  });
+
+  test("a limit never leaves out a page a finding rests on", async () => {
+    const WSJ = "https://www.wsj.com/business/fed";
+    const cite = (url: string) => [
+      { type: "web_search_result_location", cited_text: "quoted", url, title: "T", encrypted_index: "i1" },
+    ];
+    const { fetch } = recording(
+      anthropicStream({
+        ...message,
+        content: [
+          { type: "server_tool_use", id: "srvtoolu_1", name: "web_search", input: { query: "fed" } },
+          anthropicResults([
+            { url: REUTERS, title: "Fed officials open door to December cut" },
+            { url: CNBC, title: "Traders price a December cut" },
+            { url: WSJ, title: "Fed minutes" },
+          ]),
+          { type: "text", text: "- " },
+          { type: "text", text: "A December cut is possible", citations: cite(REUTERS) },
+          { type: "text", text: " (Nov 23).\n- " },
+          { type: "text", text: "Traders price a cut", citations: cite(CNBC) },
+          { type: "text", text: " (Nov 24)." },
+        ],
+      }),
+    );
+    const { outcome, store } = await call(anthropic, fetch, {
+      query: "Fed December 2026 rate cut",
+      limit: 1,
+    });
+    expect(outcome.failure).toBeUndefined();
+    const payload = payloadOf(store);
+    expect(payload.results.map((page) => page.url)).toEqual([REUTERS, CNBC]);
+    expect(payload.findings).toEqual([
+      { text: "A December cut is possible (Nov 23).", results: [1] },
+      { text: "Traders price a cut (Nov 24).", results: [2] },
+    ]);
+  });
+
+  test("an answer cut short lists what it found and says why it was cut", async () => {
+    const window = await call(
+      anthropic,
+      recording(anthropicStream({ ...message, stop_reason: "model_context_window_exceeded" })).fetch,
+      { query: "Fed December 2026 rate cut" },
+    );
+    expect(window.outcome.failure).toBeUndefined();
+    expect(payloadOf(window.store).results).toHaveLength(2);
+    expect(window.outcome.output).toContain(
+      "the search model's context window filled; the findings may be incomplete",
+    );
+    const output = await call(
+      anthropic,
+      recording(anthropicStream({ ...message, stop_reason: "max_tokens" })).fetch,
+      {
+        query: "Fed December 2026 rate cut",
+      },
+    );
+    expect(output.outcome.output).toContain(
+      "the search model reached its output limit; the findings may be incomplete",
+    );
   });
 
   test("a search refused in a 200 answer is a failure, not an empty result", async () => {
@@ -357,6 +478,9 @@ describe("Anthropic", () => {
     expect(first.output).toContain("web search is not enabled for this organization");
     expect(first.output).toContain("Claude Console");
     expect(first.output).toContain("TRADINGAGENTS_WEB_SEARCH");
+    expect(first.output).toContain(
+      "web_search answers this at once, without asking again, until a session is started or resumed or the model is switched",
+    );
     expect(first.output).not.toContain(KEY);
     const second = await search({ query: "ECB December 2026 decision" });
     expect(second.failure).toBe("data_not_configured");
@@ -371,7 +495,8 @@ describe("Anthropic", () => {
       query: "Fed December 2026 rate cut",
     });
     expect(outcome.failure).toBeUndefined();
-    expect(typeof sent[0]?.body.max_tokens).toBe("number");
+    // The SDK's bound for a Claude model it does not know; the tool sets none of its own.
+    expect(sent[0]?.body.max_tokens).toBe(128_000);
   });
 });
 
@@ -453,11 +578,69 @@ describe("Google", () => {
     expect(text).toContain("1 search ran; the search model used 40 input and 30 output tokens");
   });
 
+  test("a model the catalog does not list is asked with no output bound, as the SDK leaves it", async () => {
+    const { fetch, sent } = recording({ events: sse(chunks, { named: false }) });
+    const { outcome } = await call({ ...google, model: "gemini-test-1" }, fetch, {
+      query: "Acme 2026 guidance",
+    });
+    expect(outcome.failure).toBeUndefined();
+    expect(sent[0]?.body.generationConfig).not.toHaveProperty("maxOutputTokens");
+  });
+
+  test("a finding that rests only on pages off the sites asked for is left out with them", async () => {
+    const { fetch } = recording({ events: sse(chunks, { named: false }) });
+    const { outcome, store } = await call(google, fetch, { query: "Acme 2026 guidance", sites: ["ft.com"] });
+    expect(outcome.failure).toBeUndefined();
+    const payload = payloadOf(store);
+    expect(payload.results.map((page) => page.url)).toEqual([
+      "https://vertexaisearch.cloud.google.com/grounding-api-redirect/BBB",
+    ]);
+    expect(payload.findings).toEqual([{ text: "Analysts expect margins to narrow.", results: [1] }]);
+  });
+
   test("a stream that ends before Google finishes is a failure", async () => {
     const { fetch } = recording({ events: sse(chunks.slice(0, 1), { named: false }) });
     const { outcome } = await call(google, fetch, { query: "Acme 2026 guidance" });
     expect(outcome.failure).toBe("data_unavailable");
     expect(outcome.output).toContain("the stream ended without a finish");
+  });
+
+  test("an answer that stops early with no page is a failure, never no pages", async () => {
+    for (const finishReason of ["MALFORMED_FUNCTION_CALL", "OTHER"]) {
+      const stopped = {
+        candidates: [{ content: { role: "model", parts: [{ text: "" }] }, finishReason, index: 0 }],
+        usageMetadata: { promptTokenCount: 40, candidatesTokenCount: 0, totalTokenCount: 40 },
+      };
+      const { fetch } = recording({ events: sse([stopped], { named: false }) });
+      const { outcome, store } = await call(google, fetch, { query: "Acme 2026 guidance" });
+      expect(outcome.failure).toBe("data_unavailable");
+      expect(outcome.output).toContain(
+        `the search model stopped early (${finishReason}) before it found any page`,
+      );
+      expect(store.get("e1")).toBeUndefined();
+    }
+  });
+
+  test("an answer that stops early after finding pages lists them and says so", async () => {
+    // The grounding comes as before; the finish is Google's for a malformed call.
+    const stopped = chunks.map((chunk, i) =>
+      i < chunks.length - 1
+        ? chunk
+        : {
+            ...chunk,
+            candidates: chunk.candidates.map((candidate) => ({
+              ...candidate,
+              finishReason: "MALFORMED_FUNCTION_CALL",
+            })),
+          },
+    );
+    const { fetch } = recording({ events: sse(stopped, { named: false }) });
+    const { outcome, store } = await call(google, fetch, { query: "Acme 2026 guidance" });
+    expect(outcome.failure).toBeUndefined();
+    expect(payloadOf(store).results).toHaveLength(2);
+    expect(outcome.output).toContain(
+      "the search model stopped early (MALFORMED_FUNCTION_CALL); the findings may be incomplete",
+    );
   });
 });
 
@@ -691,6 +874,75 @@ describe("requests", () => {
     expect(ended).toBe(true);
   });
 
+  test("an engine's search is ended at the engine's own stall time", async () => {
+    // The model asks for one search, then answers; the search's provider sends its head and then nothing.
+    const asked: string[] = [];
+    let ended = false;
+    const chat = (delta: Fields, finish_reason: string) =>
+      `${sse(
+        [
+          { choices: [{ index: 0, delta, finish_reason: null }] },
+          {
+            choices: [{ index: 0, delta: {}, finish_reason }],
+            usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+          },
+        ].map((chunk) => ({
+          id: "c1",
+          object: "chat.completion.chunk",
+          created: 0,
+          model: "stand-in",
+          ...chunk,
+        })),
+        { named: false },
+      )}data: [DONE]\n\n`;
+    const search = { name: "web_search", arguments: JSON.stringify({ query: "Acme guidance" }) };
+    const fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      if (String(input).startsWith("https://api.anthropic.com/")) {
+        init?.signal?.addEventListener("abort", () => {
+          ended = true;
+        });
+        return new Response(new ReadableStream(), {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        });
+      }
+      asked.push(String(init?.body ?? ""));
+      const events =
+        asked.length === 1
+          ? chat(
+              {
+                role: "assistant",
+                tool_calls: [{ index: 0, id: "call_1", type: "function", function: search }],
+              },
+              "tool_calls",
+            )
+          : chat({ role: "assistant", content: "Done." }, "stop");
+      return new Response(events, { status: 200, headers: { "content-type": "text/event-stream" } });
+    }) as typeof globalThis.fetch;
+    const model: ModelRoute = {
+      provider: "openai-compatible",
+      model: "stand-in",
+      baseURL: "http://127.0.0.1:9/v1",
+      thinking: "none",
+      sampling: { thinking: {}, plain: {} },
+    };
+    const engine = createEngine({
+      model,
+      version: "1.0.0",
+      fetch,
+      webSearch: anthropic,
+      limits: { ...DEFAULT_LIMITS, modelStallMs: 500 },
+    });
+    const turn = engine.ask("What did Acme guide?");
+    const events: unknown[] = [];
+    for await (const event of turn.events) events.push(event);
+    expect((await turn.outcome).status).toBe("completed");
+    // The model was told the search ended; at the default stall time this test would not end.
+    expect(asked).toHaveLength(2);
+    expect(asked[1]).toContain("The model sent nothing for");
+    expect(ended).toBe(true);
+  });
+
   test("searches at once are not held back", async () => {
     let running = 0;
     let most = 0;
@@ -872,6 +1124,96 @@ describe("which search a session runs", () => {
       notes: [],
     });
   });
+
+  test("a key stored with the app is read from credentials.json", async () => {
+    const home = await mkdtemp(join(tmpdir(), "web-search-"));
+    try {
+      const paths = { credentials: join(home, "credentials.json") };
+      await writeCredentials(paths.credentials, { anthropic: "sk-ant-stored-0123456789" });
+      const chat = { provider: "deepseek" as const, model: "deepseek-v4-pro", apiKey: "sk-deep-0123456789" };
+      expect(await webSearchFor({ model: chat, keyFrom: { anthropic: "stored" } }, {}, paths)).toEqual({
+        setup: { provider: "anthropic", model: "claude-haiku-5-5", apiKey: "sk-ant-stored-0123456789" },
+        notes: [
+          "web_search runs on Anthropic (claude-haiku-5-5), billed to the Anthropic key, not the chat model's",
+        ],
+      });
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("a session's start, run from source with no network", () => {
+  /**
+   * One -p question with `env` (and no other environment), answered by a chat server that records what it
+   * is sent: what the run printed on stderr, and the requests.
+   */
+  async function ask(env: Record<string, string>): Promise<{ stderr: string; requests: string[] }> {
+    const requests: string[] = [];
+    const chunk = (fields: Fields) =>
+      `data: ${JSON.stringify({ id: "s", object: "chat.completion.chunk", created: 0, model: "stub", ...fields })}\n\n`;
+    const server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      async fetch(request) {
+        if (request.method === "GET")
+          return Response.json({ object: "list", data: [{ id: "stub", object: "model" }] });
+        requests.push(await request.text());
+        const usage = { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 };
+        return new Response(
+          `${chunk({ choices: [{ index: 0, delta: { role: "assistant", content: "ok" }, finish_reason: null }] })}${chunk({ choices: [{ index: 0, delta: {}, finish_reason: "stop" }], usage })}data: [DONE]\n\n`,
+          { headers: { "content-type": "text/event-stream" } },
+        );
+      },
+    });
+    const home = await mkdtemp(join(tmpdir(), "web-search-start-"));
+    try {
+      const run = Bun.spawn([process.execPath, join(import.meta.dir, "../../src/cli/main.tsx"), "-p", "hi"], {
+        cwd: home,
+        env: {
+          PATH: process.env.PATH ?? "",
+          HOME: home,
+          TRADINGAGENTS_HOME: join(home, "home"),
+          TRADINGAGENTS_BASE_URL: `http://127.0.0.1:${server.port}/v1`,
+          TRADINGAGENTS_MODEL: "stub",
+          TRADINGAGENTS_NO_UPDATE_CHECK: "1",
+          ...env,
+        },
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      const [stdout, stderr, code] = await Promise.all([
+        new Response(run.stdout).text(),
+        new Response(run.stderr).text(),
+        run.exited,
+      ]);
+      expect({ code, stdout }).toEqual({ code: 0, stdout: "ok\n" });
+      return { stderr, requests };
+    } finally {
+      await server.stop(true);
+      await rm(home, { recursive: true, force: true });
+    }
+  }
+
+  test("with an Anthropic key the model has web_search, and the run says which key it bills", async () => {
+    const { stderr, requests } = await ask({ ANTHROPIC_API_KEY: "sk-ant-test-0123456789" });
+    expect(stderr).toContain(
+      "web_search runs on Anthropic (claude-haiku-5-5), billed to the Anthropic key, not the chat model's",
+    );
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toContain('"name":"web_search"');
+    expect(requests[0]).toContain("A claim or figure taken from web_search is cited to its page");
+  }, 60_000);
+
+  test("a setting that cannot be read turns it off, and the run says so", async () => {
+    const { stderr, requests } = await ask({
+      ANTHROPIC_API_KEY: "sk-ant-test-0123456789",
+      TRADINGAGENTS_WEB_SEARCH: "bing",
+    });
+    expect(stderr).toContain("TRADINGAGENTS_WEB_SEARCH: not off, anthropic, openai, google");
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).not.toContain("web_search");
+  }, 60_000);
 });
 
 describe("the main agent's instructions", () => {

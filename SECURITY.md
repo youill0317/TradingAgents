@@ -7,4 +7,5 @@ not in an issue or a pull request.
 Say what is affected, how to reproduce it, and what it lets someone do. Give the output of
 `tradingagents --version`. Remove keys and anything private first.
 
-Only the latest release is supported: a fix ships in a new release.
+This fork publishes no releases. Only the latest commit of its `claude/dazzling-fermat-ik4q5y` branch is
+supported: a fix lands there.

@@ -263,7 +263,7 @@ export class Session {
 
   /**
    * The engine of the model switched to, taking over where the current one stands, once no turn runs.
-   * The change is kept at once, so the session resumes on the model switched to.
+   * The change is kept at once and copied with the session, so it resumes on the model switched to.
    */
   private takeUp(asking = false): void {
     const next = this.next;
@@ -505,7 +505,7 @@ async function readKept(folder: string, records: EvidenceRecord[]): Promise<void
   }
 }
 
-/** Where session `id` keeps the payloads that stay on this computer, a file per record. */
+/** Where session `id` keeps the payloads that stay on this computer, a file per record; never synced. */
 function keptOf(dir: string, id: string): string {
   return join(sessionsDir(dir), `${id}.local`);
 }

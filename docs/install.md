@@ -24,15 +24,17 @@ If `~/.local/bin` is not on your `PATH` yet, add it in your shell's profile.
 
 ## Updates
 
-To update, pull the branch and build again:
+To update, pull the branch, build again, and put the new executable in place of the old one:
 
 ```bash
 git pull
 npm ci
 npm run compile
-cp dist-bin/tradingagents ~/.local/bin/tradingagents
+install -m 755 dist-bin/tradingagents ~/.local/bin/tradingagents
 ```
 
-A session in the terminal checks for a newer release of this fork at most once a day, in the background. The check is a plain request for the latest release: no identifier, and nothing about your questions. This fork has no release, so the check finds none and `tradingagents update` has nothing to install. `TRADINGAGENTS_NO_UPDATE_CHECK=1` turns the check off.
+`install` puts a new file in place of the old one, where `cp` writes into it: Linux refuses that while a session runs the old executable, and macOS can stop an executable changed in place from starting.
+
+A session in the terminal checks for a newer release of this fork at most once a day, in the background. The check is a plain request for the latest release: no identifier, and nothing about your questions. This fork has no release, so the check finds none and says nothing. `tradingagents update` cannot update this copy: it says the release lookup failed (404) and changes nothing; update as above instead. `TRADINGAGENTS_NO_UPDATE_CHECK=1` turns the check off.
 
 `/changelog` shows what is new in the version you run; the first session of a newer version shows it once.
