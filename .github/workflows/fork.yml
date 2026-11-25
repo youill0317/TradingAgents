@@ -3,16 +3,20 @@
 # Added in this fork of TradingAgents 1.0.0.
 name: Fork
 
-# The fork's checks on its work branch: upstream's build checks, the fork's tests, that no Tauric service is
-# left, and that every changed file says so. main mirrors upstream and keeps upstream's own workflow.
+# The fork's checks on its work branch and on pull requests into it: upstream's build checks, the fork's
+# tests, that the removed services stay removed, and that every changed file says so. main mirrors
+# upstream and keeps upstream's own workflow.
 on:
   push:
+    branches: [claude/dazzling-fermat-ik4q5y]
+  pull_request:
     branches: [claude/dazzling-fermat-ik4q5y]
   workflow_dispatch:
 
 permissions:
   contents: read
 
+# A newer push to the same branch or pull request supersedes a run still going.
 concurrency:
   group: fork-${{ github.ref }}
   cancel-in-progress: true
@@ -24,6 +28,8 @@ jobs:
   fork:
     runs-on: ubuntu-latest
     steps:
+      # All history of every branch, for a pull request as for a push: check-notices.sh needs origin/main,
+      # the mirror of upstream, and its merge base with the commit checked out.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false

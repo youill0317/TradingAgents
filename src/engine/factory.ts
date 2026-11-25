@@ -159,7 +159,7 @@ export function createEngine(settings: EngineSettings): Engine {
   const hasMarketData = served.has("priceHistory");
   const missing = [...new Set(offered.map(([capability]) => capability))].filter((c) => !served.has(c));
   const registry = new ToolRegistry(tools);
-  const web = webSearchTools(settings);
+  const web = webSearchTools({ ...settings, stallMs: limits.modelStallMs });
 
   // The main agent thinks: it gets that mode's sampling, and the server is told to think when it can be.
   const main: AgentSpec = {

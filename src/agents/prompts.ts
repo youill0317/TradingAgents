@@ -10,6 +10,7 @@
  * Style: no em-dash and no middle dot.
  */
 import type { Mode } from "../contracts/index.js";
+import { webSearchPrompt } from "../fork/web-search/prompt.js";
 import { REFERENCE_EXAMPLES } from "../tools/references.js";
 
 /** How results are cited and derived from, for an agent that has the compute and evidence tools. */
@@ -25,18 +26,14 @@ export const AGENT_REPORT =
 
 /**
  * The main agent's instructions. `missing`: the capabilities no source here serves, as people call them;
- * `web`: whether web_search is offered (this fork), which can look for what they would hold.
+ * `web`: whether web_search is offered (this fork; fork/web-search/prompt.ts words what it adds).
  */
 export function mainPrompt({ missing, web = false }: { missing: readonly string[]; web?: boolean }): string {
   return [
     "You are a financial research assistant, working in a terminal with a person who can reply and follow up.",
     "Market facts come from your tools, which read live data, so each figure in an answer carries where it came from and as of when, and the reader can check it.",
     ...(missing.length ? [`Not available in this session: ${missing.join(", ")}.`] : []),
-    ...(missing.length && web
-      ? [
-          "web_search can look on the web for what these would show; a figure from a page is a lead, cited to its page.",
-        ]
-      : []),
+    ...webSearchPrompt({ web, missing: missing.length > 0 }),
     "A result shows what it shows: how a price moved within a day, a cause or a trend beyond its window is an inference, and saying what an inference rests on lets the reader weigh it.",
     "When a tool fails or a source is missing, what is missing is part of the answer.",
     "The person reads as your answer the message you write after your last tool call; text written beside a tool call shows only as progress, so recording a decision or updating the plan comes before the answer, not after it.",

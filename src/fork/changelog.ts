@@ -10,13 +10,19 @@
 import { CHANGELOG } from "../cli/changelog.generated.js";
 import type { VersionNotes } from "../cli/whats-new.js";
 
-/** The fork's own notes, by the version they ship in; the first item is the version's highlight. */
+/**
+ * The fork's own notes, by the version they ship in, under a heading of their own so `/changelog` shows them
+ * apart from upstream's; the first item is the version's highlight.
+ */
 const FORK_NOTES: { readonly [version: string]: VersionNotes["sections"] } = {
   "1.0.0": [
     {
+      heading: "This fork",
       items: [
-        "This fork reads free public data and needs no data account; sessions stay on this computer.",
-        "Prices come from Yahoo and event odds from Polymarket.",
+        "This fork needs no data account, and sessions stay on this computer.",
+        "Data: prices from Yahoo and event odds from Polymarket. Free public data sources are being added, and the built-in agents and skills are offered as the data they need becomes available.",
+        "Web search: `web_search` searches the web through Anthropic's, OpenAI's or Google's own search, with your key for it.",
+        "Models: OpenAI, Anthropic, Google, DeepSeek, OpenRouter, AI subscriptions (ChatGPT), or self-hosted models.",
       ],
     },
   ],

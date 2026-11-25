@@ -1,76 +1,133 @@
-<p align="center">
-  <a href="https://tauric.ai/">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="assets/tauric-logo-dark.svg">
-      <img src="assets/tauric-logo.svg" alt="Tauric Research" width="60%">
-    </picture>
-  </a>
-</p>
+# TradingAgents: Towards Agentic Finance Research
 
-<p align="center">
-  <a href="https://arxiv.org/abs/2412.20138"><img alt="arXiv" src="https://img.shields.io/badge/arXiv-2412.20138-B31B1B?logo=arxiv"/></a>
-  <a href="https://x.com/TauricResearch"><img alt="X" src="https://img.shields.io/badge/X-TauricResearch-white?logo=x&amp;logoColor=white"/></a>
-  <a href="https://github.com/TauricResearch/"><img alt="GitHub" src="https://img.shields.io/badge/GitHub-TauricResearch-14C290?logo=github&amp;logoColor=white"/></a>
-  <a href="https://www.youtube.com/@TauricResearch"><img alt="YouTube" src="https://img.shields.io/badge/YouTube-TauricResearch-FF0000?logo=youtube&amp;logoColor=white"/></a>
-  <a href="https://tauric.ai/"><img alt="Website" src="https://img.shields.io/badge/Website-tauric.ai-14C290?logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjZmZmIiBzdHJva2Utd2lkdGg9IjIiPjxjaXJjbGUgY3g9IjEyIiBjeT0iMTIiIHI9IjEwIi8+PHBhdGggZD0iTTIgMTJoMjBNMTIgMmExNSAxNSAwIDAgMSAwIDIwTTEyIDJhMTUgMTUgMCAwIDAgMCAyMCIvPjwvc3ZnPg=="/></a>
-</p>
+This repository is a fork of [TradingAgents](https://github.com/TauricResearch/TradingAgents) 1.0.0 by
+Tauric Research, used under the Apache License 2.0. It is not made, endorsed or supported by Tauric Research.
+[FORK.md](FORK.md) says what this fork changed.
 
-<p align="center">
-  <a href="https://tauric.ai/"><img alt="TradingAgents #1 Repository of the Day" src="https://trendshift.io/api/badge/repositories/16192" width="250" height="55"/></a>
-</p>
+TradingAgents is a finance research agent for the terminal. Ask it a question: it plans the research, reads
+data with its tools, works the numbers, and answers with every figure marked with its source. It researches
+and answers; it does not place trades.
 
-<p align="center">
-  <a href="https://tauricresearch.github.io/TradingAgents/">English</a> |
-  <a href="https://tauricresearch.github.io/TradingAgents/de/">Deutsch</a> |
-  <a href="https://tauricresearch.github.io/TradingAgents/es/">Español</a> |
-  <a href="https://tauricresearch.github.io/TradingAgents/fr/">français</a> |
-  <a href="https://tauricresearch.github.io/TradingAgents/ja/">日本語</a> |
-  <a href="https://tauricresearch.github.io/TradingAgents/ko/">한국어</a> |
-  <a href="https://tauricresearch.github.io/TradingAgents/pt/">Português</a> |
-  <a href="https://tauricresearch.github.io/TradingAgents/ru/">Русский</a> |
-  <a href="https://tauricresearch.github.io/TradingAgents/zh/">中文</a>
-</p>
+This fork needs no data account. It reads free sources, runs on the model provider you choose with your own
+key or plan, and keeps your sessions on this computer.
 
-<h1 align="center">TradingAgents: Towards Agentic Finance Research</h1>
+## What works today
 
-<p align="center">
-  <img src="assets/demo.gif" alt="TradingAgents researching a question in the terminal" width="100%">
-</p>
+- **Models**: OpenAI, Anthropic, Google, DeepSeek and OpenRouter with your API key, a ChatGPT plan, or a
+  model you serve yourself behind an OpenAI-compatible API (vLLM, Ollama, LM Studio).
+- **Market data**: quotes and daily price history from Yahoo (`quote`, `price_history`), and event odds from
+  Polymarket's prediction markets (`prediction_markets`).
+- **Web search**: `web_search`, through Anthropic's, OpenAI's or Google's own web search
+  ([below](#web-search)).
+- **Compute**: arithmetic, statistics, returns and risk, correlation and beta, technical indicators,
+  portfolio risk and weights, and DCF valuation, over the data read.
+- **Memory**: notes and recorded decisions, kept across sessions.
+- **Sessions and output**: plan mode, sessions to resume, an answer saved as a PDF report or Markdown, and
+  `tradingagents -p` for one question from a script.
 
-## Quick start
+The other data tools answer that no data source here serves them yet: financial statements, SEC filings,
+news, company profiles and estimates, ownership, corporate actions, the `technicals` snapshot, macro series,
+instrument search, market overviews and sector screens.
 
-**1. Get an API key**
+For now the main agent researches on its own. Each of the four built-in agents (Equity Research, Macro
+Strategy, Quant Research and Risk Analysis) needs some of that data and is offered once it is there, and the
+sixteen built-in skills, written for them, come with them; `/agents` and `/skills` show which are offered. An
+agent of your own is offered when the data tools it names have a source
+([docs/usage.md](docs/usage.md#your-own-agents-and-skills)).
 
-- Sign up at [Tauric Research](https://tauric.ai/signup).
-- Create your [Tauric API key](https://tauric.ai/settings/api-keys).
+## What is coming
 
-**2. Install**
+Free public data sources are being added, among them SEC EDGAR, FRED, the ECB, OpenDART, ECOS, KOSIS and
+data.go.kr. The built-in agents and skills are offered as the data they need becomes available.
+
+## Build and install
+
+This fork publishes no releases: build it from source, with Git and Node.js 22 or later. Its code is on the
+`claude/dazzling-fermat-ik4q5y` branch; `main` mirrors upstream.
 
 ```bash
-curl -fsSL https://tauric.ai/tradingagents/install.sh | sh
+git clone --branch claude/dazzling-fermat-ik4q5y https://github.com/youill0317/TradingAgents.git
+cd TradingAgents
+npm ci
+npm run compile
+mkdir -p ~/.local/bin
+cp dist-bin/tradingagents ~/.local/bin/tradingagents
 ```
 
-Or with npm: `npm i -g @tauric/tradingagents`
-
-**3. Run**
+`npm run compile` builds one executable for this machine, `dist-bin/tradingagents`; the copy can go in any
+directory on your `PATH`. Then run:
 
 ```bash
 tradingagents
 ```
 
-Start your agentic finance research with Tauric!
+[docs/install.md](docs/install.md) has the details, and how to update.
 
 ## Models
 
-| Provider                                        | Needs                                      |
-| ----------------------------------------------- | ------------------------------------------ |
-| Tauric AI                                       | [Tauric API key](https://tauric.ai/signup) |
-| OpenAI, Anthropic, Google, DeepSeek, OpenRouter | their API key                              |
-| Self-hosted models (vLLM, Ollama)               | its address and model                      |
-| AI subscriptions (ChatGPT)                      | `tradingagents login chatgpt`              |
+The first session in a terminal with no model set walks you through the choice: the provider, its key or
+sign-in, the model, and how hard it reasons. Or set one up yourself:
 
-With another provider, `/login` adds a Tauric API key for filings, statements and news. See
-[docs/models.md](docs/models.md).
+| Provider                                     | Needs                                                                         |
+| -------------------------------------------- | ----------------------------------------------------------------------------- |
+| OpenAI                                       | `OPENAI_API_KEY`, or `tradingagents key openai`                               |
+| Anthropic                                    | `ANTHROPIC_API_KEY`, or `tradingagents key anthropic`                         |
+| Google                                       | `GEMINI_API_KEY`, or `tradingagents key google`                               |
+| DeepSeek                                     | `DEEPSEEK_API_KEY`, or `tradingagents key deepseek`                           |
+| OpenRouter                                   | `OPENROUTER_API_KEY`, or `tradingagents key openrouter`                       |
+| ChatGPT plan                                 | `tradingagents login chatgpt`                                                 |
+| Self-hosted models (vLLM, Ollama, LM Studio) | `TRADINGAGENTS_BASE_URL` and `TRADINGAGENTS_MODEL`, and a key if it needs one |
+
+In a session, `/model` chooses the model and how hard it reasons. For one run, name it:
+`tradingagents --model anthropic/claude-sonnet-5-5`. See [docs/models.md](docs/models.md).
+
+## Keys
+
+TradingAgents reads no `.env` file. Export a key in your shell's profile (such as `~/.bashrc` or `~/.zshrc`):
+
+```bash
+export ANTHROPIC_API_KEY=...
+```
+
+Or store it: `tradingagents key <provider>` (`openai`, `anthropic`, `google`, `deepseek`, `openrouter`, or
+`model` for an OpenAI-compatible server) asks for it without showing it, or reads it from a pipe, and keeps it
+in `credentials.json`, readable only by you. A key in the environment is used over a stored one, and a key is
+sent only to its own provider.
+
+## Web search
+
+Every agent has a `web_search` tool when an Anthropic or OpenAI API key is set (a ChatGPT plan's sign-in is
+not one). It searches with the chat model's provider when that is Anthropic or OpenAI, else with the first of
+them that has a key, Anthropic first, using that provider's fast model.
+
+A call is one request to the provider's own web search, whose model runs as many searches as it decides:
+TradingAgents sets no limit. The provider bills each search to that key, a search fee plus the search
+model's tokens, and each result notes how many searches ran and the tokens the search model used.
+What the pages say reaches the model as untrusted information, and the answer cites each page it uses with a
+link.
+
+`TRADINGAGENTS_WEB_SEARCH` changes this: `off`, a provider (`anthropic`, `openai`, `google`), or a provider and
+its model (`openai/gpt-6-luna`). Google Search grounding runs only when it is named, with a Google key set:
+Google's terms ask that its search suggestions be shown, which a terminal app cannot do. A note at the start
+says when the setting cannot be read, when the provider it names has no key, when only a Google key is set,
+and which key pays when the search runs on another provider than the chat model's. See
+[docs/configuration.md](docs/configuration.md#web-search).
+
+## Where files live
+
+Settings and data live in `~/.config/tradingagents/`; `TRADINGAGENTS_HOME`, an absolute path, moves them.
+
+| Where                | What                                               |
+| -------------------- | -------------------------------------------------- |
+| `config.json`        | the model, reasoning, provider settings and limits |
+| `credentials.json`   | stored keys, readable only by you                  |
+| `chatgpt-auth.json`  | a ChatGPT sign-in, readable only by you            |
+| `history.jsonl`      | the last questions asked in the terminal           |
+| `agents/`, `skills/` | your own agents and skills                         |
+| `sessions/`          | sessions, which stay on this computer              |
+| `memory/`            | notes and recorded decisions                       |
+
+See [docs/configuration.md](docs/configuration.md).
 
 ## Usage
 
@@ -86,44 +143,16 @@ sources follows.
 | `/copy`   | Copy the last answer                                             |
 | `/help`   | List every command and key                                       |
 
-Shift+Tab switches to plan mode, where the agent proposes a research plan first.
-
-## Architecture
-
-<p align="center">
-  <img src="assets/taxonomy.svg" alt="What TradingAgents can call on: the main agent's tools, its data and compute tools, its agents and its skills" width="100%">
-</p>
-
-## Agents and skills
-
-The main agent plans the research, reads what the question needs with its data tools, and works the numbers
-with its compute tools. For depth, it briefs specialist agents, each in its own context:
-
-| Agent           | Covers                                                                           |
-| --------------- | -------------------------------------------------------------------------------- |
-| Equity Research | a company's statements, filings, estimates, valuation, ownership and news        |
-| Macro Strategy  | growth, inflation, rates and the yield curve, credit, sectors, cross-asset moves |
-| Quant Research  | returns, volatility, drawdowns, correlation and beta, technical indicators       |
-| Risk Analysis   | what could make a position lose, and what would show it early                    |
-
-For a known kind of research it follows a skill:
-
-| Area      | Skills                                                                                 |
-| --------- | -------------------------------------------------------------------------------------- |
-| Companies | company snapshot, earnings preview and review, filing review, full analysis            |
-| Valuation | DCF, relative valuation, scenario analysis                                             |
-| Markets   | macro outlook, market brief, performance comparison, sector review, technical analysis |
-| Risk      | portfolio review, risk assessment, thesis review                                       |
-
-You can add your own agents and skills as Markdown files ([docs/usage.md](docs/usage.md)). TradingAgents researches
-and answers; it does not place trades.
+Shift+Tab switches to plan mode, where the agent proposes a research plan first. `tradingagents -p "question"`
+answers one question and prints the answer, and `--json` prints every event as a JSON line.
 
 ## Documentation
 
-- [Install](docs/install.md): the installer, npm, release files and updates.
-- [Usage](docs/usage.md): the terminal, one-off questions, sessions, agents and skills, sources, sync and limits.
+- [Install](docs/install.md): building from source, and updates.
+- [Usage](docs/usage.md): the terminal, one-off questions, sessions, agents and skills, sources and limits.
 - [Models](docs/models.md): providers, keys, reasoning and OpenAI-compatible servers.
-- [Configuration](docs/configuration.md): files and environment variables.
+- [Configuration](docs/configuration.md): files, environment variables and web search.
+- [FORK.md](FORK.md): what this fork changed, and how it takes upstream's releases.
 
 To report an issue or open a pull request, see [CONTRIBUTING.md](CONTRIBUTING.md); to report a security problem, [SECURITY.md](SECURITY.md).
 

@@ -38,7 +38,7 @@ import {
   SessionError,
   savedRoute,
 } from "../engine/index.js";
-import { webSearchSetup } from "../fork/web-search/setup.js";
+import { webSearchFor } from "../fork/web-search/setup.js";
 import { EXIT, runHeadless } from "../headless/run.js";
 import { type Args, EXIT_USAGE, misuseOf, parse, USAGE } from "./args.js";
 import type { ChatControls } from "./ChatApp.js";
@@ -213,11 +213,11 @@ async function main(argv: string[]): Promise<number> {
 
   // Every key found; one stored during the session (/login) joins it, so a model error never shows it either.
   const liveKeys = [...settings.keys];
-  /** What a session on `chosen`'s model runs with: its engine and its window. */
-  const runOn = async (chosen: Settings & { model: ModelRoute }): Promise<RunsOn> => {
+  /** What a session on `chosen`'s model runs with: its engine and its window; `notes` are said as it starts. */
+  const runOn = async (chosen: Settings & { model: ModelRoute }): Promise<RunsOn & { notes: string[] }> => {
     const { model } = chosen;
     const context = await resolveContextWindow(model, { chatgptAuthPath: paths.chatgptAuth });
-    const webSearch = await webSearchSetup(chosen, process.env, paths);
+    const { setup: webSearch, notes } = await webSearchFor(chosen, process.env, paths);
     const build: EngineBuilder = (init) =>
       createEngine({
         model,
@@ -237,7 +237,7 @@ async function main(argv: string[]): Promise<number> {
         ...(catalog ? { catalog } : {}),
         ...init,
       });
-    return { model, context, build };
+    return { model, context, build, notes };
   };
   const first = await runOn({ ...settings, model: settings.model });
   const { model, context, build } = first;
@@ -253,6 +253,7 @@ async function main(argv: string[]): Promise<number> {
       : controls.notice
         ? controls.notice(problem)
         : early.push(problem);
+  for (const note of first.notes) report(note);
   /**
    * What a session started or resumed in the chat runs on: chosen as at startup (this run's --model, else
    * the resumed session's own route, else the model saved for new sessions), with its problems said.
@@ -262,7 +263,9 @@ async function main(argv: string[]): Promise<number> {
     if (chosen.kind !== "ready" || !chosen.settings.model) {
       throw new SessionError(chosen.kind === "stop" ? chosen.reason.trim() : message("app.noModelNow"));
     }
-    return runOn({ ...chosen.settings, model: chosen.settings.model });
+    const next = await runOn({ ...chosen.settings, model: chosen.settings.model });
+    for (const note of next.notes) report(note);
+    return next;
   };
   const chooseFor = async (resumeId?: string) =>
     runsOnChosen(
