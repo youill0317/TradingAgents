@@ -63,8 +63,10 @@ const PARAGRAPH = new Set(["p", "h1", "h2", "h3", "h4", "h5", "h6", "pre", "sect
 const CELL = new Set(["td", "th", "te", "tu"]);
 
 /** Stand-ins for a `pre` block's spaces and tabs while lines are trimmed. */
-const PRE_SPACE = "";
-const PRE_TAB = "";
+const PRE_SPACE = String.fromCharCode(0xe000);
+const PRE_TAB = String.fromCharCode(0xe001);
+/** A no-break space, which reads as a space. */
+const NBSP = String.fromCharCode(0xa0);
 
 type Table = { row: string[] | null; cell: string | null; lines: string[] };
 
@@ -89,14 +91,31 @@ export function htmlToText(html: string): string {
     }
     out += text;
   };
-  /** A line break: within a cell, a space (a cell is one line). */
+  /**
+   * A block's edge: the page goes on on a new line (`blank`: after a blank line), however many edges meet
+   * there. Within a cell, a space (a cell is one line).
+   */
   const lineBreak = (blank: boolean) => {
     const open = table();
     if (open) {
       if (open.cell !== null) open.cell += " ";
       return;
     }
-    out += blank ? "\n\n" : "\n";
+    let end = out.length;
+    while (end > 0 && out.charCodeAt(end - 1) === 32) end--;
+    let newlines = 0;
+    while (newlines < end && out.charCodeAt(end - newlines - 1) === 10) newlines++;
+    const wanted = blank ? 2 : 1;
+    if (newlines < wanted) out += "\n".repeat(wanted - newlines);
+  };
+  /** A line break as written (`<br>`): each one counts. Within a cell, a space. */
+  const newLine = () => {
+    const open = table();
+    if (open) {
+      if (open.cell !== null) open.cell += " ";
+      return;
+    }
+    out += "\n";
   };
   const endCell = (open: Table) => {
     if (open.cell === null) return;
@@ -123,7 +142,10 @@ export function htmlToText(html: string): string {
       if (open.lines.length) write(` ${open.lines.map((line) => line.replaceAll("\t", " ")).join("; ")} `);
       return;
     }
-    if (open.lines.length) out += `\n\n${open.lines.join("\n")}\n\n`;
+    if (!open.lines.length) return;
+    lineBreak(true);
+    out += open.lines.join("\n");
+    lineBreak(true);
   };
 
   let at = 0;
@@ -178,7 +200,7 @@ export function htmlToText(html: string): string {
       continue;
     }
     if (name === "br") {
-      lineBreak(false);
+      newLine();
     } else if (name === "table") {
       lineBreak(true);
       tables.push({ row: null, cell: null, lines: [] });
@@ -211,17 +233,13 @@ export function htmlToText(html: string): string {
 /** A run of text as it reads: references decoded; outside `pre`, whitespace runs as one space. */
 function textOf(raw: string, pre: boolean): string {
   const decoded = decodeEntities(raw, HTML_ENTITIES);
-  if (pre) return decoded.replaceAll(" ", " ").replaceAll(" ", PRE_SPACE).replaceAll("\t", PRE_TAB);
-  return decoded.replace(/[\s ]+/g, " ");
+  if (pre) return decoded.replaceAll(NBSP, " ").replaceAll(" ", PRE_SPACE).replaceAll("\t", PRE_TAB);
+  return decoded.replace(/\s+/g, " ");
 }
 
 /** A cell's text on one line. */
 function collapse(text: string): string {
-  return text
-    .replaceAll(PRE_SPACE, " ")
-    .replaceAll(PRE_TAB, " ")
-    .replace(/[\s ]+/g, " ")
-    .trim();
+  return text.replaceAll(PRE_SPACE, " ").replaceAll(PRE_TAB, " ").replace(/\s+/g, " ").trim();
 }
 
 /** Lines trimmed, at most one blank line in a row, none at either end. */

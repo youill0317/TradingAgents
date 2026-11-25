@@ -87,7 +87,13 @@ export function readZip(
       size: declared,
       crc32: checksum,
       directory: name.endsWith("/"),
-      bytes: () => entryData(bytes, view, { name, flags, method, compressedSize, declared, checksum, local }, maxEntryBytes),
+      bytes: () =>
+        entryData(
+          bytes,
+          view,
+          { name, flags, method, compressedSize, declared, checksum, local },
+          maxEntryBytes,
+        ),
       text: () => new TextDecoder().decode(entry.bytes()),
     };
     entries.push(entry);
@@ -139,7 +145,8 @@ function entryData(
 ): Uint8Array {
   const { name, flags, method, compressedSize, declared, checksum, local } = entry;
   if (flags & 0x1) throw new ZipError(`${name} is encrypted`);
-  if (method !== 0 && method !== 8) throw new ZipError(`${name} uses compression method ${method}, which is not read`);
+  if (method !== 0 && method !== 8)
+    throw new ZipError(`${name} uses compression method ${method}, which is not read`);
   if (declared > maxEntryBytes) {
     throw new ZipError(`${name} declares ${declared} bytes, more than the ${maxEntryBytes} read`);
   }
@@ -161,7 +168,8 @@ function entryData(
       throw new ZipError(`${name}: its deflated data is damaged (${(error as Error).message})`);
     }
   }
-  if (data.length !== declared) throw new ZipError(`${name}: inflated to ${data.length} bytes, not ${declared}`);
-  if ((crc32(data) >>> 0) !== checksum >>> 0) throw new ZipError(`${name}: its CRC-32 does not match`);
+  if (data.length !== declared)
+    throw new ZipError(`${name}: inflated to ${data.length} bytes, not ${declared}`);
+  if (crc32(data) >>> 0 !== checksum >>> 0) throw new ZipError(`${name}: its CRC-32 does not match`);
   return data;
 }

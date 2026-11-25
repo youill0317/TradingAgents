@@ -29,7 +29,7 @@ export type XmlNode = XmlElement | string;
  */
 export function parseXml(
   text: string,
-  { entities = HTML_ENTITIES }: { entities?: Readonly<Record<string, string>> } = {},
+  { entities = HTML_ENTITIES }: { entities?: Readonly<Record<string, number>> } = {},
 ): XmlElement {
   const root: XmlElement = { name: "#document", attributes: {}, children: [] };
   const open: XmlElement[] = [root];
@@ -140,7 +140,7 @@ function isSpace(code: number): boolean {
 function readTag(
   text: string,
   lt: number,
-  entities: Readonly<Record<string, string>>,
+  entities: Readonly<Record<string, number>>,
 ): { name: string; attributes: Record<string, string>; selfClosing: boolean; end: number } | undefined {
   let at = lt + 1;
   if (at >= text.length || !startsName(text.charCodeAt(at))) return undefined;

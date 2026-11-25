@@ -38,6 +38,7 @@ import {
   SessionError,
   savedRoute,
 } from "../engine/index.js";
+import { publicDataConfig } from "../fork/data/config.js";
 import { webSearchFor } from "../fork/web-search/setup.js";
 import { EXIT, runHeadless } from "../headless/run.js";
 import { type Args, EXIT_USAGE, misuseOf, parse, USAGE } from "./args.js";
@@ -213,6 +214,8 @@ async function main(argv: string[]): Promise<number> {
 
   // Every key found; one stored during the session (/login) joins it, so a model error never shows it either.
   const liveKeys = [...settings.keys];
+  // The public-data sources' settings, read once (this fork); what they lack is said as the session starts.
+  const publicData = await publicDataConfig(process.env, paths);
   /** What a session on `chosen`'s model runs with: its engine and its window; `notes` are said as it starts. */
   const runOn = async (chosen: Settings & { model: ModelRoute }): Promise<RunsOn & { notes: string[] }> => {
     const { model } = chosen;
@@ -232,6 +235,7 @@ async function main(argv: string[]): Promise<number> {
         chatgptAuthPath: paths.chatgptAuth,
         secrets: liveKeys,
         ...(webSearch ? { webSearch } : {}),
+        publicData: publicData.config,
         // A question the agent asks needs a person to answer it: none is there in a headless run.
         asks: !headless,
         ...(catalog ? { catalog } : {}),
@@ -253,7 +257,7 @@ async function main(argv: string[]): Promise<number> {
       : controls.notice
         ? controls.notice(problem)
         : early.push(problem);
-  for (const note of first.notes) report(note);
+  for (const note of [...first.notes, ...publicData.notes]) report(note);
   /**
    * What a session started or resumed in the chat runs on: chosen as at startup (this run's --model, else
    * the resumed session's own route, else the model saved for new sessions), with its problems said.

@@ -16,7 +16,7 @@ import type { DailyBars, PriceHistory } from "../data/capabilities.js";
 import { PolymarketClient } from "../data/polymarket/client.js";
 import { polymarketProvider } from "../data/polymarket/provider.js";
 import { CAPABILITY_LABELS, type Providers, route } from "../data/router.js";
-import { yahooProvider } from "../data/yahoo/provider.js";
+import { forkProviders, type PublicDataConfig } from "../fork/data/index.js";
 import { type WebSearchSetup, webSearchTools } from "../fork/web-search/tool.js";
 import { ChatGPTAuth } from "../models/chatgpt-auth.js";
 import { type ProviderDeps, providerOf } from "../models/providers.js";
@@ -47,6 +47,8 @@ type EngineSettings = {
   secrets?: readonly string[];
   /** The provider search every agent's web_search runs on; no web_search without one (this fork). */
   webSearch?: WebSearchSetup;
+  /** The public-data sources' settings: SEC's User-Agent, the agencies' keys, the cache (this fork). */
+  publicData?: PublicDataConfig;
   /** Where notes, decisions and lessons are kept across sessions; no memory when unset. */
   dataDir?: string;
   /** The session to continue, and where it left off. */
@@ -227,13 +229,19 @@ export function createEngine(settings: EngineSettings): Engine {
   });
 }
 
-/** The providers a setup has: Yahoo and Polymarket, which need no key. */
+/**
+ * The providers a setup has: this fork's public-data providers, configured by `publicData` (none of its
+ * keys needed for Yahoo), and Polymarket, which needs no key.
+ */
 export function dataProviders(
-  settings: Pick<EngineSettings, "fetch">,
+  settings: Pick<EngineSettings, "fetch" | "publicData">,
   clock: Clock = () => new Date(),
 ): Providers {
   return {
-    yahoo: yahooProvider({ now: clock, ...(settings.fetch ? { fetch: settings.fetch } : {}) }),
+    ...forkProviders(settings.publicData ?? {}, {
+      clock,
+      ...(settings.fetch ? { fetch: settings.fetch } : {}),
+    }),
     polymarket: polymarketProvider(new PolymarketClient(settings.fetch ?? fetch)),
   };
 }

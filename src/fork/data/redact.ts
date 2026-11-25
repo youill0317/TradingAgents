@@ -7,7 +7,7 @@
  * a header; whatever is said afterwards (an error, a note, a log line, a fixture's metadata, a cache key)
  * goes through here first. Each secret is replaced wherever it appears as written or URL-encoded (as
  * encodeURIComponent writes it and as a form query does, either case of hex); in a URL the values of the
- * query parameters that carry keys are removed too, whatever they hold.
+ * query parameters that carry keys (and Yahoo's session crumb) are removed too, whatever they hold.
  */
 import { KEYS } from "../../contracts/limits.js";
 
@@ -28,6 +28,8 @@ const KEY_PARAMETERS = new Set([
   "auth",
   "authkey",
   "appkey",
+  // Yahoo's session crumb: not a key of ours, but a credential all the same.
+  "crumb",
 ]);
 
 /** Each way `secret` may be written in text or a URL, longest first. */
@@ -35,7 +37,9 @@ function spellings(secret: string): string[] {
   const encoded = encodeURIComponent(secret);
   const form = new URLSearchParams({ s: secret }).toString().slice(2);
   const lower = (text: string) => text.replace(/%[0-9A-F]{2}/g, (hex) => hex.toLowerCase());
-  return [...new Set([secret, encoded, lower(encoded), form, lower(form)])].sort((a, b) => b.length - a.length);
+  return [...new Set([secret, encoded, lower(encoded), form, lower(form)])].sort(
+    (a, b) => b.length - a.length,
+  );
 }
 
 /** `text` with every secret (at least KEYS.scrubMinChars long) replaced, however it is spelled. */
