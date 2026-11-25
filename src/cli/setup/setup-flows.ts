@@ -1,5 +1,6 @@
 // Copyright 2026 Tauric Research
 // SPDX-License-Identifier: Apache-2.0
+// Changed in this fork of TradingAgents 1.0.0.
 /**
  * The setups, as steps over a FormUI: the first run (where answers come from, its key or sign-in, the
  * model and how hard it reasons), `/login`

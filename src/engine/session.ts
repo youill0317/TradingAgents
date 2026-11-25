@@ -1,5 +1,6 @@
 // Copyright 2026 Tauric Research
 // SPDX-License-Identifier: Apache-2.0
+// Changed in this fork of TradingAgents 1.0.0.
 /**
  * Sessions on disk: one append-only file per session, so a conversation can be resumed and read
  * back. The file holds the events as the reader saw them (finished text, no reasoning) and, when a

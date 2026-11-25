@@ -1,5 +1,6 @@
 // Copyright 2026 Tauric Research
 // SPDX-License-Identifier: Apache-2.0
+// Changed in this fork of TradingAgents 1.0.0.
 /**
  * The terminal transcript as state: a pure fold over engine events, so what the screen shows can be
  * tested without a terminal.

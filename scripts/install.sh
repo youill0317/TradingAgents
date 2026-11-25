@@ -1,6 +1,7 @@
 #!/bin/sh
 # Copyright 2026 Tauric Research
 # SPDX-License-Identifier: Apache-2.0
+# Changed in this fork of TradingAgents 1.0.0.
 # Install tradingagents for this machine.
 #
 #   curl -fsSL https://github.com/youill0317/TradingAgents/releases/latest/download/install.sh | sh              the latest release

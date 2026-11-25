@@ -1,5 +1,6 @@
 // Copyright 2026 Tauric Research
 // SPDX-License-Identifier: Apache-2.0
+// Changed in this fork of TradingAgents 1.0.0.
 /**
  * Which model a run starts on, decided once: the one given on the command line; else, resuming, the
  * session's own (with its key found now); else the configured one; else, with none named, the one usable

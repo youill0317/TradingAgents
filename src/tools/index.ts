@@ -1,5 +1,6 @@
 // Copyright 2026 Tauric Research
 // SPDX-License-Identifier: Apache-2.0
+// Changed in this fork of TradingAgents 1.0.0.
 export { calcTool } from "./calc.js";
 export { estimatesTool, ownershipTool, profileTool } from "./company.js";
 export { corporateActionsTool } from "./corporate-actions.js";

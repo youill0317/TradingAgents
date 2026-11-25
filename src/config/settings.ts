@@ -1,5 +1,6 @@
 // Copyright 2026 Tauric Research
 // SPDX-License-Identifier: Apache-2.0
+// Changed in this fork of TradingAgents 1.0.0.
 /**
  * The user's settings, from `config.json` and `credentials.json` in the home directory, with
  * environment variables taking precedence field by field (flags over both), and the writers of

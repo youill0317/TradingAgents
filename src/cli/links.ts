@@ -1,5 +1,6 @@
 // Copyright 2026 Tauric Research
 // SPDX-License-Identifier: Apache-2.0
+// Changed in this fork of TradingAgents 1.0.0.
 /** Links the app shows: the project's addresses, written as terminal hyperlinks. */
 import { REPOSITORY_URL } from "../config/index.js";
 

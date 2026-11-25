@@ -1,5 +1,6 @@
 // Copyright 2026 Tauric Research
 // SPDX-License-Identifier: Apache-2.0
+// Changed in this fork of TradingAgents 1.0.0.
 /**
  * The commands besides a question: login, logout, sessions (and deleting one), key and update.
  * Each returns its exit code.

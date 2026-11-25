@@ -1,5 +1,6 @@
 // Copyright 2026 Tauric Research
 // SPDX-License-Identifier: Apache-2.0
+// Changed in this fork of TradingAgents 1.0.0.
 /**
  * The setup's actions in the chat, where what they save applies to the open session too: a model chosen
  * (or a server saved) runs from the next question, and a key for what the session uses (its model's

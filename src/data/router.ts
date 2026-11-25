@@ -1,5 +1,6 @@
 // Copyright 2026 Tauric Research
 // SPDX-License-Identifier: Apache-2.0
+// Changed in this fork of TradingAgents 1.0.0.
 /**
  * Builds each capability from the routing table and the providers that implement it. A call goes to
  * the first provider in the chain; the next is asked only when one could not answer for reasons that

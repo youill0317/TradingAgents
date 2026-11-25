@@ -1,5 +1,6 @@
 // Copyright 2026 Tauric Research
 // SPDX-License-Identifier: Apache-2.0
+// Changed in this fork of TradingAgents 1.0.0.
 /**
  * What the tools can ask for, one interface per capability, with result types of our own. Providers
  * (data/yahoo, data/polymarket) implement the capabilities they offer; the router

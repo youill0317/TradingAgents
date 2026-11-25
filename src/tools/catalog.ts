@@ -1,5 +1,6 @@
 // Copyright 2026 Tauric Research
 // SPDX-License-Identifier: Apache-2.0
+// Changed in this fork of TradingAgents 1.0.0.
 /** The data tools an agent may be given, each with the capability it reads, and the compute tools. */
 import type { Clock } from "../contracts/index.js";
 import type { Capabilities, Capability } from "../data/capabilities.js";

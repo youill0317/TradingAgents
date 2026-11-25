@@ -1,5 +1,6 @@
 // Copyright 2026 Tauric Research
 // SPDX-License-Identifier: Apache-2.0
+// Changed in this fork of TradingAgents 1.0.0.
 /**
  * The one place that says which providers serve each capability, in order: Yahoo serves quotes and daily
  * price history; prediction-market odds come from Polymarket. A capability with no provider says it is

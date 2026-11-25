@@ -1,5 +1,6 @@
 // Copyright 2026 Tauric Research
 // SPDX-License-Identifier: Apache-2.0
+// Changed in this fork of TradingAgents 1.0.0.
 /**
  * The inline transcript. Finished blocks are written once into the terminal's scrollback through
  * <Static>; only the live region below them is redrawn. The live region always fits the window:

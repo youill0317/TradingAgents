@@ -1,5 +1,6 @@
 // Copyright 2026 Tauric Research
 // SPDX-License-Identifier: Apache-2.0
+// Changed in this fork of TradingAgents 1.0.0.
 /**
  * The slash commands: one registry that the command menu, `/help` and the input all read. A command acts
  * through the app's actions only, so it never reaches into the views.

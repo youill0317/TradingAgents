@@ -1,5 +1,6 @@
 // Copyright 2026 Tauric Research
 // SPDX-License-Identifier: Apache-2.0
+// Changed in this fork of TradingAgents 1.0.0.
 /**
  * The chat on this terminal, wired to the process: what `/status` and the header show, the input
  * history, `/new` and `/resume` over the session host, `/login` and `/model`, and the app drawn.

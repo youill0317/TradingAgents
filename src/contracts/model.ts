@@ -1,5 +1,6 @@
 // Copyright 2026 Tauric Research
 // SPDX-License-Identifier: Apache-2.0
+// Changed in this fork of TradingAgents 1.0.0.
 /**
  * How the agent loop talks to a language model. One request is one model step: the loop, not the
  * model client, decides when to call tools and when to stop.

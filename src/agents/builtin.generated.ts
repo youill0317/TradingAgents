@@ -1,5 +1,6 @@
 // Copyright 2026 Tauric Research
 // SPDX-License-Identifier: Apache-2.0
+// Changed in this fork of TradingAgents 1.0.0.
 // Generated from specs/; do not edit.
 import type { SkillFile } from "./skill-file.js";
 import type { AgentFile } from "./agent-file.js";

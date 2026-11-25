@@ -1,5 +1,6 @@
 # Copyright 2026 Tauric Research
 # SPDX-License-Identifier: Apache-2.0
+# Changed in this fork of TradingAgents 1.0.0.
 blank_issues_enabled: false
 contact_links:
   - name: Questions and ideas

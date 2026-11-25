@@ -1,5 +1,6 @@
 // Copyright 2026 Tauric Research
 // SPDX-License-Identifier: Apache-2.0
+// Changed in this fork of TradingAgents 1.0.0.
 /**
  * The welcome block, the scrollback's first: the mark beside two lines (the name and version, the model
  * and data); then an announcement, if any (news), a line of examples and a line of keys. Left-aligned at the gutter, and

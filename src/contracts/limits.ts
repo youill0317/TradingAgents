@@ -1,5 +1,6 @@
 // Copyright 2026 Tauric Research
 // SPDX-License-Identifier: Apache-2.0
+// Changed in this fork of TradingAgents 1.0.0.
 /**
  * The engineering bounds the modules share, in one place. User-facing limits (what a question or an agent
  * may use) are resolved from settings (config/limits.ts) and passed to their consumers; the bounds below

@@ -1,5 +1,6 @@
 // Copyright 2026 Tauric Research
 // SPDX-License-Identifier: Apache-2.0
+// Changed in this fork of TradingAgents 1.0.0.
 /**
  * The stored keys: `credentials.json` in the home directory, owner-only. It is read more strictly than
  * the settings: a file that is not the user's own is not used. Problems name the field, never a value.

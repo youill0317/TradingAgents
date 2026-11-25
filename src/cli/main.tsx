@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Copyright 2026 Tauric Research
 // SPDX-License-Identifier: Apache-2.0
+// Changed in this fork of TradingAgents 1.0.0.
 /**
  * The command line. Commands that need no model (help, version, key) run without settings;
  * a question needs a configured model. Only the interactive session mounts the terminal UI.

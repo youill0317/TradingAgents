@@ -1,5 +1,6 @@
 // Copyright 2026 Tauric Research
 // SPDX-License-Identifier: Apache-2.0
+// Changed in this fork of TradingAgents 1.0.0.
 /**
  * Every fixed text the model is told, apart from the tools' own descriptions and results: the main
  * agent's instructions, the paragraphs every agent's prompt carries and how a brief hands on results,

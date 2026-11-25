@@ -1,6 +1,7 @@
 #!/bin/sh
 # Copyright 2026 Tauric Research
 # SPDX-License-Identifier: Apache-2.0
+# Changed in this fork of TradingAgents 1.0.0.
 # Checks a built executable as CI and the release workflow run it: sh scripts/smoke.sh <executable> <scratch dir>
 #
 # - it carries React's production build;

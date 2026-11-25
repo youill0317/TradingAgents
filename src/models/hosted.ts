@@ -1,5 +1,6 @@
 // Copyright 2026 Tauric Research
 // SPDX-License-Identifier: Apache-2.0
+// Changed in this fork of TradingAgents 1.0.0.
 /**
  * Models at a hosted API, reached with the user's own key: each through its AI SDK package, wrapped by
  * the shared client. Nothing is sampled (vendors fix sampling for their reasoning models); how much a

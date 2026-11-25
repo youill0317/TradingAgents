@@ -1,5 +1,6 @@
 // Copyright 2026 Tauric Research
 // SPDX-License-Identifier: Apache-2.0
+// Changed in this fork of TradingAgents 1.0.0.
 /**
  * The models offered for each hosted provider, best value first, and what is known about each: its
  * metadata is generated from a pinned models.dev snapshot, never fetched at run time,

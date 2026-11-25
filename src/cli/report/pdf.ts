@@ -1,5 +1,6 @@
 // Copyright 2026 Tauric Research
 // SPDX-License-Identifier: Apache-2.0
+// Changed in this fork of TradingAgents 1.0.0.
 /**
  * A report set as a PDF with PDFKit: a letterhead, the title, when and by what it was written, the question,
  * the answer (headings, paragraphs, lists, tables, code, quotes), then the numbered sources; each page's foot

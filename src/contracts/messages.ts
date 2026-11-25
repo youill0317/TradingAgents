@@ -1,5 +1,6 @@
 // Copyright 2026 Tauric Research
 // SPDX-License-Identifier: Apache-2.0
+// Changed in this fork of TradingAgents 1.0.0.
 /**
  * Every fixed string a person reads from the application, by key: command output and errors, notices,
  * reported problems, the questions it asks, and the one-line summary each tool call shows. Text

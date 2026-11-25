@@ -1,5 +1,6 @@
 // Copyright 2026 Tauric Research
 // SPDX-License-Identifier: Apache-2.0
+// Changed in this fork of TradingAgents 1.0.0.
 
 export { BUILT_IN, type Catalog, loadCatalog } from "../agents/catalog.js";
 export { offeredLevels } from "../models/catalog.js";

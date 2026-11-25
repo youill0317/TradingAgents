@@ -1,5 +1,6 @@
 // Copyright 2026 Tauric Research
 // SPDX-License-Identifier: Apache-2.0
+// Changed in this fork of TradingAgents 1.0.0.
 /** The product's identity, read by every layer. */
 
 /** The command people run; it names the home directory and prefixes the environment variables. */

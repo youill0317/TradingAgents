@@ -1,5 +1,6 @@
 // Copyright 2026 Tauric Research
 // SPDX-License-Identifier: Apache-2.0
+// Changed in this fork of TradingAgents 1.0.0.
 /**
  * The composition root: an engine built from resolved settings (the model endpoint, its sampling
  * per mode, the data keys). It reads no files and no environment; the CLI resolves those first.

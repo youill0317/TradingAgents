@@ -1,5 +1,6 @@
 // Copyright 2026 Tauric Research
 // SPDX-License-Identifier: Apache-2.0
+// Changed in this fork of TradingAgents 1.0.0.
 /**
  * What's new: once per version, one line from the new version's notes (its first item, the rest a
  * command away), at the start of an interactive session. A fresh install says nothing and only

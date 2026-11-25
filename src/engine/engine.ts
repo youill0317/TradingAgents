@@ -1,5 +1,6 @@
 // Copyright 2026 Tauric Research
 // SPDX-License-Identifier: Apache-2.0
+// Changed in this fork of TradingAgents 1.0.0.
 /**
  * The engine: one session of questions and answers. It runs the main agent for each question and
  * turns everything the run emits into enveloped events, in order, with exactly one terminal event
