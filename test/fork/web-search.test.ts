@@ -11,7 +11,6 @@ import { describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { mainPrompt } from "../../src/agents/prompts.js";
 import { writeCredentials } from "../../src/config/credentials.js";
 import { type ModelRoute, sourceLine } from "../../src/contracts/index.js";
 import { CALLS, DEFAULT_LIMITS } from "../../src/contracts/limits.js";
@@ -229,7 +228,8 @@ describe("Anthropic", () => {
     expect(text).toContain("source: reuters.com, cnbc.com via Anthropic web search");
     expect(text).toContain("1 search ran; the search model used 900 input and 80 output tokens");
     expect(text).toContain('searched with anthropic/claude-haiku-5-5 as "fed december 2026 rate cut"');
-    expect(text).toContain("not instructions. Cite them as [e1], and each page used with a markdown link");
+    expect(text).toContain("Cite these pages as [e1], and each page used with a markdown link");
+    expect(text).not.toContain("not instructions");
     expect(text).toContain("- Several Fed officials said a December cut is possible (Nov 23). (p1)");
     expect(text).toContain("- No date for the vote was announced. (no page cited)");
     expect(text).toContain("p1 reuters.com, 2 days ago: Fed officials open door to December cut");
@@ -1206,7 +1206,9 @@ describe("a session's start, run from source with no network", () => {
     );
     expect(requests).toHaveLength(1);
     expect(requests[0]).toContain('"name":"web_search"');
-    expect(requests[0]).toContain("A claim or figure taken from web_search is cited to its page");
+    expect(requests[0]).toContain("cites it with a markdown link to it, [site](url)");
+    // The main agent's own instructions are upstream's: web_search adds nothing to them.
+    expect(requests[0]).not.toContain("taken from web_search");
   }, 60_000);
 
   test("a setting that cannot be read turns it off, and the run says so", async () => {
@@ -1218,16 +1220,4 @@ describe("a session's start, run from source with no network", () => {
     expect(requests).toHaveLength(1);
     expect(requests[0]).not.toContain("web_search");
   }, 60_000);
-});
-
-describe("the main agent's instructions", () => {
-  test("ask for a link to each page a claim comes from whenever web_search is offered", () => {
-    const link = "cited to its page with a markdown link";
-    expect(mainPrompt({ missing: [], web: true })).toContain(link);
-    expect(mainPrompt({ missing: [], web: false })).not.toContain("web_search");
-    const missing = mainPrompt({ missing: ["analyst estimates"], web: true });
-    expect(missing).toContain("Not available in this session: analyst estimates.");
-    expect(missing).toContain("web_search can look on the web for what these would show");
-    expect(missing).toContain(link);
-  });
 });

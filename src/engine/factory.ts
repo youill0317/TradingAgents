@@ -166,10 +166,7 @@ export function createEngine(settings: EngineSettings): Engine {
   // The main agent thinks: it gets that mode's sampling, and the server is told to think when it can be.
   const main: AgentSpec = {
     name: "main",
-    system: mainPrompt({
-      missing: missing.map((capability) => CAPABILITY_LABELS[capability]),
-      web: web.length > 0,
-    }),
+    system: mainPrompt({ missing: missing.map((capability) => CAPABILITY_LABELS[capability]) }),
     tools: tools.map((tool) => tool.name),
     // The question's limits are applied by the engine for each question.
     caps: { steps: limits.question.steps },

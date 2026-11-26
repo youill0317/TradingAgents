@@ -103,8 +103,7 @@ them that has a key, Anthropic first, using that provider's fast model.
 A call is one request to the provider's own web search, whose model runs as many searches as it decides:
 TradingAgents sets no limit. The provider bills each search to that key, a search fee plus the search
 model's tokens, and each result notes how many searches ran and the tokens the search model used.
-What the pages say reaches the model as untrusted information, and the answer cites each page it uses with a
-link.
+The answer cites each page it uses with a link.
 
 `TRADINGAGENTS_WEB_SEARCH` changes this: `off`, a provider (`anthropic`, `openai`, `google`), or a provider and
 its model (`openai/gpt-6-luna`). Google Search grounding runs only when it is named, with a Google key set:
