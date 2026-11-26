@@ -1,0 +1,11 @@
+{
+  "source": "nyfed",
+  "name": "sofr-search-2026",
+  "url": "https://markets.newyorkfed.org/api/rates/secured/sofr/search.json?startDate=2026-01-01&endDate=2026-11-25",
+  "status": 200,
+  "content_type": "application/json;charset=utf-8",
+  "recorded_at": "2026-11-25T14:58:07.000Z",
+  "bytes": 13822,
+  "hand_made": false,
+  "note": "An excerpt of a real answer: the rows from 2026-09-01 to 2026-11-24 of the New York Fed's SOFR for 2026 (macro/raw/nyfed-sofr-search-2026.json, 53,330 bytes whole, 224 rows), saved with the planning samples and not recorded again, its rows unchanged and newest first; recorded_at is that answer's HTTP Date."
+}

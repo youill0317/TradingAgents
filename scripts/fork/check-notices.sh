@@ -11,6 +11,8 @@
 #   as upstream wrote them, and the next line is `Changed in this fork of TradingAgents <version>.`.
 # - An added file starts, after any #! line, with the fork's copyright line, the SPDX line and
 #   `Added in this fork of TradingAgents <version>.`.
+# - No added path is a symbolic link: a link carries no notice, and one to a place on one machine (a
+#   worktree's node_modules, which .gitignore's `node_modules/` does not match) breaks every other checkout.
 #
 # The working tree is compared with the merge base of the ref and HEAD (and, during a merge, the commit
 # being merged), the upstream commit this branch last took: changes upstream made after it, on a ref
@@ -58,6 +60,11 @@ done <<EOF
 $changed
 EOF
 for file in $added; do
+	if [ "$(git ls-files -s -- "$file" | cut -c1-6)" = 120000 ]; then
+		echo "$file: a symbolic link is tracked; untrack it (the link itself stays): git rm --cached $file" >&2
+		status=1
+		continue
+	fi
 	commented "$file" || continue
 	head -n 4 "$file" | awk '
 		NR == 1 && /^#!/ { skip = 1; next }

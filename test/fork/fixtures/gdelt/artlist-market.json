@@ -1,0 +1,54 @@
+{
+ "articles": [
+  {
+   "url": "https://markets.example.org/stocks/wall-street-ends-mixed",
+   "url_mobile": "",
+   "title": "Wall Street ends mixed as megacap tech lags",
+   "seendate": "20261125T214500Z",
+   "socialimage": "https://markets.example.org/images/stocks/wall-street-ends-mixed.jpg",
+   "domain": "markets.example.org",
+   "language": "English",
+   "sourcecountry": "United States"
+  },
+  {
+   "url": "https://wire.example.com/markets/2026/11/25/stocks-close-off-highs",
+   "url_mobile": "",
+   "title": "Stocks close off highs; small caps outperform",
+   "seendate": "20261125T211500Z",
+   "socialimage": "https://wire.example.com/images/markets/2026/11/25/stocks-close-off-highs.jpg",
+   "domain": "wire.example.com",
+   "language": "English",
+   "sourcecountry": "United States"
+  },
+  {
+   "url": "https://daily.example.com/markets/equities-hold-gains-yields-ease",
+   "url_mobile": "",
+   "title": "Equities hold gains as bond yields ease",
+   "seendate": "20261125T200000Z",
+   "socialimage": "https://daily.example.com/images/markets/equities-hold-gains-yields-ease.jpg",
+   "domain": "daily.example.com",
+   "language": "English",
+   "sourcecountry": "United States"
+  },
+  {
+   "url": "https://business.example.org/markets/stock-market-today-energy",
+   "url_mobile": "",
+   "title": "Stock market today: energy shares rise with crude",
+   "seendate": "20261125T170000Z",
+   "socialimage": "https://business.example.org/images/markets/stock-market-today-energy.jpg",
+   "domain": "business.example.org",
+   "language": "English",
+   "sourcecountry": "United States"
+  },
+  {
+   "url": "https://global.example.net/europe/european-stocks-finish-higher",
+   "url_mobile": "",
+   "title": "European stocks finish higher, led by banks",
+   "seendate": "20261125T143000Z",
+   "socialimage": "https://global.example.net/images/europe/european-stocks-finish-higher.jpg",
+   "domain": "global.example.net",
+   "language": "English",
+   "sourcecountry": "United States"
+  }
+ ]
+}

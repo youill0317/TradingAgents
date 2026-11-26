@@ -103,7 +103,7 @@ The main agent answers with its own tools: data tools, compute tools for arithme
 | portfolio-review       | Risk      | how a set of holdings behaves together, and how other weights would compare |
 | thesis-review          | Risk      | a challenge to a view: the case against, a pre-mortem, what would break it  |
 
-An agent is offered when every data tool it names has a source here, and the built-in skills, written as briefs for the built-in agents, when one of those is. The data tools with a source today are `quote` and `price_history`, from Yahoo, and `prediction_markets`, from Polymarket; the others answer that they are not available in this setup. So none of the agents and skills above is offered yet, and the main agent researches on its own; they are offered as the data they need becomes available, as free public sources are added.
+An agent is offered when every data tool it names has a source here, and the built-in skills, written as briefs for the built-in agents, when one of those is. Every data tool has a source today but `find_instrument` and `markets`, which answer that they are not available in this setup; `statements`, `filings`, `filing_section`, `screen` and `ownership`'s insider view read SEC EDGAR, which needs `SEC_USER_AGENT` ([configuration](configuration.md#public-data)). So with it, Equity Research, Quant Research and Risk Analysis are offered, with the built-in skills, and Macro Strategy once `markets` has a source; without it, none is, and the main agent researches on its own.
 
 `/agents` and `/skills` list what a session has, where each comes from, and which are not available in it.
 

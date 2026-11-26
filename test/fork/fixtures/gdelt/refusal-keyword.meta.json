@@ -1,0 +1,11 @@
+{
+  "source": "gdelt",
+  "name": "refusal-keyword",
+  "url": "https://api.gdeltproject.org/api/v2/doc/doc?query=an&mode=artlist&format=json&maxrecords=250&sort=datedesc",
+  "status": 200,
+  "content_type": "text/html; charset=utf-8",
+  "recorded_at": "2026-11-25T22:00:00.000Z",
+  "bytes": 87,
+  "hand_made": true,
+  "note": "Hand-made, not recorded (api.gdeltproject.org was not reachable from the development session): a search GDELT DOC 2.0 refuses, answered as GDELT answers one, in plain words with HTTP 200 rather than JSON; the exact words are this fixture's own."
+}

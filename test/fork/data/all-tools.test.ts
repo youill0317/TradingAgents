@@ -1,0 +1,367 @@
+// Copyright 2026 TradingAgents fork contributors
+// SPDX-License-Identifier: Apache-2.0
+// Added in this fork of TradingAgents 1.0.0.
+/**
+ * Every data tool once, through the fork's providers together as a setup with SEC_USER_AGENT builds them (and
+ * Polymarket, as the engine adds it), the router and the ToolRegistry, on the fixtures the providers' own tests
+ * use (test/fork/fixtures: real answers saved earlier, and hand-made ones in the sources' documented formats).
+ * Every answer is behind the read check, so a change that drops a field a tool reads fails here: each call is
+ * pinned to answer, to name the source the router chose, and to leave out no field the tool read (upstream
+ * Yahoo's own quote aside). A tool reading more than one method runs once per method; dcf reads a statement
+ * from SEC EDGAR and a profile from Yahoo together. A tool whose capability no provider serves yet
+ * (find_instrument, markets) says it is not available. The providers' own tests hold the golden texts. No
+ * request reaches the network.
+ */
+import { describe, expect, test } from "bun:test";
+import { PolymarketClient } from "../../../src/data/polymarket/client.js";
+import { polymarketProvider } from "../../../src/data/polymarket/provider.js";
+import { frameUrl } from "../../../src/fork/data/sources/sec-frames.js";
+import { SEC_TICKERS_URL } from "../../../src/fork/data/sources/sec-tickers.js";
+import { SP_LISTS, wikitextUrl } from "../../../src/fork/data/sources/wikipedia.js";
+import { MODULES } from "../../../src/fork/data/sources/yahoo.js";
+import { DATA_TOOLS } from "../../../src/tools/catalog.js";
+import {
+  buildTools,
+  type FixtureFetch,
+  type FixtureRoute,
+  fixtureFetch,
+  type ToolRun,
+  testProviders,
+  YAHOO_AAPL,
+} from "./harness.js";
+
+// Fixture routes, by source ------------------------------------------------------------------------------
+
+/** Yahoo's chart of `symbol` at `interval`, for requests whose start `when` accepts (any, unless given). */
+const chart = (symbol: string, file: string, interval = "1d", when?: (period1: number) => boolean) =>
+  ({
+    match: (url) =>
+      decodeURIComponent(url.pathname) === `/v8/finance/chart/${symbol}` &&
+      url.searchParams.get("interval") === interval &&
+      (!when || when(Number(url.searchParams.get("period1")))),
+    file,
+  }) satisfies FixtureRoute;
+
+/** Yahoo's quoteSummary of `symbol` with one use's modules. */
+const summary = (symbol: string, use: keyof typeof MODULES, file: string) =>
+  ({
+    match: (url) =>
+      decodeURIComponent(url.pathname) === `/v10/finance/quoteSummary/${symbol}` &&
+      url.searchParams.get("modules") === MODULES[use].join(","),
+    file,
+  }) satisfies FixtureRoute;
+
+/** Yahoo (hand-made answers read by yahoo-finance2 itself), before YAHOO_AAPL's cookie page, crumb, quote and chart. */
+const YAHOO: FixtureRoute[] = [
+  {
+    match: (url) => url.pathname === "/v7/finance/quote" && url.searchParams.get("symbols") === "005930.KS",
+    file: "yahoo/quote-005930-ks.json",
+  },
+  // A whole history's events start before 1970; the indicators read the 600 days from 2025 on.
+  chart("AAPL", "yahoo/chart-aapl-events.json", "1d", (period1) => period1 < 0),
+  chart(
+    "AAPL",
+    "yahoo/chart-aapl-1d-600.json",
+    "1d",
+    (period1) => period1 > 0 && period1 < Date.parse("2026-01-01") / 1000,
+  ),
+  chart("AAPL", "yahoo/chart-aapl-15m.json", "15m"),
+  summary("AAPL", "profile", "yahoo/quotesummary-aapl-profile.json"),
+  summary("AAPL", "analyst", "yahoo/quotesummary-aapl-analyst.json"),
+  summary("AAPL", "calendar", "yahoo/quotesummary-aapl-calendar.json"),
+  summary("AAPL", "holders", "yahoo/quotesummary-aapl-holders.json"),
+  summary("MSFT", "profile", "yahoo/quotesummary-msft-profile.json"),
+  summary("GOOGL", "profile", "yahoo/quotesummary-googl-profile.json"),
+  summary("META", "profile", "yahoo/quotesummary-meta-profile.json"),
+  {
+    match: (url) => url.pathname === "/v1/finance/search" && url.searchParams.get("q") === "AAPL",
+    file: "yahoo-news/search-aapl.json",
+  },
+];
+
+/** An insider report's raw XML in an AAPL filing's folder. */
+const report = (accession: string, document: string): FixtureRoute => ({
+  match: `https://www.sec.gov/Archives/edgar/data/320193/${accession.replaceAll("-", "")}/${document}`,
+  file: `sec/form4-aapl-${accession}.xml`,
+});
+
+/** SEC EDGAR: its ticker list (hand-made), Apple's filing index and XBRL facts (saved), its 10-K and insider reports (hand-made). */
+const SEC: FixtureRoute[] = [
+  { match: SEC_TICKERS_URL, file: "sec/company-tickers-exchange.json" },
+  { match: "https://data.sec.gov/submissions/CIK0000320193.json", file: "sec/submissions-aapl.json" },
+  {
+    match: "https://data.sec.gov/submissions/CIK0000320193-submissions-001.json",
+    file: "sec/submissions-aapl-001.json",
+  },
+  {
+    match: "https://data.sec.gov/api/xbrl/companyfacts/CIK0000320193.json",
+    file: "sec/companyfacts-aapl.json",
+  },
+  {
+    match: "https://www.sec.gov/Archives/edgar/data/320193/000032019326000026/aapl-20260926.htm",
+    file: "sec/document-aapl-0000320193-26-000026.html",
+  },
+  report("0001140361-26-044952", "form4.xml"),
+  report("0001140361-26-044773", "form4.xml"),
+  report("0001140361-26-043484", "form4.xml"),
+  report("0001140361-26-042149", "form4.xml"),
+  report("0001140361-26-041201", "form4.xml"),
+  report("0000320193-24-000102", "wk-form5_1727822122.xml"),
+  report("0000320193-22-000078", "wf-form4a_166120817922787.xml"),
+];
+
+/** The frames' fixture names, by concept. */
+const FRAME_FILES: Readonly<Record<string, string>> = {
+  Revenues: "revenues",
+  RevenueFromContractWithCustomerExcludingAssessedTax: "rfcceat",
+  NetIncomeLoss: "netincomeloss",
+};
+
+/** Sector screens: Wikipedia's three lists (excerpts), SEC's frames (saved or assembled), SEC's 404 for any other frame. */
+const SCREENS: FixtureRoute[] = [
+  ...SP_LISTS.map((list) => ({ match: wikitextUrl(list.page), file: `wikipedia/${list.key}-wikitext.json` })),
+  ...Object.entries(FRAME_FILES).flatMap(([concept, file]) =>
+    ["CY2024", "CY2025"].map((period) => ({
+      match: frameUrl(concept, "USD", period),
+      file: `frames/${file}-${period.toLowerCase()}.json`,
+    })),
+  ),
+  { match: /^https:\/\/data\.sec\.gov\/api\/xbrl\/frames\//, file: "frames/no-such-frame.xml" },
+];
+
+/** The agencies (saved answers; FRED's keyless download hand-made), and the ECB's reference rates (saved). */
+const AGENCIES: FixtureRoute[] = [
+  {
+    match: (url) =>
+      url.hostname === "home.treasury.gov" &&
+      url.pathname.endsWith("/daily-treasury-rates.csv/2026/all") &&
+      url.searchParams.get("type") === "daily_treasury_yield_curve",
+    file: "treasury/par-2026.csv",
+  },
+  {
+    match: "https://markets.newyorkfed.org/api/rates/unsecured/effr/last/5.json",
+    file: "nyfed/effr-last5.json",
+  },
+  {
+    match: /\/FM\/D\.U2\.EUR\.4F\.KR\.DFR\.LEV\?format=csvdata&detail=dataonly&startPeriod=2024-01-01$/,
+    file: "ecb/fm-dfr-since2024.csv",
+  },
+  {
+    match: (url) => url.hostname === "fred.stlouisfed.org" && url.searchParams.get("id") === "CPIAUCSL",
+    file: "fred/graph-cpiaucsl.csv",
+  },
+  // The saved five days of USD per EUR are the 5-day window ending on the harness's day.
+  {
+    match: (url) =>
+      url.pathname === "/service/data/EXR/D.USD.EUR.SP00.A" &&
+      url.searchParams.get("startPeriod") === "2026-11-19",
+    file: "ecb/exr-usd-last5.csv",
+  },
+];
+
+/** Polymarket's search (an excerpt of a saved answer). */
+const POLYMARKET: FixtureRoute = {
+  match: (url) => url.hostname === "gamma-api.polymarket.com" && url.pathname === "/public-search",
+  file: "polymarket/public-search-fed-rate.json",
+};
+
+/**
+ * A fixture fetch over every route whose Yahoo news search answers as Yahoo does: at most `newsCount` of the
+ * fixture's articles, the newest first.
+ */
+function allFetch(): FixtureFetch {
+  const base = fixtureFetch([...YAHOO, ...SEC, ...SCREENS, ...AGENCIES, POLYMARKET, ...YAHOO_AAPL]);
+  const answer = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+    const response = await base(input, init);
+    const url = new URL(input instanceof Request ? input.url : String(input));
+    if (url.pathname !== "/v1/finance/search" || !response.ok) return response;
+    const body = (await response.json()) as { news?: unknown[] };
+    if (Array.isArray(body.news)) body.news = body.news.slice(0, Number(url.searchParams.get("newsCount")));
+    return new Response(JSON.stringify(body), { status: response.status, headers: response.headers });
+  };
+  return Object.assign(answer, { requests: base.requests, unmatched: base.unmatched }) as FixtureFetch;
+}
+
+// One setup for every call, as one session's ----------------------------------------------------------------
+
+const fetch = allFetch();
+const { providers, clock } = testProviders({ secUserAgent: "Test Agent test@example.com" }, fetch);
+const { runTool, available } = buildTools(
+  { ...providers, polymarket: polymarketProvider(new PolymarketClient(fetch)) },
+  { clock, check: true },
+);
+
+/** The tools run here, each once or more. */
+const ran = new Set<string>();
+
+/**
+ * What upstream's Yahoo answers for a US listing (src/data/yahoo/provider.ts, unchanged) leave out that the quote
+ * and price_history tools read: optional fields it never sets.
+ */
+const UPSTREAM_QUOTE_LEFT_OUT = [
+  "change_basis",
+  "field_states",
+  "instrument.listing",
+  "instrument.price_scale",
+  "stale",
+];
+const UPSTREAM_DAILY_LEFT_OUT = [
+  "bars[].field_states",
+  "coverage.complete_reason",
+  "instrument.classification",
+  "instrument.continuous",
+  "instrument.listing",
+  "instrument.price_scale",
+];
+
+/**
+ * Runs `tool` with `input` and checks it as the model reads it: it answers, from `source`, and every field the
+ * tool read of the answer was there (but those `leftOut` names). The read check must have seen fields read.
+ */
+async function check(
+  tool: string,
+  input: Record<string, unknown>,
+  source: string,
+  leftOut: readonly string[] = [],
+): Promise<ToolRun> {
+  ran.add(tool);
+  const run = await runTool(tool, input);
+  expect(run.failure, run.text).toBeUndefined();
+  expect(run.source).toBe(source);
+  expect(run.reads.paths().length).toBeGreaterThan(0);
+  expect(run.reads.missing()).toEqual([...leftOut].sort());
+  return run;
+}
+
+// The calls ---------------------------------------------------------------------------------------------------
+
+describe("every data tool, through every provider together, every field it reads supplied", () => {
+  test("what the setup serves: everything but the market views and instrument search", () => {
+    expect([...available].sort()).toEqual([
+      "corporateActions",
+      "crossSections",
+      "filings",
+      "macroSeries",
+      "news",
+      "ownership",
+      "predictionMarkets",
+      "priceHistory",
+      "profiles",
+      "quotes",
+      "statements",
+      "technicals",
+    ]);
+  });
+
+  test("quote: one listing (quotes.quote), and a batch (quotes.many) with a US listing upstream's Yahoo answers", async () => {
+    await check("quote", { symbols: ["XKRX:005930"] }, "Yahoo");
+    await check(
+      "quote",
+      { symbols: ["XKRX:005930", "AAPL"] },
+      "Yahoo",
+      // The router's source on each row is absent when every row is from one provider.
+      [...UPSTREAM_QUOTE_LEFT_OUT.map((field) => `quotes[].quote.${field}`), "quotes[].source"],
+    );
+  });
+
+  test("price_history: daily bars (Yahoo), intraday bars (Yahoo), a pair's reference rates (the ECB)", async () => {
+    await check("price_history", { symbol: "AAPL", period: "1mo" }, "Yahoo", UPSTREAM_DAILY_LEFT_OUT);
+    await check("price_history", { symbol: "AAPL", interval: "15m", period: "5d" }, "Yahoo");
+    await check("price_history", { symbol: "fx:EURUSD", period: "5d" }, "ECB");
+  });
+
+  test("statements, then dcf on that statement and Yahoo's profile", async () => {
+    const statement = await check(
+      "statements",
+      { symbol: "AAPL", statement: "cash_flow", period_type: "annual", periods: 1 },
+      "SEC EDGAR",
+    );
+    const profile = await check("profile", { symbol: "AAPL" }, "Yahoo");
+    const dcf = await runTool("dcf", {
+      profile: { ref: profile.evidence },
+      cash_flow: { ref: statement.evidence },
+      stages: [{ years: 5, growth_pct: 6 }],
+      terminal_growth_pct: 2.5,
+      discount: { rate_pct: 9 },
+    });
+    expect(dcf.failure, dcf.text).toBeUndefined();
+    // The statement's lines carry the names dcf reads; the profile's currency is the statement's.
+    const inputs = (dcf.payload as { inputs: { name: string }[]; currency: string | null }).inputs.map(
+      (input) => input.name,
+    );
+    expect(inputs).toContain("Net Cash from Operating Activities");
+    expect(inputs).toContain("Payments to Acquire PP&E");
+    expect((dcf.payload as { currency: string | null }).currency).toBe("USD");
+  });
+
+  test("filings and filing_section", async () => {
+    await check("filings", { symbol: "AAPL", forms: ["10-K"], limit: 2 }, "SEC EDGAR");
+    await check(
+      "filing_section",
+      { symbol: "AAPL", accession: "0000320193-26-000026", section: "risk_factors" },
+      "SEC EDGAR",
+    );
+  });
+
+  test("news by symbol, then article on what it listed", async () => {
+    const news = await check("news", { symbol: "AAPL" }, "News search");
+    const id = (news.payload as { articles: { id: string }[] }).articles[0]?.id;
+    expect(id).toStartWith("yh:");
+    await check("article", { id }, "News search");
+  });
+
+  test("estimates and comps", async () => {
+    await check("estimates", { symbol: "AAPL" }, "Yahoo");
+    await check("comps", { symbol: "AAPL", peers: ["MSFT", "GOOGL", "META"] }, "Yahoo");
+  });
+
+  test("ownership: insider transactions (SEC EDGAR) and institutional holders (Yahoo), split by method", async () => {
+    await check("ownership", { symbol: "AAPL", limit: 4 }, "SEC EDGAR");
+    await check("ownership", { symbol: "AAPL", view: "institutional" }, "Yahoo");
+  });
+
+  test("corporate_actions and technicals", async () => {
+    await check("corporate_actions", { symbol: "AAPL" }, "Yahoo");
+    await check("technicals", { symbol: "AAPL" }, "Yahoo");
+  });
+
+  test("macro_series: one series of each publisher (the Treasury, the New York Fed, the ECB, FRED)", async () => {
+    for (const series of [
+      "10-year Treasury yield",
+      "effective federal funds rate",
+      "ECB deposit facility rate",
+      "CPI",
+    ]) {
+      await check("macro_series", { series, periods: 5 }, "Public statistics");
+    }
+  });
+
+  test("screen", async () => {
+    await check(
+      "screen",
+      { sector: "information_technology", line: "revenue", fiscal_year: 2025 },
+      "SEC EDGAR",
+    );
+  });
+
+  test("prediction_markets", async () => {
+    await check("prediction_markets", { topic: "fed rate" }, "Polymarket");
+  });
+
+  test("find_instrument and markets: no provider serves them yet, and each says so", async () => {
+    for (const [tool, input] of [
+      ["find_instrument", { query: "Apple" }],
+      ["markets", { view: "yield_curve" }],
+    ] as const) {
+      ran.add(tool);
+      const run = await runTool(tool, input);
+      expect(run.failure, tool).toBe("data_not_configured");
+      expect(run.text, tool).toEndWith(": not available in this setup.");
+    }
+  });
+
+  test("every data tool ran, and every request was answered by a fixture", () => {
+    expect([...ran].sort()).toEqual(DATA_TOOLS.map((entry) => entry.name).sort());
+    expect(fetch.unmatched).toEqual([]);
+  });
+});

@@ -1,0 +1,11 @@
+{
+  "source": "wikipedia",
+  "name": "sp600-wikitext",
+  "url": "https://en.wikipedia.org/w/api.php?action=parse&page=List_of_S%26P_600_companies&prop=wikitext&format=json&formatversion=2",
+  "status": 200,
+  "content_type": "application/json; charset=utf-8",
+  "recorded_at": "2026-11-25T15:03:02.000Z",
+  "bytes": 7443,
+  "hand_made": false,
+  "note": "An excerpt of Wikipedia's answer saved with the planning samples (macro/raw/wiki-sp600-wikitext.json, 303,403 bytes), cut by the case module's own excerpt (scripts/fork/fixture-cases/wikipedia.ts): the list's table opening and header, the rows of the companies the tests read and the rows of its changes table that add or remove them (a date written once for several rows kept with all of them), each as written, after an attribution comment. Text from the English Wikipedia article \"List of S&P 600 companies\" (revision 1387693905 of 2026-11-25T03:46:11Z), by Wikipedia's contributors, licensed under the Creative Commons Attribution-ShareAlike 4.0 licence (https://creativecommons.org/licenses/by-sa/4.0/); https://en.wikipedia.org/wiki/List_of_S%26P_600_companies."
+}

@@ -1,0 +1,11 @@
+{
+  "source": "ecb",
+  "name": "fm-policy-last3",
+  "url": "https://data-api.ecb.europa.eu/service/data/FM/D.U2.EUR.4F.KR.DFR+MRR_FR+MLFR.LEV?format=csvdata&lastNObservations=3",
+  "status": 200,
+  "content_type": "text/csv",
+  "recorded_at": "2026-11-25T14:59:40.000Z",
+  "bytes": 3406,
+  "hand_made": false,
+  "note": "A real answer, kept whole: saved with the planning samples (macro/raw/ecb-fm-policy-last3.csv, byte for byte), not recorded again; recorded_at is that answer's HTTP Date."
+}

@@ -6,7 +6,9 @@
  * that serves it where there is one. The forms (src/data/instrument-key.ts reads the kind):
  *
  * - a US ticker, bare: "AAPL", "BRK.B" or "BRK-B" (canonical with a dash, as SEC and Yahoo spell it);
- * - MIC:SYMBOL, as upstream's Yahoo provider takes it: "XNAS:AAPL", "XLON:VOD";
+ * - MIC:SYMBOL, as upstream's Yahoo provider takes it: "XNAS:AAPL", "XLON:VOD"; a share class written as
+ *   the venue writes it, with a dash where it uses one (US venues, London and Toronto: "XNYS:BRK.B" is
+ *   "XNYS:BRK-B", as the bare "BRK.B" is "BRK-B");
  * - a Korean listing: "XKRX:005930" (KOSPI) and "XKOS:035900" (KOSDAQ) are canonical; "005930.KS",
  *   "035900.KQ" name the same; a bare 6-character code ("005930") names a listing whose market is not
  *   known yet (both Yahoo spellings are candidates);
@@ -78,7 +80,7 @@ const VENUE_SPELLING: Readonly<Record<string, { suffix: string; dots?: "dash"; d
   XASX: { suffix: ".AX" },
 };
 /** US venues, by MIC: their listings are spelled as bare US tickers. */
-const US_VENUES = new Set(["XNAS", "XNYS", "ARCX", "BATS", "XASE"]);
+export const US_VENUES: ReadonlySet<string> = new Set(["XNAS", "XNYS", "ARCX", "BATS", "XASE"]);
 
 /** A Korean listing's code: six characters, a digit first ("005930", "0088M0"). */
 const KOREAN_CODE = /^[0-9][0-9A-Z]{5}$/;
@@ -154,7 +156,13 @@ function security(symbol: string): Listing {
     }
     return koreanListing(code, mic);
   }
-  return { kind: "venue", key: `${mic}:${code}`, mic, symbol: code, yahoo: venueSpelling(mic, code) };
+  const spelled = classDashed(mic) ? code.replaceAll(".", "-") : code;
+  return { kind: "venue", key: `${mic}:${spelled}`, mic, symbol: spelled, yahoo: venueSpelling(mic, code) };
+}
+
+/** Whether `mic` writes a share class after a dash (BRK-B, BT-A): the US venues, London and Toronto. */
+function classDashed(mic: string): boolean {
+  return US_VENUES.has(mic) || VENUE_SPELLING[mic]?.dots === "dash";
 }
 
 function koreanListing(code: string, market: KoreanMarket | null): Listing {
@@ -174,7 +182,7 @@ function venueSpelling(mic: string, code: string): string | null {
   if (US_VENUES.has(mic)) return code.replaceAll(".", "-");
   const venue = VENUE_SPELLING[mic];
   if (!venue) return null;
-  let spelled = venue.dots === "dash" ? code.replaceAll(".", "-") : code;
+  let spelled = classDashed(mic) ? code.replaceAll(".", "-") : code;
   if (venue.digits && /^\d+$/.test(spelled)) spelled = spelled.padStart(venue.digits, "0");
   return `${spelled}${venue.suffix}`;
 }

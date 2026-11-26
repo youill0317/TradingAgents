@@ -1,0 +1,11 @@
+{
+  "source": "fred",
+  "name": "graph-gdpc1",
+  "url": "https://fred.stlouisfed.org/graph/fredgraph.csv?id=GDPC1&cosd=2023-01-01&coed=2026-11-25",
+  "status": 200,
+  "content_type": "text/csv",
+  "recorded_at": "2026-11-25T15:00:00.000Z",
+  "bytes": 338,
+  "hand_made": true,
+  "note": "Hand-made in the format of FRED's keyless download (fredgraph.csv: an observation_date column, then one column named by the series code, '.' for a missing value), as FRED documents its CSV downloads; fred.stlouisfed.org did not answer this session, so none was recorded. The values are illustrative, not FRED's. Listed for a live check."
+}

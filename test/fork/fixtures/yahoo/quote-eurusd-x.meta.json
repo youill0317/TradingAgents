@@ -1,0 +1,11 @@
+{
+  "source": "yahoo",
+  "name": "quote-eurusd-x",
+  "url": "https://query2.finance.yahoo.com/v7/finance/quote?symbols=EURUSD%3DX",
+  "status": 200,
+  "content_type": "application/json;charset=utf-8",
+  "recorded_at": "2026-11-25T22:00:00.000Z",
+  "bytes": 966,
+  "hand_made": true,
+  "note": "Hand-made, not recorded: Yahoo's v7 quote answer for EURUSD=X in the shape yahoo-finance2 4.0.6's quote schema validates (QuoteBase's required fields), with invented values as of 2026-11-25. A batched request is answered by joining the rows of these per-symbol fixtures, as Yahoo answers a batch with one row per symbol it knows."
+}

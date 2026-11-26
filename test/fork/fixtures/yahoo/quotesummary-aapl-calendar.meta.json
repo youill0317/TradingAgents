@@ -1,0 +1,11 @@
+{
+  "source": "yahoo",
+  "name": "quotesummary-aapl-calendar",
+  "url": "https://query2.finance.yahoo.com/v10/finance/quoteSummary/AAPL?formatted=false&modules=price,calendarEvents,defaultKeyStatistics,summaryDetail",
+  "status": 200,
+  "content_type": "application/json;charset=utf-8",
+  "recorded_at": "2026-11-25T22:00:00.000Z",
+  "bytes": 1484,
+  "hand_made": true,
+  "note": "Hand-made, not recorded: Yahoo's v10 quoteSummary answer for AAPL with the modules price, calendarEvents, defaultKeyStatistics and summaryDetail, in the shape yahoo-finance2 4.0.6's quoteSummary schema validates, with an invented next earnings date (2027-01-28, after the close) and its estimates, and the latest dividend (0.27, ex 2026-11-09, paid 2026-11-12)."
+}

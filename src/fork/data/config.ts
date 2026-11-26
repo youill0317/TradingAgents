@@ -7,8 +7,11 @@
  * ({"data": {"FRED_API_KEY": "..."}}); and where their answers are cached on disk. What a session's start
  * says about them (`notes`, a line each) is worded here, and names a setting, never its value.
  *
- * Without SEC_USER_AGENT the SEC-backed data (filings, statements, insider trades, sector screens) is not
- * offered: SEC's fair-access rule asks every program that reads EDGAR to name its sender.
+ * Without SEC_USER_AGENT nothing is read from SEC EDGAR, so the SEC-backed data (filings, statements,
+ * insider trades, sector screens) is not offered: SEC's fair-access rule asks every program that reads EDGAR
+ * to name its sender. A value set where it cannot be used (on more than one line; for SEC_USER_AGENT, with
+ * characters a User-Agent cannot carry) is said, and not used: the environment's then gives way to
+ * credentials.json's.
  */
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
@@ -61,22 +64,38 @@ type Field = keyof typeof PUBLIC_DATA_VARS;
 /** What a session's start says about the public-data settings, a line each. */
 const NOTE = {
   secUnset: () =>
-    `SEC_USER_AGENT is not set, so SEC filings, financial statements, insider trades and sector screens are not available: set it to your name and email, such as SEC_USER_AGENT="Your Name you@example.com" (in the environment, or under "data" in credentials.json). SEC's fair-access rule asks every program that reads EDGAR to name its sender this way; it is not a secret.`,
+    `SEC_USER_AGENT is not set, so nothing is read from SEC EDGAR (filings, financial statements, insider trades, sector screens): SEC's fair-access rule asks every program that reads EDGAR to name its sender. Set it to your name and email, such as SEC_USER_AGENT="Your Name you@example.com" (in the environment, or under "data" in credentials.json); it is not a secret.`,
+  secUnusable: () =>
+    `SEC_USER_AGENT has no value that can be used, so nothing is read from SEC EDGAR: write it as your name and email, such as SEC_USER_AGENT="Your Name you@example.com".`,
   secNoEmail: () =>
     `SEC_USER_AGENT holds no email address: SEC's fair-access rule asks for a name and an email, such as "Your Name you@example.com", and SEC may refuse requests that do not give one.`,
-  secNotAscii: () =>
-    `SEC_USER_AGENT holds characters other than plain ASCII letters, digits and punctuation, so it cannot be sent as a User-Agent and SEC data is not available: write it as "Your Name you@example.com".`,
+  envUnusable: (variable: string, why: string, fallback: string | undefined) =>
+    `${variable} in the environment ${why}, so it is not used${fallback ? `; the one under "data" in ${fallback} is used instead` : ""}`,
   dataNotObject: (path: string) => `${path}: "data" is not an object, so the data keys in it are not used`,
-  unusable: (path: string, name: string) => `${path}: data.${name} is not a usable value, so it is not used`,
+  unusable: (path: string, name: string, why: string) => `${path}: data.${name} ${why}, so it is not used`,
   unknown: (path: string, name: string) =>
     `${path}: data.${name} is not a setting this app reads (it reads ${Object.values(PUBLIC_DATA_VARS).join(", ")})`,
 };
 
-/** A value as stored and used: trimmed, on one line, not empty. */
-function usable(value: unknown): string | undefined {
-  if (typeof value !== "string") return undefined;
+/** A setting as read: its value, why a value set cannot be used, or nothing set at all. */
+type Read = { value: string } | { why: string } | undefined;
+
+/**
+ * `value` as `variable` uses it: trimmed, on one line, not empty (an empty one is not set); SEC's User-Agent
+ * only in printable ASCII, the most a header carries.
+ */
+function readValue(variable: string, value: unknown): Read {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string") return { why: "is not text" };
   const text = value.trim();
-  return text && !/[\r\n]/.test(text) ? text : undefined;
+  if (!text) return undefined;
+  if (/[\r\n]/.test(text)) return { why: "spans more than one line" };
+  if (variable === PUBLIC_DATA_VARS.secUserAgent && !/^[\x20-\x7e]+$/.test(text)) {
+    return {
+      why: "holds characters other than plain ASCII letters, digits and punctuation, which a User-Agent cannot carry",
+    };
+  }
+  return { value: text };
 }
 
 /**
@@ -90,44 +109,60 @@ export async function publicDataConfig(
   const notes: string[] = [];
   const stored = await storedData(paths.credentials, notes);
   const config: PublicDataConfig = {};
+  let secRefused = false;
   for (const [field, variable] of Object.entries(PUBLIC_DATA_VARS) as [Field, string][]) {
-    const value = usable(env[variable]) ?? stored[variable];
+    const fromEnv = readValue(variable, env[variable]);
+    const fromFile = stored.get(variable);
+    const value =
+      fromEnv && "value" in fromEnv
+        ? fromEnv.value
+        : fromFile && "value" in fromFile
+          ? fromFile.value
+          : undefined;
+    if (fromEnv && "why" in fromEnv) {
+      notes.push(
+        NOTE.envUnusable(variable, fromEnv.why, value === undefined ? undefined : paths.credentials),
+      );
+    }
+    if (fromFile && "why" in fromFile) notes.push(NOTE.unusable(paths.credentials, variable, fromFile.why));
+    if (field === "secUserAgent")
+      secRefused =
+        (fromEnv !== undefined && "why" in fromEnv) || (fromFile !== undefined && "why" in fromFile);
     if (value !== undefined) config[field] = value;
   }
   const agent = config.secUserAgent;
-  if (agent === undefined) notes.push(NOTE.secUnset());
-  else if (!/^[\x20-\x7e]+$/.test(agent)) {
-    delete config.secUserAgent;
-    notes.push(NOTE.secNotAscii());
-  } else if (!/[^\s@<>()]+@[^\s@<>()]+\.[^\s@<>()]+/.test(agent)) notes.push(NOTE.secNoEmail());
+  if (agent === undefined) notes.push(secRefused ? NOTE.secUnusable() : NOTE.secUnset());
+  else if (!/[^\s@<>()]+@[^\s@<>()]+\.[^\s@<>()]+/.test(agent)) notes.push(NOTE.secNoEmail());
   return { config: { ...config, cacheDir: cacheDirOf(env, paths) }, notes };
 }
 
-/** The "data" settings in the credentials file at `path`, by variable name; problems with them in `notes`. */
-async function storedData(path: string, notes: string[]): Promise<Record<string, string>> {
+/**
+ * The "data" settings in the credentials file at `path`, by variable name, each as read; the object's own
+ * problems (not an object, a name this app does not read) in `notes`.
+ */
+async function storedData(path: string, notes: string[]): Promise<Map<string, NonNullable<Read>>> {
+  const found = new Map<string, NonNullable<Read>>();
   let text: string | undefined;
   try {
     text = await readPrivate(path);
   } catch {
-    return {};
+    return found;
   }
-  if (text === undefined) return {};
+  if (text === undefined) return found;
   const json = parseJson(text);
-  if (!isRecord(json) || json.data === undefined) return {};
+  if (!isRecord(json) || json.data === undefined) return found;
   if (!isRecord(json.data)) {
     notes.push(NOTE.dataNotObject(path));
-    return {};
+    return found;
   }
   const known = new Set<string>(Object.values(PUBLIC_DATA_VARS));
-  const found: Record<string, string> = {};
   for (const [name, value] of Object.entries(json.data)) {
     if (!known.has(name)) {
       notes.push(NOTE.unknown(path, name));
       continue;
     }
-    const kept = usable(value);
-    if (kept === undefined) notes.push(NOTE.unusable(path, name));
-    else found[name] = kept;
+    // An empty value stored is one that cannot be used, not one left unset.
+    found.set(name, readValue(name, value) ?? { why: "is empty" });
   }
   return found;
 }

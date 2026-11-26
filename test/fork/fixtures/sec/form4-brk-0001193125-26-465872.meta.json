@@ -1,0 +1,11 @@
+{
+  "source": "sec",
+  "name": "form4-brk-0001193125-26-465872",
+  "url": "https://www.sec.gov/Archives/edgar/data/1067983/000119312526465872/ownership.xml",
+  "status": 200,
+  "content_type": "text/xml",
+  "recorded_at": "2026-11-26T00:00:00.000Z",
+  "bytes": 2360,
+  "hand_made": true,
+  "note": "Hand-made, not recorded (www.sec.gov answers only a User-Agent that names a contact): an ownership report in SEC's EDGAR ownership XML format (ownershipDocument with issuer, reportingOwner, nonDerivativeTable and derivativeTable, values in <value> elements, footnotes by footnoteId), at the raw-XML path of filing 0001193125-26-465872 as the issuer's filing index lists it (its primary document without the xslF345X0N/ stylesheet folder). The accession, form and dates follow SEC's own index; the issuer is invented (EXAMPLE PORTFOLIO COMPANY, CIK 0000999999), standing for a company of which Berkshire Hathaway reports as a ten per cent owner, a report its own index lists although it is not about Berkshire's shares; the reporting owners (fictional names), transactions and prices are invented. To be checked against the live document once SEC_USER_AGENT is set."
+}

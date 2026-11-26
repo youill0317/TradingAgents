@@ -1,0 +1,34 @@
+{
+ "articles": [
+  {
+   "url": "https://wire.example.com/business/2026/11/25/importers-warn-tariffs-margins",
+   "url_mobile": "",
+   "title": "Importers warn tariffs will squeeze holiday margins",
+   "seendate": "20261125T190000Z",
+   "socialimage": "https://wire.example.com/images/business/2026/11/25/importers-warn-tariffs-margins.jpg",
+   "domain": "wire.example.com",
+   "language": "English",
+   "sourcecountry": "United States"
+  },
+  {
+   "url": "https://business.example.org/retail/retailers-cut-forecasts-tariff-costs",
+   "url_mobile": "",
+   "title": "Retailers cut forecasts as tariff costs mount",
+   "seendate": "20261125T081500Z",
+   "socialimage": "https://business.example.org/images/retail/retailers-cut-forecasts-tariff-costs.jpg",
+   "domain": "business.example.org",
+   "language": "English",
+   "sourcecountry": "United States"
+  },
+  {
+   "url": "https://economy.example.net/industry/factory-orders-slump-tariffs",
+   "url_mobile": "",
+   "title": "Factory orders slump amid tariff uncertainty",
+   "seendate": "20261124T203000Z",
+   "socialimage": "https://economy.example.net/images/industry/factory-orders-slump-tariffs.jpg",
+   "domain": "economy.example.net",
+   "language": "English",
+   "sourcecountry": "United States"
+  }
+ ]
+}

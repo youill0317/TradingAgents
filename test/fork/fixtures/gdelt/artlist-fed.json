@@ -1,0 +1,104 @@
+{
+ "articles": [
+  {
+   "url": "https://wire.example.com/markets/2026/11/25/fed-officials-signal-patience",
+   "url_mobile": "",
+   "title": "Fed officials signal patience on further rate cuts",
+   "seendate": "20261125T214500Z",
+   "socialimage": "https://wire.example.com/images/markets/2026/11/25/fed-officials-signal-patience.jpg",
+   "domain": "wire.example.com",
+   "language": "English",
+   "sourcecountry": "United States"
+  },
+  {
+   "url": "https://markets.example.org/rates/treasury-yields-slip-fed-outlook",
+   "url_mobile": "",
+   "title": "Treasury yields slip as traders weigh Federal Reserve outlook",
+   "seendate": "20261125T203000Z",
+   "socialimage": "https://markets.example.org/images/rates/treasury-yields-slip-fed-outlook.jpg",
+   "domain": "markets.example.org",
+   "language": "English",
+   "sourcecountry": "United States"
+  },
+  {
+   "url": "https://economy.example.net/policy/fomc-minutes-balance-sheet",
+   "url_mobile": "",
+   "title": "FOMC minutes show debate over balance sheet runoff",
+   "seendate": "20261125T183000Z",
+   "socialimage": "https://economy.example.net/images/policy/fomc-minutes-balance-sheet.jpg",
+   "domain": "economy.example.net",
+   "language": "English",
+   "sourcecountry": "United States"
+  },
+  {
+   "url": "https://daily.example.com/economy/fed-chair-labor-market-cooling",
+   "url_mobile": "",
+   "title": "Fed chair says labor market is cooling gradually",
+   "seendate": "20261125T161500Z",
+   "socialimage": "https://daily.example.com/images/economy/fed-chair-labor-market-cooling.jpg",
+   "domain": "daily.example.com",
+   "language": "English",
+   "sourcecountry": "United States"
+  },
+  {
+   "url": "https://business.example.org/personal-finance/fed-next-move-mortgage-rates",
+   "url_mobile": "",
+   "title": "What the Federal Reserve's next move means for mortgage rates",
+   "seendate": "20261125T120000Z",
+   "socialimage": "https://business.example.org/images/personal-finance/fed-next-move-mortgage-rates.jpg",
+   "domain": "business.example.org",
+   "language": "English",
+   "sourcecountry": "United States"
+  },
+  {
+   "url": "https://global.example.net/world/fed-officials-differ-december",
+   "url_mobile": "",
+   "title": "Fed officials differ on the timing of a December cut",
+   "seendate": "20261124T224500Z",
+   "socialimage": "https://global.example.net/images/world/fed-officials-differ-december.jpg",
+   "domain": "global.example.net",
+   "language": "English",
+   "sourcecountry": "United States"
+  },
+  {
+   "url": "https://wire.example.com/markets/2026/11/24/fed-governor-inflation-path",
+   "url_mobile": "",
+   "title": "Federal Reserve governor outlines view on inflation path",
+   "seendate": "20261124T193000Z",
+   "socialimage": "https://wire.example.com/images/markets/2026/11/24/fed-governor-inflation-path.jpg",
+   "domain": "wire.example.com",
+   "language": "English",
+   "sourcecountry": "United States"
+  },
+  {
+   "url": "https://markets.example.org/stocks/steady-ahead-of-fed-remarks",
+   "url_mobile": "",
+   "title": "Stocks steady ahead of remarks from Fed officials",
+   "seendate": "20261124T150000Z",
+   "socialimage": "https://markets.example.org/images/stocks/steady-ahead-of-fed-remarks.jpg",
+   "domain": "markets.example.org",
+   "language": "English",
+   "sourcecountry": "United States"
+  },
+  {
+   "url": "https://economy.example.net/surveys/fed-bank-surveys-slower-growth",
+   "url_mobile": "",
+   "title": "Federal Reserve bank surveys point to slower growth",
+   "seendate": "20261124T150000Z",
+   "socialimage": "https://economy.example.net/images/surveys/fed-bank-surveys-slower-growth.jpg",
+   "domain": "economy.example.net",
+   "language": "English",
+   "sourcecountry": "United States"
+  },
+  {
+   "url": "https://daily.example.com/economy/beige-book-softer-spending",
+   "url_mobile": "",
+   "title": "Fed's Beige Book notes softer consumer spending",
+   "seendate": "20261124T113000Z",
+   "socialimage": "https://daily.example.com/images/economy/beige-book-softer-spending.jpg",
+   "domain": "daily.example.com",
+   "language": "English",
+   "sourcecountry": "United States"
+  }
+ ]
+}

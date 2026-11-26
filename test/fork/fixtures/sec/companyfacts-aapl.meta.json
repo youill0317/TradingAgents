@@ -1,0 +1,11 @@
+{
+  "source": "sec",
+  "name": "companyfacts-aapl",
+  "url": "https://data.sec.gov/api/xbrl/companyfacts/CIK0000320193.json",
+  "status": 200,
+  "content_type": "application/json",
+  "recorded_at": "2026-11-25T14:39:26.000Z",
+  "bytes": 146314,
+  "hand_made": false,
+  "note": "SEC's answer saved from data.sec.gov on 2026-11-25 with the SEC area's live samples (companyfacts-aapl.trimmed.json, itself cut from the complete 3,859,564-byte answer), trimmed for the tests to every concept the line catalog reads and dei's EntityCommonStockSharesOutstanding, facts whose period ends on or after 2024-03-01, 908 facts in all; every fact, concept and unit kept is as SEC answered it."
+}

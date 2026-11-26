@@ -1,0 +1,11 @@
+{
+  "source": "sec",
+  "name": "company-tickers-exchange",
+  "url": "https://www.sec.gov/files/company_tickers_exchange.json",
+  "status": 200,
+  "content_type": "application/json",
+  "recorded_at": "2026-11-26T00:00:00.000Z",
+  "bytes": 634,
+  "hand_made": true,
+  "note": "Hand-made, not recorded (www.sec.gov answers only a User-Agent that names a contact): an excerpt of SEC's company_tickers_exchange.json in its documented form, {fields: [cik, name, ticker, exchange], data: [[cik, name, ticker, exchange], ...]}. The rows of Apple, Berkshire Hathaway (two share classes), Walmart, Bank of America (a preferred and an OTC ticker) and TSMC (an OTC ticker) carry the names, tickers and exchanges of SEC's own submissions answers for those CIKs, saved before the fixtures were made; Microsoft, JPMorgan Chase and Boeing are added at their well-known CIKs. To be checked against the live file once SEC_USER_AGENT is set."
+}

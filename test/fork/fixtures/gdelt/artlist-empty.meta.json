@@ -1,0 +1,11 @@
+{
+  "source": "gdelt",
+  "name": "artlist-empty",
+  "url": "https://api.gdeltproject.org/api/v2/doc/doc?query=zzqx+vvkj&mode=artlist&format=json&maxrecords=250&sort=datedesc",
+  "status": 200,
+  "content_type": "application/json; charset=utf-8",
+  "recorded_at": "2026-11-25T22:00:00.000Z",
+  "bytes": 3,
+  "hand_made": true,
+  "note": "Hand-made, not recorded (api.gdeltproject.org was not reachable from the development session): GDELT DOC 2.0's ArtList answer when no article matches, an empty JSON object."
+}

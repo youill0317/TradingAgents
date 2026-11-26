@@ -80,15 +80,25 @@ describe("US listings and venues", () => {
   test("MIC:SYMBOL, with Yahoo's spelling where Yahoo lists the venue", () => {
     expect(parseListing("XNYS:BRK.B")).toEqual({
       kind: "venue",
-      key: "XNYS:BRK.B",
+      key: "XNYS:BRK-B",
       mic: "XNYS",
-      symbol: "BRK.B",
+      symbol: "BRK-B",
       yahoo: "BRK-B",
     });
-    expect(parseListing("XHKG:700")).toMatchObject({ yahoo: "0700.HK" });
-    expect(parseListing("XLON:BT.A")).toMatchObject({ yahoo: "BT-A.L" });
+    expect(parseListing("XHKG:700")).toMatchObject({ key: "XHKG:700", yahoo: "0700.HK" });
+    expect(parseListing("XLON:BT.A")).toMatchObject({ key: "XLON:BT-A", yahoo: "BT-A.L" });
     expect(parseListing("XTKS:7203")).toMatchObject({ yahoo: "7203.T" });
     expect(parseListing("XSWX:NESN")).toMatchObject({ kind: "venue", yahoo: null });
+  });
+
+  test("one listing, one canonical key: a share class with a dot or a dash, at a venue or bare", () => {
+    expect(canonicalKey("XNYS:BRK.B")).toBe("XNYS:BRK-B");
+    expect(canonicalKey("XNYS:BRK-B")).toBe("XNYS:BRK-B");
+    expect(canonicalKey("security:xnys:brk.b")).toBe("XNYS:BRK-B");
+    expect(canonicalKey("BRK.B")).toBe(canonicalKey("BRK-B"));
+    expect(canonicalKey("XTSE:RCI.B")).toBe("XTSE:RCI-B");
+    // A venue that writes no share class with a dash keeps the code as given.
+    expect(canonicalKey("XPAR:AI")).toBe("XPAR:AI");
   });
 });
 

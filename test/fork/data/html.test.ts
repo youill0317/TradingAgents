@@ -151,6 +151,68 @@ describe("markup no browser refuses", () => {
     expect(performance.now() - started).toBeLessThan(5_000);
   });
 
+  test("a head whose end tag is left out ends where the body's content starts, as browsers read it", () => {
+    expect(
+      htmlToText(
+        "<html><head><title>10-K</title><meta charset=utf-8><body><p>Item 1A. Risk Factors</p><p>Demand may fall.</p>",
+      ),
+    ).toBe("Item 1A. Risk Factors\n\nDemand may fall.");
+    // Text, or an element the head does not hold, ends it too; the head's own elements stay out.
+    expect(htmlToText("<head><title>x</title><style>p{}</style>\n  Annual report<p>Part I")).toBe(
+      "Annual report\n\nPart I",
+    );
+    expect(htmlToText("<head><link rel=stylesheet href=a.css><div>Item 7</div></head><p>more</p>")).toBe(
+      "Item 7\n\nmore",
+    );
+    // A head's own end tag still ends it; a stray head later in the page hides nothing.
+    expect(htmlToText("<head><title>t</title></head><p>a</p><head><p>b</p>")).toBe("a\n\nb");
+    // A title in the body, as DART's reports use it, is text.
+    expect(htmlToText("<p>x</p><title>II. 사업의 내용</title>")).toBe("x\n\nII. 사업의 내용");
+  });
+
+  test("long pages read in time proportional to them: paragraphs, lines and tables on the page itself", () => {
+    const paragraphs = (n: number) =>
+      Array.from({ length: n }, (_, i) => `<p>Item ${i}. The Company&#8217;s results may vary.</p>`).join(
+        "\n",
+      );
+    const small = paragraphs(10_000);
+    const large = paragraphs(100_000);
+    const time = (page: string) => {
+      const started = performance.now();
+      const text = htmlToText(page);
+      return { text, ms: performance.now() - started };
+    };
+    time(small);
+    const once = time(small);
+    const tenfold = time(large);
+    expect(tenfold.text.split("\n\n")).toHaveLength(100_000);
+    expect(tenfold.text.endsWith("Item 99999. The Company’s results may vary.")).toBe(true);
+    // Ten times the page takes about ten times as long, not a hundred (a 5 MB page in well under a second).
+    expect(tenfold.ms).toBeLessThan(Math.max(30 * once.ms, 500));
+    expect(tenfold.ms).toBeLessThan(3_000);
+    const lines = time(
+      `<div>${"a line<br>".repeat(200_000)}</div>${"<table><tr><td>x</td></tr></table>".repeat(20_000)}`,
+    );
+    expect(lines.text.split("\n").length).toBeGreaterThan(200_000);
+    expect(lines.ms).toBeLessThan(3_000);
+  });
+
+  test("tables nested deep in cells read in time proportional to them, closed or not", () => {
+    const depth = 20_000;
+    const started = performance.now();
+    const closed = htmlToText(`${"<table><tr><td>a".repeat(depth)}${"</td></tr></table>".repeat(depth)}`);
+    const unclosed = htmlToText(`<p>x</p>${"<table><tr><td>b".repeat(depth)}`);
+    expect(closed).toBe(Array.from({ length: depth }, () => "a").join(" "));
+    expect(unclosed).toBe(`x\n\n${Array.from({ length: depth }, () => "b").join(" ")}`);
+    expect(performance.now() - started).toBeLessThan(3_000);
+    // Rows apart by "; " at each level, the row's own blanks trimmed.
+    expect(
+      htmlToText(
+        "<table><tr><td>x <table><tr><td> p </td><td></td><td>q</td></tr><tr><td></td></tr><tr><td>r <table><tr><td>s</td></tr><tr><td>t</td></tr></table></td></tr></table> y</td><td>z</td></tr></table>",
+      ),
+    ).toBe("x p q; r s; t y\tz");
+  });
+
   test("deep nesting and long pages read in time, without recursion", () => {
     const depth = 50_000;
     expect(htmlToText(`${"<div><span>".repeat(depth)}deep${"</span></div>".repeat(depth)}`)).toBe("deep");

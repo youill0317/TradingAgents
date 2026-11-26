@@ -10,8 +10,11 @@
  * - carries the caller's signal and a deadline covering the answer's body too (hang protection, the way
  *   upstream bounds each Yahoo request): FORK_REQUEST_MS by class of source, or the caller's own;
  * - waits for its turn where a service publishes a rate (HOST_RULES: SEC's 10 a second shared by its
- *   hosts, FRED's 120 a minute, GDELT's one per 5 seconds, whose identical requests in flight share one
- *   answer), and fails as rate_limited, without waiting, when its turn would come after its deadline;
+ *   hosts, FRED's API's 120 a minute and its website's one a second, GDELT's one per 5 seconds, whose
+ *   identical requests in flight share one answer), counted at the moment each request actually starts, and
+ *   for the end of any pause a source asked for with a 429 or 503 Retry-After (kept for every later request
+ *   to that host, or to that rule's hosts);
+ *   it fails as rate_limited, without being sent, when its turn would come after its deadline;
  * - honours Retry-After on 429 and 503 when the wait fits its deadline (else rate_limited with
  *   retryAfterMs), and is retried once after a transient failure: a dropped connection or a 5xx;
  * - names its sender: SEC's hosts get the configured SEC_USER_AGENT, the others the app's name;
@@ -20,7 +23,8 @@
  *   a body past its bound and a body that is not the JSON asked for unavailable. No message names a key:
  *   each is scrubbed of every configured secret, in a query or a path, as written or URL-encoded.
  *
- * Nothing here limits how much or how often anything is read beyond what a service publishes.
+ * Hosts are compared as DNS reads them: in any case, with or without the trailing dot of a fully-qualified
+ * name. Nothing here limits how much or how often anything is read beyond what a service publishes.
  */
 import { message, USER_AGENT } from "../../contracts/index.js";
 import { ANSWER_BYTES, REQUEST_MS } from "../../contracts/limits.js";
@@ -53,14 +57,22 @@ export const FORK_REQUEST_MS = {
 /** Hosts whose requests default to FORK_REQUEST_MS.slow. */
 export const SLOW_HOSTS: ReadonlySet<string> = new Set(["data-api.ecb.europa.eu"]);
 
+/**
+ * A host's name as the rules here compare it: lower case, without the trailing dot a fully-qualified
+ * spelling ends with ("data.sec.gov." is data.sec.gov).
+ */
+export function hostName(host: string): string {
+  return host.trim().toLowerCase().replace(/\.+$/, "");
+}
+
 /** The deadline of a request to `host`: the caller's (`given`), else its class's. */
 export function requestTimeout(host: string, given?: number): number {
-  return given ?? (SLOW_HOSTS.has(host.toLowerCase()) ? FORK_REQUEST_MS.slow : FORK_REQUEST_MS.api);
+  return given ?? (SLOW_HOSTS.has(hostName(host)) ? FORK_REQUEST_MS.slow : FORK_REQUEST_MS.api);
 }
 
 /** Yahoo's hosts: read through yahoo-finance2 (deps.yahoo), never through this client. */
 function isYahoo(host: string): boolean {
-  return /(^|\.)yahoo\.com$/i.test(host);
+  return /(^|\.)yahoo\.com$/.test(hostName(host));
 }
 
 /** The pause before the one retry of a transient failure. */
@@ -72,6 +84,7 @@ export type Pace = { requests: number; perMs: number };
 /** A rate a service publishes for some hosts, and how their requests are made. */
 export type HostRule = {
   name: string;
+  /** Whether the rule covers `host`, given as hostName() writes it. */
   matches(host: string): boolean;
   pace: Pace;
   /** Identical requests in flight share one request and its answer. */
@@ -96,6 +109,13 @@ export const HOST_RULES: readonly HostRule[] = [
     pace: { requests: 120, perMs: 60_000 },
   },
   {
+    // FRED's website (its keyless download, fredgraph.csv): its robots.txt asks every agent for one request a
+    // second (Crawl-delay: 1).
+    name: "fred.stlouisfed.org",
+    matches: (host) => host === "fred.stlouisfed.org",
+    pace: { requests: 1, perMs: 1_000 },
+  },
+  {
     // GDELT's DOC API: one request every 5 seconds.
     name: "api.gdeltproject.org",
     matches: (host) => host === "api.gdeltproject.org",
@@ -106,30 +126,104 @@ export const HOST_RULES: readonly HostRule[] = [
 
 /** The rule for `host`, if a service publishes one. */
 export function ruleFor(host: string): HostRule | undefined {
-  return HOST_RULES.find((rule) => rule.matches(host.toLowerCase()));
+  const name = hostName(host);
+  return HOST_RULES.find((rule) => rule.matches(name));
 }
 
+/** Why a request waits: a service's published rate, or a pause the source asked for (Retry-After). */
+export type WaitCause = "pace" | "pause";
+
+/** A turn booked for a request: when it is to start, how long that is from when it was booked, and why. */
+export type Booking = { at: number; wait: number; booked: boolean; cause: WaitCause | undefined };
+
 /**
- * When each rule's requests may start: the starts taken within the last window, per rule. The services
- * count per sender, so one pacer serves the whole process unless a test passes its own.
+ * When requests may start, per rule (a service's published rate, counted across its hosts) or per host:
+ * the turns booked and not yet begun, the starts made within each rate's last window, and the pauses
+ * sources asked for with a Retry-After. A turn is booked in order of asking; when it comes, the start is
+ * checked against the starts actually made (timers fire late, and a late start must not crowd the next
+ * window) and counted at the time it is made. The services count per sender, so one pacer serves the
+ * whole process unless a test passes its own. Times are a Timer's.
  */
 export class Pacer {
-  private readonly starts = new Map<string, number[]>();
+  private readonly booked = new Map<string, number[]>();
+  private readonly begun = new Map<string, number[]>();
+  private readonly paused = new Map<string, number>();
+
+  /** No request under `key` before `until` (a source's Retry-After); an earlier end leaves a later one. */
+  pause(key: string, until: number): void {
+    if (until > (this.paused.get(key) ?? Number.NEGATIVE_INFINITY)) this.paused.set(key, until);
+  }
+
+  /** When the pause asked for under `key` ends, while it is after `now`. */
+  pausedUntil(key: string, now: number): number | undefined {
+    const until = this.paused.get(key);
+    if (until === undefined) return undefined;
+    if (until > now) return until;
+    this.paused.delete(key);
+    return undefined;
+  }
 
   /**
-   * The next start `rule` allows at `now`, taken unless it is more than `within` away (then nothing is
-   * taken); `wait` is how long until it.
+   * The next start under `key` at `now`: after any pause, and with `pace` after the turns already begun or
+   * booked. It is booked unless it is more than `within` away (then nothing is booked).
    */
-  take(rule: HostRule, now: number, within: number): { wait: number; taken: boolean } {
-    const { requests, perMs } = rule.pace;
-    const starts = (this.starts.get(rule.name) ?? []).filter((at) => at > now - perMs);
-    const at =
-      starts.length >= requests ? Math.max(now, (starts[starts.length - requests] as number) + perMs) : now;
+  book(key: string, pace: Pace | undefined, now: number, within: number): Booking {
+    const until = this.pausedUntil(key, now);
+    const from = until ?? now;
+    let at = from;
+    let cause: WaitCause | undefined = until === undefined ? undefined : "pause";
+    if (pace) {
+      const taken = [...(this.begun.get(key) ?? []), ...(this.booked.get(key) ?? [])]
+        .filter((time) => time > from - pace.perMs)
+        .sort((a, b) => a - b);
+      if (taken.length >= pace.requests) {
+        const turn = (taken[taken.length - pace.requests] as number) + pace.perMs;
+        if (turn > at) {
+          at = turn;
+          cause = "pace";
+        }
+      }
+    }
     const wait = at - now;
-    const taken = wait <= within;
-    if (taken) starts.push(at);
-    this.starts.set(rule.name, starts);
-    return { wait, taken };
+    const booked = wait <= within;
+    if (booked && pace) {
+      const list = this.booked.get(key) ?? [];
+      list.push(at);
+      list.sort((a, b) => a - b);
+      this.booked.set(key, list);
+    }
+    return { at, wait, booked, cause: wait > 0 ? cause : undefined };
+  }
+
+  /** Gives back the turn booked at `at` that a request will not take (it was cancelled, or gave up waiting). */
+  release(key: string, at: number): void {
+    const list = this.booked.get(key);
+    if (!list) return;
+    const found = list.indexOf(at);
+    if (found >= 0) list.splice(found, 1);
+    if (!list.length) this.booked.delete(key);
+  }
+
+  /**
+   * What is to be the start, at `now`, of the request whose turn was booked at `at`: how long it must still
+   * wait (its turn has not come, a source asked for a pause, or starts made late fill the window); with
+   * nothing left to wait for, the start is counted at `now` and the wait is 0.
+   */
+  begin(key: string, pace: Pace | undefined, at: number, now: number): { wait: number; cause: WaitCause } {
+    if (now < at) return { wait: at - now, cause: "pace" };
+    const until = this.pausedUntil(key, now);
+    if (until !== undefined) return { wait: until - now, cause: "pause" };
+    if (pace) {
+      const begun = (this.begun.get(key) ?? []).filter((time) => time > now - pace.perMs);
+      if (begun.length >= pace.requests) {
+        this.begun.set(key, begun);
+        return { wait: (begun[begun.length - pace.requests] as number) + pace.perMs - now, cause: "pace" };
+      }
+      this.release(key, at);
+      begun.push(now);
+      this.begun.set(key, begun);
+    }
+    return { wait: 0, cause: "pace" };
   }
 }
 
@@ -141,7 +235,8 @@ export type HttpOptions = {
   signal?: AbortSignal | undefined;
   /**
    * The request's deadline, its body included: FORK_REQUEST_MS.slow for SLOW_HOSTS, else
-   * FORK_REQUEST_MS.api, unless given (FORK_REQUEST_MS.bulk for a large document).
+   * FORK_REQUEST_MS.api, unless given (FORK_REQUEST_MS.bulk for a large document). Its turn, when it waits
+   * for one, must also come within it.
    */
   timeoutMs?: number;
   headers?: Readonly<Record<string, string>>;
@@ -188,42 +283,99 @@ export type HttpDeps = {
   secUserAgent?: string | undefined;
   /** The User-Agent other hosts get: the app's name and version unless given. */
   userAgent?: string;
-  /** Where the published rates' turns are kept: the process's own unless given. */
+  /**
+   * Where the published rates' turns and the sources' pauses are kept: the process's own unless given (a
+   * new one with a timer of a test's own).
+   */
   pacer?: Pacer;
 };
 
 type Opened = { response: Response; deadline: AbortSignal; timeoutMs: number };
 type Buffered = { status: number; headers: Headers; body: Uint8Array };
 
+/**
+ * A request shared by identical callers (a service that asks for this): the callers that can still
+ * cancel, whether one that cannot waits on it, and when its turn was booked to start.
+ */
+type Flight = {
+  promise: Promise<Buffered>;
+  controller: AbortController;
+  waiting: number;
+  held: boolean;
+  startsAt: number | undefined;
+};
+
 export function createHttp(deps: HttpDeps): Http {
   const timer = deps.timer ?? REAL_TIMER;
   const pacer = deps.pacer ?? (timer === REAL_TIMER ? SHARED_PACER : new Pacer());
   const secrets = deps.secrets ?? [];
   const generic = deps.userAgent ?? USER_AGENT;
-  const inflight = new Map<string, Promise<Buffered>>();
+  const inflight = new Map<string, Flight>();
   const fail = (kind: DataErrorKind, text: string, details: DataErrorDetails) =>
     new DataError(kind, redact(text, secrets), details);
+
+  /** The failure of a request whose turn would come after its deadline. */
+  const tooLate = (
+    source: string,
+    rule: HostRule | undefined,
+    cause: WaitCause | undefined,
+    wait: number,
+    deadline: number,
+  ) =>
+    fail(
+      "rate_limited",
+      cause === "pause" || !rule
+        ? `${source} asked to wait before its next request, ${seconds(wait)} more: longer than this one's ${seconds(deadline)} deadline.`
+        : `${source} allows ${rule.pace.requests} request${rule.pace.requests === 1 ? "" : "s"} every ${seconds(rule.pace.perMs)}, and this one's turn comes after its ${seconds(deadline)} deadline.`,
+      { source, retryAfterMs: Math.ceil(wait) },
+    );
+
+  /**
+   * Waits for a request's turn under `key`, booked at once (`booked` hears when it is to start), within
+   * `deadline`; a turn not taken is given back.
+   */
+  async function turn(
+    key: string,
+    rule: HostRule | undefined,
+    source: string,
+    deadline: number,
+    signal: AbortSignal | undefined,
+    booked?: (at: number) => void,
+  ): Promise<void> {
+    const pace = rule?.pace;
+    const asked = timer.now();
+    const booking = pacer.book(key, pace, asked, deadline);
+    if (!booking.booked) throw tooLate(source, rule, booking.cause, booking.wait, deadline);
+    booked?.(booking.at);
+    for (;;) {
+      const now = timer.now();
+      const next = pacer.begin(key, pace, booking.at, now);
+      if (next.wait <= 0) return;
+      if (now - asked + next.wait > deadline) {
+        pacer.release(key, booking.at);
+        throw tooLate(source, rule, next.cause, next.wait, deadline);
+      }
+      try {
+        await timer.sleep(next.wait, signal);
+      } catch (error) {
+        pacer.release(key, booking.at);
+        throw error;
+      }
+    }
+  }
 
   /** One request, retried once when it fails in passing; the answer unread. */
   async function attempt(
     url: string,
+    key: string,
     rule: HostRule | undefined,
     options: HttpOptions,
     retried: boolean,
+    booked?: (at: number) => void,
   ): Promise<Opened> {
     const { source, signal } = options;
     const timeoutMs = options.timeoutMs ?? FORK_REQUEST_MS.api;
-    if (rule) {
-      const turn = pacer.take(rule, timer.now(), timeoutMs);
-      if (!turn.taken) {
-        throw fail(
-          "rate_limited",
-          `${source} allows ${rule.pace.requests} request${rule.pace.requests === 1 ? "" : "s"} every ${seconds(rule.pace.perMs)}, and this one's turn comes after its ${seconds(timeoutMs)} deadline.`,
-          { source, retryAfterMs: Math.ceil(turn.wait) },
-        );
-      }
-      if (turn.wait > 0) await timer.sleep(turn.wait, signal);
-    }
+    await turn(key, rule, source, timeoutMs, signal, booked);
     if (signal?.aborted) throw signal.reason;
     const deadline = AbortSignal.timeout(timeoutMs);
     let response: Response;
@@ -242,7 +394,7 @@ export function createHttp(deps: HttpDeps): Http {
         throw fail("unavailable", `${source} did not answer within ${seconds(timeoutMs)}.`, { source });
       if (!retried) {
         await timer.sleep(RETRY_PAUSE_MS, signal);
-        return attempt(url, rule, options, true);
+        return attempt(url, key, rule, options, true);
       }
       throw fail("unavailable", `${source} could not be reached (${reasonOf(error)}).`, { source });
     }
@@ -252,10 +404,9 @@ export function createHttp(deps: HttpDeps): Http {
     await response.body?.cancel().catch(() => {});
     if (status === 429 || status === 503) {
       if (wait !== undefined) {
-        if (!retried && wait <= timeoutMs) {
-          await timer.sleep(wait, signal);
-          return attempt(url, rule, options, true);
-        }
+        // The pause holds for every request under this key from now on, this one's retry included.
+        pacer.pause(key, timer.now() + wait);
+        if (!retried && wait <= timeoutMs) return attempt(url, key, rule, options, true);
         throw fail(
           "rate_limited",
           `${source} asked to wait ${seconds(wait)} before the next request (HTTP ${status}).`,
@@ -268,7 +419,7 @@ export function createHttp(deps: HttpDeps): Http {
     if (status >= 500) {
       if (!retried) {
         await timer.sleep(RETRY_PAUSE_MS, signal);
-        return attempt(url, rule, options, true);
+        return attempt(url, key, rule, options, true);
       }
       throw fail("unavailable", `${source} answered HTTP ${status}.`, { source, status });
     }
@@ -347,31 +498,62 @@ export function createHttp(deps: HttpDeps): Http {
     };
   }
 
-  /** A request whose identical twin in flight shares its answer (a service that asks for this). */
-  async function shared(url: string, rule: HostRule, options: HttpOptions): Promise<Answer> {
-    let pending = inflight.get(url);
-    if (!pending) {
-      // No one caller's cancellation stops a request others wait on; each stops waiting on its own.
-      const alone = { ...options, signal: undefined };
-      const started: Promise<Buffered> = (async () => {
-        const answer = answerOf(await attempt(url, rule, alone, false), alone);
+  /**
+   * A request whose identical twin in flight shares its answer (a service that asks for this). It runs
+   * under its own cancellation: each caller stops waiting on its own, and when the last caller that could
+   * cancel has, the request is cancelled and its turn, not yet taken, given back. A caller does not join a
+   * request whose turn comes after its own deadline (it fails as rate_limited), and a caller already
+   * cancelled starts nothing.
+   */
+  async function shared(url: string, key: string, rule: HostRule, options: HttpOptions): Promise<Answer> {
+    const { source, signal } = options;
+    const timeoutMs = options.timeoutMs ?? FORK_REQUEST_MS.api;
+    if (signal?.aborted) throw signal.reason;
+    let flight = inflight.get(url);
+    if (flight) {
+      const wait = (flight.startsAt ?? timer.now()) - timer.now();
+      if (wait > timeoutMs) throw tooLate(source, rule, "pace", wait, timeoutMs);
+    } else {
+      const controller = new AbortController();
+      const own: HttpOptions = { ...options, signal: controller.signal };
+      const state: Omit<Flight, "promise"> = { controller, waiting: 0, held: false, startsAt: undefined };
+      // The turn is booked as the request is made, so a caller joining it knows when it starts.
+      const promise = (async () => {
+        const opened = await attempt(url, key, rule, own, false, (at) => {
+          state.startsAt = at;
+        });
+        const answer = answerOf(opened, own);
         return { status: answer.status, headers: answer.headers, body: await answer.bytes() };
       })();
+      const started: Flight = Object.assign(state, { promise });
       const done = () => {
         if (inflight.get(url) === started) inflight.delete(url);
       };
-      started.then(done, done);
+      promise.then(done, done);
       inflight.set(url, started);
-      pending = started;
+      flight = started;
     }
-    const { status, headers, body } = await abortable(pending, options.signal);
-    return reading(status, headers, async () => body, options.source);
+    const joined = flight;
+    if (signal) joined.waiting++;
+    else joined.held = true;
+    try {
+      const { status, headers, body } = await abortable(joined.promise, signal);
+      return reading(status, headers, async () => body, source);
+    } catch (error) {
+      if (!signal?.aborted) throw error;
+      joined.waiting--;
+      if (joined.waiting === 0 && !joined.held) {
+        if (inflight.get(url) === joined) inflight.delete(url);
+        joined.controller.abort(signal.reason);
+      }
+      throw signal.reason;
+    }
   }
 
   const get = async (url: string, given: HttpOptions): Promise<Answer> => {
     let host: string;
     try {
-      host = new URL(url).hostname;
+      host = hostName(new URL(url).hostname);
     } catch {
       throw new Error("the data client was given something that is not a URL");
     }
@@ -382,8 +564,10 @@ export function createHttp(deps: HttpDeps): Http {
     }
     const options: HttpOptions = { ...given, timeoutMs: requestTimeout(host, given.timeoutMs) };
     const rule = ruleFor(host);
-    if (rule?.coalesce) return shared(url, rule, options);
-    return answerOf(await attempt(url, rule, options, false), options);
+    // A rule's hosts share its turns and its pauses; any other host has its own pauses.
+    const key = rule?.name ?? host;
+    if (rule?.coalesce) return shared(url, key, rule, options);
+    return answerOf(await attempt(url, key, rule, options, false), options);
   };
   return {
     get,
@@ -392,6 +576,16 @@ export function createHttp(deps: HttpDeps): Http {
     json: async (url, options) => (await get(url, options)).json(),
     redact: (text) => redact(text, secrets),
   };
+}
+
+/**
+ * The failure for an answer read whole that is not in the form `source` documents for it (`what`, such as
+ * "its rates"): unavailable, as the source's failure, never a fact about the market.
+ */
+export function unreadable(source: string, what: string): DataError {
+  return new DataError("unavailable", `${source} answered ${what} in a form this app does not read.`, {
+    source,
+  });
 }
 
 /** A Retry-After header's wait in milliseconds: seconds, or an HTTP date; undefined when there is none. */
@@ -403,8 +597,9 @@ export function retryAfterMs(value: string | null, now: number = Date.now()): nu
   return Number.isNaN(date) ? undefined : Math.max(0, date - now);
 }
 
+/** Milliseconds as seconds, to a tenth. */
 function seconds(ms: number): string {
-  const value = ms / 1_000;
+  const value = Math.round(ms / 100) / 10;
   return `${Number.isInteger(value) ? value : value.toFixed(1)} s`;
 }
 

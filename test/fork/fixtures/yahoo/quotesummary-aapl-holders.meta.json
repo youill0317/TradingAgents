@@ -1,0 +1,11 @@
+{
+  "source": "yahoo",
+  "name": "quotesummary-aapl-holders",
+  "url": "https://query2.finance.yahoo.com/v10/finance/quoteSummary/AAPL?formatted=false&modules=price,institutionOwnership,majorHoldersBreakdown",
+  "status": 200,
+  "content_type": "application/json;charset=utf-8",
+  "recorded_at": "2026-11-25T22:00:00.000Z",
+  "bytes": 2460,
+  "hand_made": true,
+  "note": "Hand-made, not recorded: Yahoo's v10 quoteSummary answer for AAPL with the modules price, institutionOwnership (Yahoo's top ten, each with its report date, share of the company, position, value and change) and majorHoldersBreakdown, in the shape yahoo-finance2 4.0.6's quoteSummary schema validates, with invented holdings as of 2026-09-30."
+}

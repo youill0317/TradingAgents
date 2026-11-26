@@ -1,0 +1,11 @@
+{
+  "source": "sec",
+  "name": "submissions-bac-001",
+  "url": "https://data.sec.gov/submissions/CIK0000070858-submissions-001.json",
+  "status": 200,
+  "content_type": "application/json",
+  "recorded_at": "2026-11-25T14:46:16.000Z",
+  "bytes": 10196,
+  "hand_made": false,
+  "note": "SEC's answer saved from data.sec.gov on 2026-11-25 with the SEC area's live samples, kept as that area trimmed it (submissions-bac-001.trimmed.json): its columns cut from 2,087 to 62 rows (its first 40 and every 10-Q, 8-K and Form 4), in SEC's order."
+}

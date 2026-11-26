@@ -1,0 +1,11 @@
+{
+  "source": "sec",
+  "name": "submissions-wmt",
+  "url": "https://data.sec.gov/submissions/CIK0000104169.json",
+  "status": 200,
+  "content_type": "application/json",
+  "recorded_at": "2026-11-25T14:37:11.000Z",
+  "bytes": 6199,
+  "hand_made": false,
+  "note": "SEC's answer saved from data.sec.gov on 2026-11-25 with the SEC area's live samples (submissions-wmt.json, 157,829 bytes), trimmed for the tests: filings.recent cut from 1,003 to 28 rows (its newest 15 filings other than insider reports, every periodic report, no insider report), in SEC's order; every other key, filings.files included, as SEC answered it."
+}

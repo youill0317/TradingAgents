@@ -1,0 +1,11 @@
+{
+  "source": "frames",
+  "name": "assets-cy2024q4i",
+  "url": "https://data.sec.gov/api/xbrl/frames/us-gaap/Assets/USD/CY2024Q4I.json",
+  "status": 200,
+  "content_type": "application/json",
+  "recorded_at": "2026-11-25T14:42:38.000Z",
+  "bytes": 4277,
+  "hand_made": false,
+  "note": "SEC's answer saved from data.sec.gov on 2026-11-25 with the SEC area's live samples (frames-Assets-CY2024Q4I.trimmed.json), byte for byte: cut there from the complete 837,367-byte answer (6,284 rows, the header's pts) to 30 rows in SEC's order (every sample company, the first 20 rows, rows at the end-of-June edge); every row kept is as SEC answered it."
+}

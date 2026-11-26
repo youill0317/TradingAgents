@@ -1,0 +1,11 @@
+{
+  "source": "yahoo",
+  "name": "quotesummary-msft-profile",
+  "url": "https://query2.finance.yahoo.com/v10/finance/quoteSummary/MSFT?formatted=false&modules=price,assetProfile,summaryDetail,defaultKeyStatistics,financialData",
+  "status": 200,
+  "content_type": "application/json;charset=utf-8",
+  "recorded_at": "2026-11-25T22:00:00.000Z",
+  "bytes": 1574,
+  "hand_made": true,
+  "note": "Hand-made, not recorded: Yahoo's v10 quoteSummary answer for MSFT with the profile's modules, in the shape yahoo-finance2 4.0.6's quoteSummary schema validates, with invented values (a peer for the comps tool)."
+}

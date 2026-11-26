@@ -7,6 +7,7 @@
  * through. Tests build these with `forkDeps` from a fixture fetch, a fixed clock and a fake timer.
  */
 import YahooFinance from "yahoo-finance2";
+import { ExtendedCookieJar } from "yahoo-finance2/lib/cookieJar";
 import type { Clock } from "../../contracts/index.js";
 import { answeredOrThrown } from "../../data/yahoo/provider.js";
 import { type Cache, createCache } from "./cache.js";
@@ -19,7 +20,11 @@ export type YahooFinanceClient = InstanceType<typeof YahooFinance>;
 
 export type ForkDeps = {
   config: PublicDataConfig;
-  /** The fetch every request goes through (a fixture fetch in tests). */
+  /**
+   * The fetch under `http` and `yahoo` (a fixture fetch in tests), for building another yahoo-finance2 client
+   * and for the fixture recorder. A provider never sends a request with it: its requests go through `http`
+   * (published rates, Retry-After, User-Agents, deadlines, redaction) or `yahoo`.
+   */
   fetch: typeof globalThis.fetch;
   /** The engine's clock: what day it is (tests fix it). */
   clock: Clock;
@@ -37,7 +42,7 @@ export type ForkOptions = {
   fetch?: typeof globalThis.fetch;
   clock?: Clock;
   timer?: Timer;
-  /** A yahoo-finance2 client to share instead of a new one. */
+  /** A yahoo-finance2 client to share instead of a new one (yahooClient over `fetch`). */
   yahoo?: YahooFinanceClient;
   /** A cache to share instead of a new one (over `config.cacheDir`). */
   cache?: Cache;
@@ -74,10 +79,19 @@ export function forkDeps(config: PublicDataConfig, options: ForkOptions = {}): F
  * A yahoo-finance2 client configured as upstream's Yahoo provider configures its own: the library's
  * User-Agent, its notices about surveys and removed modules suppressed, a silent logger, and every request
  * bounded and its failures turned into errors with their status by upstream's `answeredOrThrown`. Beyond
- * upstream's: an answer that fails the library's schema is not logged, which also stops the library from
- * asking npm's registry for its latest version (a request of its own, through the global fetch, unbounded).
+ * upstream's:
+ * - an answer that fails the library's schema is not logged, which also stops the library from asking npm's
+ *   registry for its latest version (a request of its own, through the global fetch, unbounded);
+ * - its requests are not queued four at a time (the library's default): Yahoo publishes no limit, and this
+ *   app adds none of its own;
+ * - it keeps its own cookies and crumb (`cookieJar`, a new one unless given), where the library's default
+ *   shares one jar among every client in the process: each fixture fetch then serves its own crumb flow,
+ *   and a client never depends on another's.
  */
-export function yahooClient(fetchImpl: typeof globalThis.fetch): YahooFinanceClient {
+export function yahooClient(
+  fetchImpl: typeof globalThis.fetch,
+  { cookieJar = new ExtendedCookieJar() }: { cookieJar?: ExtendedCookieJar } = {},
+): YahooFinanceClient {
   const silent = { info() {}, warn() {}, error() {}, debug() {}, dir() {} };
   return new YahooFinance({
     suppressNotices: ["yahooSurvey", "ripHistorical"],
@@ -85,5 +99,7 @@ export function yahooClient(fetchImpl: typeof globalThis.fetch): YahooFinanceCli
     fetch: answeredOrThrown(fetchImpl),
     versionCheck: false,
     validation: { logErrors: false },
+    queue: { concurrency: Number.POSITIVE_INFINITY },
+    cookieJar,
   });
 }

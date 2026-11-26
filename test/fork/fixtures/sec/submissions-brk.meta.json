@@ -1,0 +1,11 @@
+{
+  "source": "sec",
+  "name": "submissions-brk",
+  "url": "https://data.sec.gov/submissions/CIK0001067983.json",
+  "status": 200,
+  "content_type": "application/json",
+  "recorded_at": "2026-11-25T14:37:11.000Z",
+  "bytes": 10129,
+  "hand_made": false,
+  "note": "SEC's answer saved from data.sec.gov on 2026-11-25 with the SEC area's live samples (submissions-brk.json, 164,079 bytes), trimmed for the tests: filings.recent cut from 1,018 to 52 rows (its newest 10 filings other than insider reports, every periodic report, the insider reports 0001193125-26-465872, 0001193125-26-468887), in SEC's order; every other key, filings.files included, as SEC answered it."
+}

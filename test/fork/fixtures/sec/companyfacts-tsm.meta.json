@@ -1,0 +1,11 @@
+{
+  "source": "sec",
+  "name": "companyfacts-tsm",
+  "url": "https://data.sec.gov/api/xbrl/companyfacts/CIK0001046179.json",
+  "status": 200,
+  "content_type": "application/json",
+  "recorded_at": "2026-11-25T14:39:28.000Z",
+  "bytes": 53479,
+  "hand_made": false,
+  "note": "SEC's answer saved from data.sec.gov on 2026-11-25 with the SEC area's live samples (companyfacts-tsm.trimmed.json, itself cut from the complete 911,248-byte answer), trimmed for the tests to every concept the line catalog reads and dei's EntityCommonStockSharesOutstanding, facts whose period ends on or after 2022-01-01, 330 facts in all; every fact, concept and unit kept is as SEC answered it."
+}

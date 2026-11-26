@@ -1,0 +1,11 @@
+{
+  "source": "sec",
+  "name": "submissions-aapl",
+  "url": "https://data.sec.gov/submissions/CIK0000320193.json",
+  "status": 200,
+  "content_type": "application/json",
+  "recorded_at": "2026-11-25T14:37:10.000Z",
+  "bytes": 14202,
+  "hand_made": false,
+  "note": "SEC's answer saved from data.sec.gov on 2026-11-25 with the SEC area's live samples (submissions-aapl.json, 164,356 bytes), trimmed for the tests: filings.recent cut from 1,005 to 77 rows (its newest 20 filings other than insider reports, every periodic report, the insider reports 0000320193-22-000078, 0000320193-24-000102, 0001140361-26-035359, 0001140361-26-041201, 0001140361-26-042149, 0001140361-26-043484, 0001140361-26-044773, 0001140361-26-044952, and the Schedule 13G filings 0000102909-26-000630, 0001193125-19-041014, 0001193125-24-036431, 0002100119-26-000139 under both of EDGAR's names for the form), in SEC's order; every other key, filings.files included, as SEC answered it."
+}

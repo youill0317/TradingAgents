@@ -1,0 +1,11 @@
+{
+  "source": "ecb",
+  "name": "exr-krw-usd-2026-11",
+  "url": "https://data-api.ecb.europa.eu/service/data/EXR/D.USD+KRW.EUR.SP00.A?format=csvdata&detail=dataonly&startPeriod=2026-11-16&endPeriod=2026-11-25",
+  "status": 200,
+  "content_type": "text/csv",
+  "recorded_at": "2026-11-25T15:08:53.000Z",
+  "bytes": 994,
+  "hand_made": false,
+  "note": "A real answer, kept whole: saved with the planning samples (macro/raw/ecb-exr-usd+krw-2026-11.csv, byte for byte), not recorded again; recorded_at is that answer's HTTP Date."
+}

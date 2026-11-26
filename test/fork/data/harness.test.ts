@@ -5,28 +5,35 @@
  * The data-test harness, proved on what is served today: quote and price_history run through the real tools,
  * the router and the ToolRegistry on upstream's Yahoo provider over the fork's shared yahoo-finance2
  * client, answered by hand-made Yahoo fixtures (test/fork/fixtures/yahoo, marked hand_made: the library's
- * own User-Agent is the only one Yahoo answers, so these were not recorded here). No request reaches the
- * network; the read check shows which fields of upstream's answers the tools read and find missing.
+ * own User-Agent is the only one Yahoo answers, so these were not recorded here); compute tools read the
+ * results of earlier calls; the read check finds what an answer leaves out, spread or not. No request
+ * reaches the network.
  */
 import { describe, expect, test } from "bun:test";
-import { forkProviders } from "../../../src/fork/data/index.js";
+import type { DataProvider } from "../../../src/data/capabilities.js";
+import type { Providers } from "../../../src/data/router.js";
 import {
   buildTools,
   FIXTURES,
-  fixedClock,
   fixture,
   fixtureFetch,
   fixtureMeta,
   readCheck,
+  readLog,
+  testDeps,
+  testProviders,
   YAHOO_AAPL,
 } from "./harness.js";
 
-const clock = fixedClock("2026-11-25T22:00:00Z");
+/** Providers of one stand-in, routed for every capability it declares under the key the routing table names. */
+function standIn(key: keyof Providers, capabilities: DataProvider["capabilities"]): Providers {
+  return { [key]: { name: "Stand-in", capabilities } } as Providers;
+}
 
 describe("the harness on upstream Yahoo, offline", () => {
   test("quote answers through the real tool, as the model reads it", async () => {
-    const fetch = fixtureFetch(YAHOO_AAPL);
-    const { runTool } = buildTools(forkProviders({}, { fetch, clock }), { clock, check: true });
+    const { providers, fetch, clock } = testProviders({}, YAHOO_AAPL);
+    const { runTool } = buildTools(providers, { clock, check: true });
     const run = await runTool("quote", { symbols: ["AAPL"] });
     expect(run.failure).toBeUndefined();
     expect(run.provenance).toEqual({ source: "Yahoo", subject: "AAPL", as_of: "2026-11-25" });
@@ -62,8 +69,8 @@ describe("the harness on upstream Yahoo, offline", () => {
   });
 
   test("price_history answers the window's completed sessions, adjusted", async () => {
-    const fetch = fixtureFetch(YAHOO_AAPL);
-    const { runTool } = buildTools(forkProviders({}, { fetch, clock }), { clock, check: true });
+    const { providers, fetch, clock } = testProviders({}, YAHOO_AAPL);
+    const { runTool } = buildTools(providers, { clock, check: true });
     const run = await runTool("price_history", { symbol: "AAPL", period: "5d" });
     expect(run.failure).toBeUndefined();
     expect(run.payload).toMatchObject({
@@ -88,8 +95,8 @@ describe("the harness on upstream Yahoo, offline", () => {
   });
 
   test("every Yahoo request carries the library's own User-Agent", async () => {
-    const fetch = fixtureFetch(YAHOO_AAPL);
-    const { runTool } = buildTools(forkProviders({}, { fetch, clock }), { clock });
+    const { providers, fetch, clock } = testProviders({}, YAHOO_AAPL);
+    const { runTool } = buildTools(providers, { clock });
     await runTool("quote", { symbols: ["AAPL"] });
     await runTool("price_history", { symbol: "AAPL", period: "5d" });
     const yahoo = fetch.requests.filter((request) => /yahoo\.com$/.test(new URL(request.url).hostname));
@@ -99,13 +106,61 @@ describe("the harness on upstream Yahoo, offline", () => {
     }
   });
 
-  test("a tool whose capability no provider serves yet says so", async () => {
-    const fetch = fixtureFetch([]);
-    const { runTool, available } = buildTools(forkProviders({}, { fetch, clock }), { clock });
-    expect([...available].sort()).toEqual(["priceHistory", "quotes"]);
+  test("each client keeps its own cookies and crumb: a Yahoo test passes alone or after another", async () => {
+    for (let i = 0; i < 2; i++) {
+      const { providers, fetch, clock } = testProviders({}, YAHOO_AAPL);
+      const run = await buildTools(providers, { clock }).runTool("quote", { symbols: ["AAPL"] });
+      expect(run.failure).toBeUndefined();
+      // Each serves the crumb flow itself: nothing carries over from the client before it.
+      expect(fetch.requests.map((request) => new URL(request.url).pathname)).toEqual([
+        "/quote/AAPL",
+        "/v1/test/getcrumb",
+        "/v7/finance/quote",
+      ]);
+    }
+  });
+
+  test("Yahoo's requests are not queued: many asked at once are all in flight together", async () => {
+    let inFlight = 0;
+    let most = 0;
+    const answers = fixtureFetch(YAHOO_AAPL);
+    const counting = Object.assign(
+      async (input: string | URL | Request, init?: RequestInit) => {
+        if (!String(input).includes("/v7/finance/quote")) return answers(input, init);
+        inFlight++;
+        most = Math.max(most, inFlight);
+        await Bun.sleep(50);
+        inFlight--;
+        return answers(input, init);
+      },
+      { requests: answers.requests, unmatched: answers.unmatched },
+    ) as typeof answers;
+    const { deps } = testDeps({}, counting);
+    await deps.yahoo.quote("AAPL");
+    await Promise.all(Array.from({ length: 10 }, () => deps.yahoo.quote("AAPL")));
+    expect(most).toBe(10);
+  });
+
+  test("a tool whose capability no provider serves in the setup says so", async () => {
+    // Without SEC_USER_AGENT: the keyless sources only, nothing from SEC EDGAR; the market views and
+    // instrument search are not built yet.
+    const { providers, fetch, clock } = testProviders();
+    const { runTool, available } = buildTools(providers, { clock });
+    expect([...available].sort()).toEqual([
+      "corporateActions",
+      "macroSeries",
+      "news",
+      "ownership",
+      "priceHistory",
+      "profiles",
+      "quotes",
+      "technicals",
+    ]);
     const run = await runTool("statements", { symbol: "AAPL", statement: "income_statement" });
     expect(run.failure).toBe("data_not_configured");
     expect(run.text).toBe("Financial statements: not available in this setup.");
+    const markets = await runTool("markets", { view: "yield_curve" });
+    expect(markets.failure).toBe("data_not_configured");
     expect(fetch.requests).toEqual([]);
   });
 });
@@ -158,8 +213,10 @@ describe("the harness itself", () => {
     expect(((await answer.json()) as { title: string }).title).toBe("Not Found");
   });
 
-  test("every fixture under test/fork/fixtures has its meta, and a hand-made one says what it is made from", () => {
-    const files = [...new Bun.Glob("*/*").scanSync(FIXTURES)].filter((file) => !file.endsWith(".meta.json"));
+  test("every fixture under test/fork/fixtures, in any folder, has its meta, and a hand-made one says what it is made from", () => {
+    const files = [...new Bun.Glob("**/*").scanSync(FIXTURES)].filter(
+      (file) => !file.endsWith(".meta.json") && file !== "biome.json",
+    );
     expect(files.length).toBeGreaterThan(0);
     for (const file of files) {
       const meta = fixtureMeta(file);
@@ -192,6 +249,108 @@ describe("the harness itself", () => {
     expect({ ...value }).toEqual({ a: 1, nested: { b: 2 } });
     expect(Object.entries(value.nested)).toEqual([["b", 2]]);
     expect(log.missing()).toEqual([]);
+    expect([...log.listed].sort()).toEqual(["", "nested"]);
     expect(data).toEqual({ a: 1, nested: { b: 2 } });
+  });
+
+  test("a field asked about with `in` counts as read, never as missing", () => {
+    const { value, log } = readCheck({ candidates: [] as string[] } as Record<string, unknown>);
+    expect("candidates" in value).toBe(true);
+    expect("series" in value).toBe(false);
+    expect(log.paths()).toEqual(["candidates", "series"]);
+    expect(log.missing()).toEqual([]);
+    expect(readLog().missing()).toEqual([]);
+  });
+
+  test("a spread answer's left-out keys are found: technicals' indicators", async () => {
+    // A stand-in answers one indicator of the 22; the tool spreads the answer into its payload.
+    const providers = standIn("yahoo", {
+      technicals: {
+        latest: async () => ({
+          instrument: { key: "AAPL", name: "Apple Inc.", venue: "NasdaqGS", currency: "USD" },
+          through: "2026-11-25",
+          rsi: 55.1,
+        }),
+      },
+    });
+    const { runTool } = buildTools(providers, { check: true });
+    const run = await runTool("technicals", { symbol: "AAPL" });
+    expect(run.failure).toBeUndefined();
+    const missing = run.reads.missing();
+    for (const key of ["macd", "sma_50", "bb_upper", "atr_5", "pvo", "window", "last_value", "price_basis"]) {
+      expect(missing).toContain(key);
+    }
+    expect(missing).not.toContain("rsi");
+    expect(missing).not.toContain("through");
+    expect(run.reads.listed.has("")).toBe(true);
+  });
+});
+
+describe("compute tools over earlier results, as the engine offers them", () => {
+  test("statements, then dcf reading the operating cash flow and capital expenditure lines", async () => {
+    const filing = { accession: "0000320193-26-000010", form: "10-K", accepted_at: "2026-10-30T20:31:12Z" };
+    const line = (name: string, value: number) => ({
+      line: name,
+      value,
+      unit: "USD",
+      period_start: "2025-09-28",
+      sources: [{ ...filing, cik: "0000320193", predecessor: false }],
+    });
+    const providers = standIn("filers", {
+      statements: {
+        statement: async () => ({
+          instrument: { key: "AAPL", name: "Apple Inc.", venue: "Nasdaq", currency: "USD" },
+          periods: [
+            {
+              period_end: "2026-09-26",
+              lines: [
+                line("Net Cash from Operating Activities", 118_254_000_000),
+                line("Payments to Acquire PP&E", -9_447_000_000),
+              ],
+            },
+          ],
+          succession: { registrants: [{ cik: "0000320193", complete: true }], stopsAt: [] },
+          next_cursor: null,
+        }),
+      },
+    });
+    const { runTool, registry } = buildTools(providers, { check: true });
+    expect(registry.kindOf("dcf")).toBe("compute");
+    expect(registry.kindOf("evidence")).toBe("control");
+    const statement = await runTool("statements", {
+      symbol: "AAPL",
+      statement: "cash_flow",
+      period_type: "annual",
+      periods: 1,
+    });
+    expect(statement.failure).toBeUndefined();
+    expect(statement.evidence).toBe("e1");
+    const dcf = await runTool("dcf", {
+      cash_flow: { ref: "e1" },
+      stages: [{ years: 5, growth_pct: 6 }],
+      terminal_growth_pct: 2.5,
+      discount: { rate_pct: 9 },
+      net_debt: 0,
+      shares: 15_000_000_000,
+    });
+    expect(dcf.failure).toBeUndefined();
+    expect((dcf.payload as { inputs: { name: string; value: number }[] }).inputs.slice(0, 2)).toEqual([
+      expect.objectContaining({ name: "Net Cash from Operating Activities", value: 118_254_000_000 }),
+      expect.objectContaining({ name: "Payments to Acquire PP&E", value: -9_447_000_000 }),
+    ]);
+    // The evidence tool shows a recorded result again.
+    const again = await runTool("evidence", { id: "e1", path: "periods[0].end" });
+    expect(again.failure).toBeUndefined();
+    expect(again.text).toContain("2026-09-26");
+  });
+
+  test("price_history, then returns_risk over its recorded result", async () => {
+    const { providers, clock } = testProviders({}, YAHOO_AAPL);
+    const { runTool } = buildTools(providers, { clock });
+    const history = await runTool("price_history", { symbol: "AAPL", period: "5d" });
+    expect(history.evidence).toBe("e1");
+    const risk = await runTool("returns_risk", { series: [{ ref: "e1" }] });
+    expect(risk.failure).toBeUndefined();
+    expect(risk.text).toContain("returns_risk");
   });
 });
