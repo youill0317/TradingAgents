@@ -1,0 +1,11 @@
+{
+  "source": "sec",
+  "name": "form4-aapl-0001140361-26-042149",
+  "url": "https://www.sec.gov/Archives/edgar/data/320193/000114036126042149/form4.xml",
+  "status": 200,
+  "content_type": "text/xml",
+  "recorded_at": "2026-11-26T00:00:00.000Z",
+  "bytes": 2387,
+  "hand_made": true,
+  "note": "Hand-made, not recorded (www.sec.gov answers only a User-Agent that names a contact): an ownership report in SEC's EDGAR ownership XML format (ownershipDocument with issuer, reportingOwner, nonDerivativeTable and derivativeTable, values in <value> elements, footnotes by footnoteId), at the raw-XML path of filing 0001140361-26-042149 as the issuer's filing index lists it (its primary document without the xslF345X0N/ stylesheet folder). The accession, form, dates and issuer follow SEC's own index; the reporting owners (fictional names), transactions and prices are invented. To be checked against the live document once SEC_USER_AGENT is set."
+}

@@ -4,7 +4,8 @@
   "url": "https://data-api.ecb.europa.eu/service/data/EXR/D.USD.EUR.SP00.A?format=csvdata&lastNObservations=5",
   "status": 200,
   "content_type": "text/csv",
-  "recorded_at": "2026-11-25T15:35:16.492Z",
+  "recorded_at": "2026-11-25T14:58:39.000Z",
   "bytes": 1365,
-  "hand_made": false
+  "hand_made": false,
+  "note": "A real answer, kept whole: the ECB's answer saved with the planning samples (macro/raw/ecb-exr-usd-last5.csv, byte for byte), not recorded again; recorded_at is that answer's HTTP Date."
 }

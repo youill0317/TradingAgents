@@ -1,0 +1,11 @@
+{
+  "source": "yahoo",
+  "name": "quotesummary-aapl-analyst",
+  "url": "https://query2.finance.yahoo.com/v10/finance/quoteSummary/AAPL?formatted=false&modules=price,financialData,recommendationTrend,earningsTrend",
+  "status": 200,
+  "content_type": "application/json;charset=utf-8",
+  "recorded_at": "2026-11-25T22:00:00.000Z",
+  "bytes": 4946,
+  "hand_made": true,
+  "note": "Hand-made, not recorded: Yahoo's v10 quoteSummary answer for AAPL with the modules price, financialData, recommendationTrend and earningsTrend, in the shape yahoo-finance2 4.0.6's quoteSummary schema validates (every required field of a trend row, nullable where its schema allows), with invented consensus figures; the +5y and -5y rows carry only a growth rate, as Yahoo gives them."
+}

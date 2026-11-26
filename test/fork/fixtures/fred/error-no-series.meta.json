@@ -1,0 +1,11 @@
+{
+  "source": "fred",
+  "name": "error-no-series",
+  "url": "https://api.stlouisfed.org/fred/series?series_id=NOSUCHCODE&file_type=json",
+  "status": 400,
+  "content_type": "application/json; charset=UTF-8",
+  "recorded_at": "2026-11-25T15:00:00.000Z",
+  "bytes": 77,
+  "hand_made": true,
+  "note": "Hand-made in the shape of FRED's HTTP 400 answer ({\"error_code\": 400, \"error_message\": ...}, as the real error-no-key.json saved with the planning samples shows), with the message FRED gives for a series code it does not know; no FRED_API_KEY was used in this session, so none was recorded, and the key is not in the URL. Listed for a live check."
+}

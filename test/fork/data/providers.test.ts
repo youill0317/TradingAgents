@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Added in this fork of TradingAgents 1.0.0.
 /**
- * The fork's providers as a setup builds them: one per routing-table key (FSC aside until Phase 4), Yahoo's
- * as upstream serves it today and the others declaring nothing yet; built without a request or a file.
+ * The fork's providers as a setup builds them: one per routing-table key (FSC aside until Phase 4), each
+ * declaring what it serves in that setup (the SEC-backed ones only with SEC_USER_AGENT; the market views and
+ * instrument search nothing yet); built without a request or a file.
  */
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
@@ -13,7 +14,7 @@ import { join } from "node:path";
 import { ROUTES } from "../../../src/data/routes.js";
 import { dataProviders } from "../../../src/engine/factory.js";
 import { forkProviders } from "../../../src/fork/data/index.js";
-import { buildTools, fixedClock, fixture, fixtureFetch, YAHOO_AAPL } from "./harness.js";
+import { buildTools, fixture, fixtureFetch, testProviders, YAHOO_AAPL } from "./harness.js";
 
 let dir: string;
 beforeEach(async () => {
@@ -24,7 +25,7 @@ afterEach(async () => {
 });
 
 test("one provider per routing key, each named for its sources", () => {
-  const providers = forkProviders({}, { fetch: fixtureFetch([]) });
+  const { providers } = testProviders();
   expect(
     Object.fromEntries(Object.entries(providers).map(([key, provider]) => [key, provider?.name])),
   ).toEqual({
@@ -39,31 +40,62 @@ test("one provider per routing key, each named for its sources", () => {
   });
 });
 
-test("today only Yahoo serves, as upstream did: quotes and daily price history", () => {
-  const providers = forkProviders(
-    { secUserAgent: "Jane Doe jane@example.com", fredKey: "fred-0123456789" },
-    { fetch: fixtureFetch([]) },
-  );
+/** What each provider declares in a setup: its capabilities, each with its methods. */
+function declared(config: Parameters<typeof testProviders>[0]) {
+  const { providers, fetch } = testProviders(config);
   const served = Object.fromEntries(
     Object.entries(providers).map(([key, provider]) => [
       key,
-      Object.keys(provider?.capabilities ?? {}).sort(),
+      Object.fromEntries(
+        Object.entries(provider?.capabilities ?? {}).map(([capability, methods]) => [
+          capability,
+          Object.keys(methods ?? {}).sort(),
+        ]),
+      ),
     ]),
   );
-  expect(served).toEqual({
-    yahoo: ["priceHistory", "quotes"],
-    filers: [],
-    frames: [],
-    ecb: [],
-    statistics: [],
-    markets: [],
-    instruments: [],
-    news: [],
+  return { served, fetch };
+}
+
+/** What is declared in every setup: the sources that need no key (Yahoo, the ECB, the agencies' series, news). */
+const KEYLESS = {
+  yahoo: {
+    quotes: ["many", "quote"],
+    priceHistory: ["daily", "dailyPair", "intraday"],
+    technicals: ["latest"],
+    profiles: ["analyst", "calendar", "profile"],
+    corporateActions: ["list"],
+    // Insider transactions are the filers'.
+    ownership: ["holders"],
+  },
+  ecb: { priceHistory: ["referenceRates"] },
+  statistics: { macroSeries: ["observations", "search"] },
+  news: { news: ["article", "articles"] },
+  // Not built yet: the market views and instrument search declare nothing in any setup.
+  markets: {},
+  instruments: {},
+};
+
+test("without SEC_USER_AGENT the keyless sources serve, and nothing is read from SEC EDGAR", () => {
+  // FRED_API_KEY adds no capability: macro series are served without it, from the keyless publishers.
+  for (const config of [{}, { fredKey: "fred-0123456789" }]) {
+    const { served, fetch } = declared(config);
+    expect(served).toEqual({ ...KEYLESS, filers: {}, frames: {} });
+    expect(fetch.requests).toEqual([]);
+  }
+});
+
+test("with SEC_USER_AGENT, SEC EDGAR serves statements, filings, insider transactions and screens too", () => {
+  const { served, fetch } = declared({
+    secUserAgent: "Jane Doe jane@example.com",
+    fredKey: "fred-0123456789",
   });
-  expect(Object.keys(providers.yahoo?.capabilities.priceHistory ?? {}).sort()).toEqual([
-    "daily",
-    "dailyPair",
-  ]);
+  expect(served).toEqual({
+    ...KEYLESS,
+    filers: { statements: ["statement"], filings: ["list", "section"], ownership: ["transactions"] },
+    frames: { crossSections: ["financials"] },
+  });
+  expect(fetch.requests).toEqual([]);
 });
 
 test("every provider the routing table names is built here, by the engine (Polymarket), or later (FSC)", () => {
@@ -98,14 +130,14 @@ test("an answer yahoo-finance2's schema refuses is unavailable, and the library 
     quoteResponse: { result: Record<string, unknown>[] };
   };
   (quote.quoteResponse.result[0] as Record<string, unknown>).marketState = "SOMETHING_NEW";
-  const fetch = fixtureFetch([
+  const routes = [
     {
       match: /\/v7\/finance\/quote\?/,
       body: JSON.stringify(quote),
       headers: { "content-type": "application/json" },
     },
     ...YAHOO_AAPL,
-  ]);
+  ];
   // The library's own version check would go through the global fetch, not the one it is given.
   const outside: string[] = [];
   const global = globalThis.fetch;
@@ -113,9 +145,9 @@ test("an answer yahoo-finance2's schema refuses is unavailable, and the library 
     outside.push(input instanceof Request ? input.url : String(input));
     throw new Error("these tests send no request");
   }) as unknown as typeof globalThis.fetch;
+  const { providers, fetch, clock } = testProviders({}, routes);
   try {
-    const clock = fixedClock("2026-11-25T22:00:00Z");
-    const { runTool } = buildTools(forkProviders({}, { fetch, clock }), { clock });
+    const { runTool } = buildTools(providers, { clock });
     const run = await runTool("quote", { symbols: ["AAPL"] });
     expect(run.failure).toBe("data_unavailable");
     expect(run.text).toContain("Yahoo could not be read (Failed Yahoo Schema validation)");

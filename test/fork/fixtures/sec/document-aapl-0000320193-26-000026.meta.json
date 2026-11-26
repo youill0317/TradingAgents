@@ -1,0 +1,11 @@
+{
+  "source": "sec",
+  "name": "document-aapl-0000320193-26-000026",
+  "url": "https://www.sec.gov/Archives/edgar/data/320193/000032019326000026/aapl-20260926.htm",
+  "status": 200,
+  "content_type": "text/html",
+  "recorded_at": "2026-11-26T00:00:00.000Z",
+  "bytes": 17629,
+  "hand_made": true,
+  "note": "Hand-made, not recorded (www.sec.gov answers only a User-Agent that names a contact): a short stand-in for the primary document of Apple's 10-K for the fiscal year ended 2026-09-26 (filing 0000320193-26-000026, aapl-20260926.htm as SEC's filing index names it), laid out as EDGAR's 10-K documents are: a table of contents listing every Item with its page, the body's Part and Item headings in inline XBRL HTML with a hidden ix:header, sections a few paragraphs long. The text is written for the tests, not the filer's own; the statement figures shown are those SEC's XBRL data holds for the filing, any other figure is invented. To be checked against the live document once SEC_USER_AGENT is set."
+}

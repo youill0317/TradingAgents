@@ -1,0 +1,11 @@
+{
+  "source": "yahoo",
+  "name": "chart-eurusd-x-1d",
+  "url": "https://query2.finance.yahoo.com/v8/finance/chart/EURUSD=X?interval=1d",
+  "status": 200,
+  "content_type": "application/json;charset=utf-8",
+  "recorded_at": "2026-11-25T22:00:00.000Z",
+  "bytes": 2947,
+  "hand_made": true,
+  "note": "Hand-made, not recorded: Yahoo's v8 chart answer (1d bars) for the currency pair EURUSD=X in the shape yahoo-finance2 4.0.6's chart schema validates, every weekday from 2026-09-28 to 2026-11-25 (43 rows, stamped 00:00 London time), values made by a formula; volume is 0 throughout, as Yahoo gives it for currency pairs."
+}

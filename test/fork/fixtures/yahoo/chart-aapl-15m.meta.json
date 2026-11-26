@@ -1,0 +1,11 @@
+{
+  "source": "yahoo",
+  "name": "chart-aapl-15m",
+  "url": "https://query2.finance.yahoo.com/v8/finance/chart/AAPL?interval=15m&includePrePost=false",
+  "status": 200,
+  "content_type": "application/json;charset=utf-8",
+  "recorded_at": "2026-11-25T22:00:00.000Z",
+  "bytes": 6907,
+  "hand_made": true,
+  "note": "Hand-made, not recorded: Yahoo's v8 chart answer (15-minute bars, includePrePost=false, no adjclose as Yahoo gives none for intraday intervals) for AAPL in the shape yahoo-finance2 4.0.6's chart schema validates, 26 bars for each regular session of 2026-11-19 to 2026-11-25 (09:30-16:00 New York time), values made by a formula."
+}

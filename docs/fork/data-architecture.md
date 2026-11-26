@@ -37,11 +37,31 @@ src/fork/data/
   timer.ts          Timer (elapsed time for pacing and waits), REAL_TIMER, abortable()
   catalog/
     instruments.ts  price series (series: keys) and futures roots (future: keys) with their Yahoo symbols
+    lines.ts        statement lines: names as the tools write them, XBRL concepts in order, formulas (statements, screens)
+    series.ts       the economic series macro_series names, under the skills' names, with aliases and FRED codes
+    gics.ts         GICS's 2023 tree: each sub-industry's industry, industry group and sector
+  compute/
+    technicals.ts   the technicals capability's 22 indicators from daily bars
+  sources/
+    sec-tickers.ts  secTickers(deps): SEC's ticker list, CIK by US listing and tickers by CIK (shared)
+    yahoo-call.ts   yahooCall(work, options): every Yahoo read's failures as DataError kinds (shared)
+    yahoo.ts        Yahoo's quotes, charts, quoteSummary modules and chart events, in the capabilities' shapes
+    sec.ts          SEC's submissions (filing index) and companyfacts (XBRL facts) on data.sec.gov
+    sec-sections.ts a filing's primary document as text, split by Item
+    sec-form4.ts    insider reports (Forms 3, 4, 5) in SEC's ownership XML
+    sec-frames.ts   SEC's XBRL frames: one concept for every filer, one calendar period
+    wikipedia.ts    Wikipedia's S&P 500, 400 and 600 lists (wikitext, CC BY-SA 4.0)
+    gdelt.ts        GDELT's DOC 2.0 article lists
+    treasury.ts     the U.S. Treasury's par and real yield curves
+    nyfed.ts        the New York Fed's reference rates (EFFR with the FOMC's target range, OBFR, SOFR, TGCR, BGCR)
+    ecb.ts          the ECB's euro reference rates (EXR) and key interest rates (FM)
+    fred.ts         FRED: its API with FRED_API_KEY (every vintage), its keyless download otherwise
   util/
     zip.ts          readZip(): stored and deflated entries, checked (no ZIP64, no encryption)
     xml.ts          parseXml() and helpers: tolerant, never throws, no recursion, linear time
     html.ts         htmlToText(): blocks to lines, tables to tab-separated rows, scripts and ix:header left out
     entities.ts     character references for both
+    csv.ts          readCsv(), csvTable(), numberOf(): the agencies' CSV files (RFC 4180, read by header)
   providers/        one module per routes.ts key, each exporting a stable factory:
     yahoo.ts        yahooComposite(deps)       "Yahoo"
     filers.ts       filersProvider(deps)       "SEC EDGAR"
@@ -53,14 +73,22 @@ src/fork/data/
     news.ts         newsProvider(deps)         "News search"
 scripts/fork/record-fixtures.ts    the owner's fixture recorder; case modules in scripts/fork/fixture-cases/
 test/fork/net-guard.ts             the network guard; test/fork/preload.ts loads it for bun test (bunfig.toml)
-test/fork/data/harness.ts          fixtureFetch, fixedClock, fakeTimer, buildTools/runTool, readCheck
-test/fork/fixtures/<source>/       fixture bodies and their .meta.json
+test/fork/data/harness.ts          fixtureFetch, fixedClock, fakeTimer, testDeps/testProviders, buildTools/runTool,
+                                   readCheck and SPREAD_KEYS
+test/fork/fixtures/<source>/       fixture bodies and their .meta.json (sec/company-tickers-exchange.json: SEC's
+                                   ticker list, hand-made)
 ```
 
-The top comment of each provider module says what it will serve. Today `yahooComposite` is upstream's
-Yahoo provider unchanged (quotes and daily price history) over the shared yahoo-finance2 client, and every
-other provider declares nothing, so the engine offers what it offered before (no built-in agent, no
-built-in skill).
+The top comment of each provider module says what it serves. In every setup: `yahooComposite` quotes,
+daily, intraday and paired price history, technicals, profiles (profile, analyst, calendar), corporate actions
+and institutional holders (upstream's Yahoo provider, unchanged, answers US listings and its venues; the
+composite answers Korean listings, futures, currency and crypto pairs and price series itself); `ecbProvider`
+a pair's reference rates; `statisticsProvider` macro series (the Treasury, the New York Fed, the ECB, FRED);
+`newsProvider` news by symbol (Yahoo) and by words, topic or the market's latest (GDELT). With SEC_USER_AGENT:
+`filersProvider` statements, filings (list and section) and insider transactions, `framesProvider` sector
+screens. `marketsProvider` and `instrumentsProvider` declare nothing yet. So the engine offers no built-in
+agent without SEC_USER_AGENT, and equity, quant and risk with the 16 built-in skills with it; macro waits for
+the market views (`test/fork/gating.test.ts`).
 
 ### Who changes what
 
@@ -69,11 +97,18 @@ built-in skill).
   `test/fork/fixtures/<source>/`, case modules under `scripts/fork/fixture-cases/<source>.ts`.
 - Shared, changed only on their own and with their tests: `index.ts`, `deps.ts`, `config.ts`, `http.ts`,
   `cache.ts`, `listings.ts`, `redact.ts`, `timer.ts`, `util/*`, `catalog/instruments.ts`,
-  `test/fork/net-guard.ts`, `test/fork/preload.ts`, `test/fork/data/harness.ts`. Rows added to
-  `catalog/instruments.ts` never change what an existing key names.
-- A source more than one provider reads (SEC's ticker list for filers, frames and instrument search; Yahoo's
-  quotes for the Yahoo composite and the market views) needs one owner: agree who writes
-  `sources/<source>.ts` before two providers each write their own.
+  `sources/sec-tickers.ts`, `sources/yahoo-call.ts`, `test/fork/net-guard.ts`, `test/fork/preload.ts`,
+  `test/fork/data/harness.ts` and the fixture `test/fork/fixtures/sec/company-tickers-exchange.json`. Rows
+  added to `catalog/instruments.ts` never change what an existing key names. Their interfaces are fixed so
+  the providers can be built in parallel on them; a provider that needs more of one says so rather than
+  writing its own copy.
+- SEC's ticker list (filers, frames, instrument search) is `sources/sec-tickers.ts`, and every Yahoo read
+  maps its failures with `sources/yahoo-call.ts`. Any other source more than one provider reads has one
+  module, which the next provider reuses rather than writing its own: the market views read Yahoo's quotes
+  and charts through `sources/yahoo.ts` (`planOf`, `readQuotes`, `quoteOf`, `readDaily`), the yield curve
+  and breakevens through `sources/treasury.ts`, the rate indicators through `sources/nyfed.ts`, and the
+  central banks through `sources/nyfed.ts` and `sources/ecb.ts`; instrument search reads the catalogs
+  (`catalog/instruments.ts`, `catalog/series.ts`) and SEC's ticker list.
 - Upstream files stay as they are except `src/data/routes.ts` (the routing table), `src/engine/factory.ts`
   (`EngineSettings.publicData` and `dataProviders`), `src/cli/main.tsx` (the config read once, passed to
   each engine, its notes said at start) and docs. Never edit `src/data/capabilities.ts`,
@@ -85,7 +120,7 @@ built-in skill).
 ```ts
 type ForkDeps = {
   config: PublicDataConfig; // SEC_USER_AGENT and the agencies' keys, the cache directory
-  fetch: typeof globalThis.fetch;
+  fetch: typeof globalThis.fetch; // under http and yahoo; for another yahoo-finance2 client or the recorder only
   clock: Clock; // the engine's clock: what day it is (tests fix it)
   timer: Timer; // elapsed time, for pacing and waits (tests pass fakeTimer())
   http: Http; // every request but Yahoo's
@@ -96,16 +131,44 @@ type ForkDeps = {
 
 `forkProviders(config, options)` builds one `ForkDeps` with `forkDeps(config, options)` and hands it to every
 factory. `options` (`ForkOptions`) may give `fetch`, `clock`, `timer`, `yahoo`, `cache`, `pacer` and
-`userAgent`; tests give a fixture fetch, a fixed clock and a fake timer. The engine passes its `fetch` (when
-it has one) and its clock, and Polymarket is added beside the fork's providers as upstream builds it.
+`userAgent`; tests build them with `testDeps` or `testProviders` (see [Tests](#tests)). The engine passes
+its `fetch` (when it has one) and its clock, and Polymarket is added beside the fork's providers as
+upstream builds it. A provider never sends a request with `deps.fetch`: its requests go through
+`deps.http` (published rates, Retry-After, User-Agents, deadlines, redaction) or `deps.yahoo`.
 
 Yahoo is always read through `deps.yahoo`, built by `yahooClient(fetch)` as upstream's provider builds its
 own: the library's own User-Agent, its survey and removed-module notices suppressed, a silent logger, and
 upstream's `answeredOrThrown` bounding every request (`REQUEST_MS.yahoo`) and turning a non-OK answer from
-Yahoo's query hosts into an error carrying its status. Beyond upstream, an answer that fails the library's
+Yahoo's query hosts into an error carrying its status. Beyond upstream: an answer that fails the library's
 schema is not logged, which also stops the library asking npm's registry for its latest version (a request
-of its own through the global fetch). Yahoo answers 429 to any other User-Agent, so `deps.http` refuses a
-Yahoo address outright; never send Yahoo a request another way, in the app, in tests or when recording.
+of its own through the global fetch); requests are not queued four at a time (the library's default:
+Yahoo publishes no limit, and the fork adds none); and each client keeps its own cookies and crumb (a new
+`ExtendedCookieJar` unless `yahooClient(fetch, { cookieJar })` is given one), where the library's default
+shares one jar among every client in the process. Yahoo answers 429 to any other User-Agent, so `deps.http`
+refuses a Yahoo address outright; never send Yahoo a request another way, in the app, in tests or when
+recording.
+
+Every Yahoo read runs in `yahooCall` (`sources/yahoo-call.ts`), so its failures are the same DataError kinds
+for every provider:
+
+```ts
+const quote = await yahooCall(() => deps.yahoo.quote(symbol, {}, { fetchOptions: { signal } }), {
+  signal, // the caller's cancellation: the signal's reason, as it came
+  notFound: "unsupported", // a 404: "no_data" (default, a listing only Yahoo serves), "unsupported", "unavailable"
+  statuses: { 422: "unsupported" }, // another status's kind, where the read knows what it means
+});
+```
+
+| Failure                                                                   | Kind                                       |
+| ------------------------------------------------------------------------- | ------------------------------------------ |
+| the caller's cancellation                                                 | the caller's own error                     |
+| 429, or "too many requests"                                               | `rate_limited`                             |
+| 404 or 410, or "not found", "no data found", "delisted", "invalid symbol" | `notFound` (`no_data` unless given)        |
+| 401, 403                                                                  | `rejected`                                 |
+| the request's deadline, a schema failure, 5xx, any other                  | `unavailable` (or `statuses` for a status) |
+
+A Korean listing the composite cannot answer must pass the call on (`notFound: "unsupported"` or
+`"unavailable"`), never `no_data`. Messages are one line of at most 200 characters, without Yahoo's crumb.
 
 ## Configuration: config.ts
 
@@ -125,11 +188,15 @@ its environment variable, else from the `"data"` object in `credentials.json` un
 | `beaKey`, `eiaKey`                   | `BEA_API_KEY`, `EIA_API_KEY`                                                                                   |
 | `cacheDir`                           | `<home>/cache/fork-data` with `TRADINGAGENTS_HOME`, else `${XDG_CACHE_HOME:-~/.cache}/tradingagents/fork-data` |
 
-The notes it returns are said as the session starts, like web_search's: SEC_USER_AGENT unset (what needs it,
-how to set it, that it is SEC's fair-access rule and not a secret), without an email, or with characters a
-header cannot carry (then it is not used), and a `"data"` object or field that cannot be used. A note names
-a setting, never its value. `secretsOf(config)` lists every value that must never be said (each key, and
-the SEC User-Agent); the HTTP client and the cache are built with it.
+The notes it returns are said as the session starts, like web_search's: SEC_USER_AGENT unset (nothing is
+read from SEC EDGAR, how to set it, that it is SEC's fair-access rule and not a secret), or set without an
+email; a setting set where it cannot be used, said as such and not used: on more than one line, not text,
+empty in the file, or for SEC_USER_AGENT with characters other than plain ASCII (a User-Agent cannot carry
+them). An environment value that cannot be used gives way to the one under `"data"`, and the note says so;
+when SEC_USER_AGENT has no usable value at all, a note says nothing is read from SEC EDGAR. A `"data"` that is
+not an object, or a name in it the app does not read, is said too. A note names a setting, never its value.
+`secretsOf(config)` lists every value that must never be said (each key, and the SEC User-Agent); the HTTP
+client and the cache are built with it.
 
 A capability whose source needs a setting that is not there is not declared when the whole capability rests
 on it: without SEC_USER_AGENT the SEC-backed capabilities (statements, filings, insider transactions,
@@ -165,13 +232,25 @@ What a request does:
   `SLOW_HOSTS`: the ECB took 1.1-7.4 s for one series and 21.3 s for every currency's latest rate) and
   `bulk` (60 s, given by the caller for a large document). `requestTimeout(host, given)` says which applies.
 - A host with a published rate (`HOST_RULES`) waits for its turn: SEC 10 requests a second shared by every
-  `*.sec.gov` host, FRED's API (`api.stlouisfed.org`) 120 a minute, GDELT's API one every 5 s. A request
-  whose turn would come after its own deadline fails at once as `rate_limited` (with `retryAfterMs`); it
-  never hangs. Identical GDELT requests in flight share one request and its answer; one caller cancelling
-  does not cancel the others. The turns are kept for the whole process, as the services count per sender.
-- 429 and 503 with Retry-After: waited for when the wait fits the deadline, then asked once more; otherwise
-  `rate_limited` with `retryAfterMs`. A 429 without Retry-After is `rate_limited` at once (Yahoo's 429 to a
+  `*.sec.gov` host, FRED's API (`api.stlouisfed.org`) 120 a minute, FRED's website (`fred.stlouisfed.org`,
+  the keyless download) one a second (its robots.txt's `Crawl-delay: 1`), GDELT's API one every 5 s. Turns are
+  given in the order asked; a start is counted when it is actually made, and a request whose timer woke
+  late waits until the window holds room, so starts never exceed the published rate in any window. A
+  request whose turn would come after its own deadline fails at once as `rate_limited` (with
+  `retryAfterMs`), unsent; it never hangs. A turn a cancelled request will not take is given back. The
+  turns are kept for the whole process (`Pacer`), as the services count per sender.
+- Identical GDELT requests in flight share one request and its answer, run under a cancellation of their
+  own: each caller stops waiting on its own, and when every caller that could cancel has, the request is
+  cancelled (unsent if its turn had not come) and its turn given back. A caller already cancelled starts
+  nothing; a caller does not join a shared request whose turn comes after its own deadline (`rate_limited`).
+- 429 and 503 with Retry-After: the source's pause is kept, for the host (for a rule's hosts, all of them:
+  SEC's), and holds every later request too: one whose deadline the pause fits waits it out, one whose
+  deadline it outlasts fails at once as `rate_limited` with the time left, unsent. The request that got it
+  is asked once more after the pause when that fits its deadline; otherwise it is `rate_limited` with
+  `retryAfterMs`. A 429 without Retry-After is `rate_limited` at once, and keeps no pause (Yahoo's 429 to a
   wrong User-Agent is not a rate, so nothing backs off on it).
+- A host is compared as DNS reads it: `hostName()` lower-cases it and drops a fully-qualified name's
+  trailing dot, so `data.sec.gov.` is paced and named as data.sec.gov, and `finance.yahoo.com.` is refused.
 - One retry, after `RETRY_PAUSE_MS` (1 s), of a dropped connection or a 5xx. A request that ran past its
   deadline, or was cancelled, is not retried.
 - User-Agent: SEC's hosts get `SEC_USER_AGENT` (the app's name when it is not set, which happens only in the
@@ -194,6 +273,8 @@ What a request does:
 - The default body bound is upstream's `ANSWER_BYTES` (16 MiB); the largest answer measured, SEC
   companyfacts for MetLife, is 9.3 MB decoded. A source whose real answers are larger (a bank's 10-K
   document may be) passes its own `maxBytes`, measured, never a smaller one to save work.
+- `unreadable(source, what)` is the failure a source gives for an answer read whole that is not in the form
+  it documents ("FRED answered its API in a form this app does not read."): `unavailable`.
 - No message ever holds a key: every message is passed through `redact`, which removes each configured
   secret as written and URL-encoded (`encodeURIComponent`, a form query, either case of hex), in a query or
   a path (ECOS puts its key in the path). Network errors are named by their code, never by their message
@@ -203,25 +284,32 @@ What a request does:
 
 ```ts
 // A fresh value, else load it; callers asking together share one load.
-const tickers = await deps.cache.remember("sec:company-tickers", DAY_MS, () => readTickers(call), {
+const facts = await deps.cache.remember(`sec:companyfacts:${cik}`, DAY_MS, () => readFacts(cik, call), {
   disk: "json", // keep it on disk too: "json" (plain data), "text" or "bytes"
+  signal: call?.signal, // this caller's cancellation (the load uses it too)
 });
 // With when it was stored, and served stale when reloading fails for the source's reason.
 const { value, stale, storedAt } = await deps.cache.keep("wikipedia:sp500", WEEK_MS, load, {
   disk: "json",
   staleOnError: true, // unavailable, rate_limited or quota: the old value, stale: true
   memory: false, // a large value on disk only
+  signal: call?.signal,
 });
-await deps.cache.forget("sec:company-tickers");
+await deps.cache.forget(`sec:companyfacts:${cik}`);
 ```
 
-- A failed load is never kept. A load cancelled under another caller is run again for that caller.
+- A failed load is never kept, and is the answer of every caller waiting on it.
+- Pass the call's `signal`: a caller's cancellation ends its own wait at once, never a load another caller
+  waits on. When the caller whose load it is was cancelled (its signal aborted, whatever the error says),
+  each caller waiting on it looks again: the first starts its own load, the others join it.
 - A kept value is shared by every caller that asks for it: read it, never change it.
 - A key holding any configured secret is refused (an Error): build keys from what the request is about
   (`fred:series:CPIAUCSL`), never from a URL that carries a key.
 - Disk entries live in `config.cacheDir`, one file per key (named by a hash; the key is inside), written
   whole through a temporary file and a rename, owner-only. An entry that cannot be read is a miss; a
-  directory that cannot be written leaves the value in memory. Entries a month past their time are swept.
+  directory that cannot be written leaves the value in memory. Entries a month past their time, and
+  temporary files an hour old (a process stopped between writing and renaming), are swept when a cache
+  first writes.
 - Nothing limits how much is kept. Keep what is worth keeping: a parsed, smaller form rather than a large raw
   answer held in memory (`memory: false` keeps a large body on disk only).
 - Without `config.cacheDir` (tests, an engine built without the CLI) the cache is memory only.
@@ -235,7 +323,7 @@ in either case as the symbol-schema tools upper-case them), reading the kind as 
 | Key                                             | Listing                                                                                                              |
 | ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | `AAPL`, `brk.b`, `BRK-B`                        | `{kind: "us", key: "BRK-B", ticker, yahoo: "BRK-B"}`                                                                 |
-| `XNAS:AAPL`, `XLON:VOD`                         | `{kind: "venue", key, mic, symbol, yahoo: "VOD.L" or null when Yahoo lists no such venue}`                           |
+| `XNAS:AAPL`, `XLON:VOD`, `XNYS:BRK.B`           | `{kind: "venue", key, mic, symbol, yahoo: "VOD.L" or null when Yahoo lists no such venue}`; key `XNYS:BRK-B`         |
 | `XKRX:005930`, `005930.KS`                      | `{kind: "kr", key: "XKRX:005930", code, market: "XKRX", yahoo: ["005930.KS"]}`                                       |
 | `XKOS:035900`, `035900.KQ`                      | `{kind: "kr", key: "XKOS:035900", market: "XKOS", yahoo: ["035900.KQ"]}`                                             |
 | `005930`                                        | `{kind: "kr", key: null, market: null, yahoo: ["005930.KS", "005930.KQ"]}` (resolve by one batched quote)            |
@@ -247,9 +335,31 @@ in either case as the symbol-schema tools upper-case them), reading the kind as 
 | `series:us.fred.cpiaucsl`                       | `{kind: "value_series", key}`: price tools answer `notPriced(listing, source)` (invalid, pointing to macro_series)   |
 | anything else                                   | `{kind: "invalid", input, reason}`                                                                                   |
 
-`canonicalKey(key)` gives the key answers name (undefined for an unresolved bare Korean code). Answers name
-the canonical key in `instrument.key`; Korean answers say venue KOSPI or KOSDAQ and currency KRW. 035720
+`canonicalKey(key)` gives the key answers name (undefined for an unresolved bare Korean code): one key per
+listing, so a share class is written as the venue writes it, with a dash at the US venues, London and
+Toronto (`BRK.B`, `BRK-B` are `BRK-B`; `XNYS:BRK.B`, `XNYS:BRK-B` are `XNYS:BRK-B`). Answers name the
+canonical key in `instrument.key`; Korean answers say venue KOSPI or KOSDAQ and currency KRW. 035720
 (Kakao) is a KOSPI listing; KOSDAQ examples are 035900 (JYP Entertainment) and 247540 (EcoPro BM).
+`US_VENUES` lists the US venues' MICs.
+
+## SEC's ticker list: sources/sec-tickers.ts
+
+```ts
+const tickers = secTickers(deps); // not_configured on use without SEC_USER_AGENT
+await tickers.bySymbol("BRK.B", call); // {cik: "0001067983", name, ticker: "BRK-B", exchange: "NYSE"} or undefined
+await tickers.byCik(1067983, call); // every ticker of the CIK, in SEC's order (BRK-B, BRK-A)
+await tickers.all(call); // the whole list, for instrument search
+```
+
+- It reads `https://www.sec.gov/files/company_tickers_exchange.json` (`SEC_TICKERS_URL`), SEC's documented
+  `{fields: [cik, name, ticker, exchange], data: [...]}`, by field name; CIKs are padded to ten digits as
+  data.sec.gov's paths take them; `exchange` is null where SEC gives none (OTC tickers say `OTC`).
+- Kept a day, on disk too (`sec:company-tickers-exchange`), and served past its day when SEC cannot be
+  read; callers asking together share one request.
+- Only US listings are looked up, in any spelling the tools pass (`AAPL`, `brk.b`, `XNYS:BRK.B`,
+  `security:BRK.B`): a listing on another venue is another company than the US filer with its letters
+  (`XLON:BA` is BAE Systems, not Boeing), so it is undefined, with no request; so are Korean codes, pairs and
+  series. `secTicker(key)` gives the ticker as SEC writes it, or undefined.
 
 ## Readers: util/
 
@@ -261,9 +371,14 @@ the canonical key in `instrument.key`; Korean answers say venue KOSPI or KOSDAQ 
 - `parseXml(text)` returns a `#document` element; `child`, `children`, `find(el, "a/b/c")`, `findAll`,
   `textOf`, `valueAt(el, "transactionAmounts/transactionShares/value")` read it. A name without a prefix
   matches an element's local name. Attributes are kept in an object without a prototype.
-- `htmlToText(html)` gives the text a reader sees, for filing sections.
+- `htmlToText(html)` gives the text a reader sees, for filing sections. A head whose end tag is left out
+  ends where the body's content starts, as browsers read it; a table inside a cell stays on the cell's line.
+- `readCsv(text)` reads RFC 4180 rows (CRLF or LF, quoted fields holding commas, quotes and line ends, a
+  byte-order mark), `csvTable(text)` a file by its header's names, `numberOf(cell)` a number as the agencies
+  write one (null for an empty cell, `.` or `NaN`); in one pass, never throwing.
 - All three read hostile input in time proportional to it and never recurse; their tests hold the
-  adversarial cases (bombs, deep nesting, unclosed quotes and tags, stray end tags).
+  adversarial cases (bombs, deep nesting, unclosed quotes and tags, stray end tags) and pages of filing
+  size (a 5 MB page of 100,000 paragraphs, 20,000 nested tables) with time bounds.
 
 ## Declaring capabilities
 
@@ -291,7 +406,8 @@ export function filersProvider(deps: ForkDeps): DataProvider {
 Fill every field the tools read: `src/tools/*.ts` read more than the zod output schemas require, and a field
 left undefined is a value the model never sees. Set fields to `null` when the source has no value, and say why
 in `field_states`. The read check in the tests (below) lists every field a tool read that the answer did not
-supply.
+supply, and, for an answer a tool spreads or passes on whole (technicals, estimates, institutional
+holders), every key `SPREAD_KEYS` names that the answer leaves out.
 
 ## The router: which failures pass a call on
 
@@ -327,18 +443,20 @@ failed before it: `unsupported`, `unavailable`, `rate_limited`, `quota`, `reject
 
 ## Fixtures
 
-A fixture is a body under `test/fork/fixtures/<source>/` with a `.meta.json` beside it (`source`, `name`,
-`url` with keys removed, `status`, `content_type`, `recorded_at`, `bytes`, `hand_made`, and for a hand-made
-one `note`, starting "Hand-made", saying what it is made from). A test checks that every fixture has its
-meta and that the meta's `bytes` match. Fixtures come from three places, never from a live request made in
-a development session:
+A fixture is a body under `test/fork/fixtures/<source>/` (in any folder below it) with a `.meta.json` beside
+it (`source`, `name`, `url` with keys removed, `status`, `content_type`, `recorded_at`, `bytes`, `hand_made`,
+and `note`: for a hand-made one starting "Hand-made", saying what it is made from; for a real answer saved
+earlier, where it was saved). A test checks that every fixture has its meta and that the meta's `bytes`
+match. Fixtures come from three places, never from a live request made in a development session:
 
 - answers the owner records with the recorder, on the owner's own machine (`hand_made: false`);
 - real answers saved earlier, kept whole when they are complete answers (an error page, an empty or cut-off
-  body is not a fixture), or cut to an excerpt with the full size stated where it matters;
+  body is not a fixture), or cut to an excerpt with the full size stated where it matters; `recorded_at` is
+  the answer's own date and `note` says where it was saved (`ecb/exr-usd-last5.csv`);
 - hand-made answers in the source's documented format, `"hand_made": true` with a `note`: where no real
   answer has been seen (www.sec.gov needs a contact User-Agent, GDELT was unreachable, Yahoo's own answers
-  were not recorded), listed for a live check later.
+  were not recorded), listed for a live check later. `sec/company-tickers-exchange.json` is SEC's ticker
+  list made this way, its rows following SEC's own submissions answers; every SEC provider's tests use it.
 
 Keep fixtures small. Wikipedia excerpts carry their CC BY-SA attribution. JSON bodies under
 `test/fork/fixtures/` are exempt from the formatter (`test/fork/fixtures/biome.json`) so they stay as
@@ -387,53 +505,75 @@ server on 127.0.0.1, Yahoo's addresses included (a fetch sends them to the stub)
 
 ## Tests
 
-No test reaches the network. `bunfig.toml` preloads `test/fork/preload.ts` for `bun test`, which installs
-`test/fork/net-guard.ts`: fetch, WebSocket, Bun.connect and node's http, https, http2, net and tls clients
-refuse any host but 127.0.0.1 and localhost, and every proxy variable points at a local trap that refuses
-what reaches it (Bun.fetch, which cannot be replaced). A refused request is printed (`net-guard: ...`),
-thrown, and fails the test that made it even when the code under test caught it. A test that starts a
-process from source passes the guard on: `Bun.spawn([process.execPath, "--preload", NET_GUARD, ...])`, then
-checks its stderr holds no `net-guard:`. A test that checks a refusal on purpose takes it with
-`takeBlocked()`. Stub servers listen on 127.0.0.1, port 0.
+No test reaches the network. Run `bun test` from the repository root: `bunfig.toml`, read from the working
+directory, preloads `test/fork/preload.ts`, which installs `test/fork/net-guard.ts`: fetch, WebSocket,
+Bun.connect and node's http, https, http2, net and tls clients refuse any host but 127.0.0.1 and localhost,
+and every proxy variable points at a local trap that refuses what reaches it (Bun.fetch, which cannot be
+replaced). A refused request is printed (`net-guard: ...`), thrown, and fails the test that made it even
+when the code under test caught it. `test/fork/data/harness.ts` installs the guard too when it is imported,
+so a data test run from elsewhere still reaches no host (the refusal is thrown, though only the preload
+fails the test for a refusal the code caught). A test that starts a process from source passes the guard
+on: `Bun.spawn([process.execPath, "--preload", NET_GUARD, ...])`, then checks its stderr holds no
+`net-guard:`. A test that checks a refusal on purpose takes it with `takeBlocked()`. Stub servers listen
+on 127.0.0.1, port 0.
 
 `test/fork/data/harness.ts`:
 
 ```ts
-const fetch = fixtureFetch([
+const { providers, fetch, clock } = testProviders({ secUserAgent: "Test Agent test@example.com" }, [
+  { match: SEC_TICKERS_URL, file: "sec/company-tickers-exchange.json" }, // shared, hand-made
+  // A provider's own fixture, added with it (the filers provider's, from SEC's saved answer for Apple):
   { match: /data\.sec\.gov\/submissions\/CIK0000320193\.json$/, file: "sec/submissions-aapl.json" },
-  { match: "https://www.sec.gov/files/company_tickers.json", file: "sec/company-tickers.json" },
   { match: (url) => url.hostname === "api.gdeltproject.org", body: "{}", status: 200 },
+  ...YAHOO_AAPL, // Yahoo's cookie page and crumb, and the hand-made AAPL quote and chart
 ]);
-const clock = fixedClock("2026-11-25T22:00:00Z");
-const providers = forkProviders(
-  { secUserAgent: "Test Agent test@example.com" },
-  { fetch, clock, timer: fakeTimer() },
-);
 const { runTool } = buildTools(providers, { clock, check: true });
 const run = await runTool("filings", { symbol: "AAPL", forms: ["10-K"] });
 run.text; // what the model reads
 run.summary; // the transcript's line
+run.evidence; // its record's id ("e1"), for a later call: runTool("dcf", { cash_flow: { ref: "e1" }, ... })
 run.payload; // the recorded payload
 run.provenance; // { source, after?, notes?, subject?, as_of? }
 run.failure; // "data_no_data", "data_unsupported", ... when it failed
-run.reads.missing(); // fields the tool read that the provider's answer left undefined
+run.reads.missing(); // fields the tool read (or SPREAD_KEYS names) that the provider's answer left undefined
 expect(fetch.unmatched).toEqual([]);
 ```
 
+- `testProviders(config, routes, extra?)` and `testDeps(config, routes, extra?)` build the fork's providers or
+  deps for a test: a fixture fetch over `routes`, the engine's day fixed (`TEST_DAY`, or `extra.now`), a fake
+  timer and a pacer of the test's own (no turn or Retry-After pause of another test's is waited for, and
+  nothing waits in real time), a cache in memory unless the config names a directory (or `extra.cache`
+  gives one), and a yahoo-finance2 client with cookies of its own, so a Yahoo test serves its own cookie
+  page and crumb (`YAHOO_AAPL`) and passes alone or after another. Build every provider test on them.
 - A request no route matches is printed and thrown, and listed in `fetch.unmatched`.
-- `buildTools` routes the providers, builds `dataTools` and a `ToolRegistry` as the engine does, and runs
-  each call as the model's would be run. With `check: true` every provider answer is behind `readCheck`, a
-  view that logs each field the tool read and whether it held a value.
-- `fakeTimer()` makes pacing and Retry-After waits instant and lists them in `slept`; pass a new `Pacer()`
-  in `options.pacer` when a test counts turns.
+- `buildTools` routes the providers and builds the data tools, the compute tools (dcf, returns_risk, beta,
+  correlation, portfolio_risk, optimize_portfolio, indicators, calc) and the evidence tool in one
+  `ToolRegistry` over one evidence store, as the engine does, and runs each call as the model's would be
+  run, each a step of its own: a compute tool's `{"ref": "e1"}` reads an earlier call's recorded result.
+  With `check: true` every provider answer is behind `readCheck`, a view that logs each field the tool
+  read and whether it held a value (a field asked about with `in` is read, never missing; listing an
+  object's keys is noted in `reads.listed`). A spread or a record passed on whole never asks the view for a
+  key the answer lacks, so `SPREAD_KEYS` names the keys the tools need of those answers (technicals'
+  22 indicators and the fields its text states, estimates' consensus and calendar, holders' rows) and the
+  check logs each, missing when absent; `expectKeys` does the same for keys a test names.
+- `fakeTimer()` makes pacing and Retry-After waits instant: sleeps end one at a time in the order of their
+  end times, the time set to each one's end, and are listed in `slept`; `fakeTimer(0, late)` ends each
+  sleep `late(index)` ms past its time, as a busy real timer does.
 - `test/fork/data/harness.test.ts` shows quote and price_history through upstream Yahoo on the hand-made
-  Yahoo fixtures, with the read check's findings. `YAHOO_AAPL` in the harness holds their routes (Yahoo's
-  cookie page and crumb included): a Yahoo test adds its own routes before them.
+  Yahoo fixtures, with the read check's findings, a statements result read by dcf, price_history read by
+  returns_risk, and technicals' left-out indicators found. `YAHOO_AAPL` in the harness holds their routes
+  (Yahoo's cookie page and crumb included): a Yahoo test adds its own routes before them.
 - Golden render tests run each data tool a provider serves through `runTool` and compare `text`; the read
   check asserts `run.reads.missing()` holds only fields the provider leaves out on purpose.
-- `test/fork/gating.test.ts` pins the agents and skills an engine offers as built (`AS_BUILT`, today none).
-  Update it to each milestone's real configuration, built from the fork providers with a fixture fetch: 3a
-  `['risk']` and 16 skills, 3b `['equity', 'quant', 'risk']`, 3c all four.
+- `test/fork/data/all-tools.test.ts` runs every data tool once (once per method where a tool reads more than
+  one) through all the fork's providers together, as a setup with SEC_USER_AGENT builds them, and Polymarket,
+  on the providers' fixtures: each call answers, from the source the router names, with no field the tool
+  reads left out (upstream Yahoo's own optional fields aside), so a change that drops one fails there. A data
+  tool added without a call there fails it too.
+- `test/fork/gating.test.ts` pins the agents and skills an engine offers: as built (`AS_BUILT`: none), and
+  with the fork's providers as each configuration builds them over a fixture fetch (none without
+  SEC_USER_AGENT; equity, quant and risk with the 16 built-in skills with it, whatever other key is set;
+  macro once the market views are served). Update it as each provider lands.
 
 Before a change is done, run the checks FORK.md lists under "Taking an upstream release" (step 5), from
 `npm run typecheck` through `sh scripts/fork/check-notices.sh main` (with `export

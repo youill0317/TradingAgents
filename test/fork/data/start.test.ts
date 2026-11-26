@@ -11,7 +11,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { NET_GUARD } from "../net-guard.js";
 
-/** One -p question with `env` (and no other environment): what the run printed on stderr. */
+/**
+ * One -p question with `env` (and no other environment): what the run printed on stderr. The stub lists its
+ * model's context window as vLLM does (`max_model_len`): with SEC_USER_AGENT set the session offers the
+ * built-in agents and skills, a prompt the 32,768 tokens assumed for a model of unknown window cannot hold.
+ */
 async function start(env: Record<string, string>): Promise<string> {
   const chunk = (fields: Record<string, unknown>) =>
     `data: ${JSON.stringify({ id: "s", object: "chat.completion.chunk", created: 0, model: "stub", ...fields })}\n\n`;
@@ -20,7 +24,10 @@ async function start(env: Record<string, string>): Promise<string> {
     port: 0,
     async fetch(request) {
       if (request.method === "GET")
-        return Response.json({ object: "list", data: [{ id: "stub", object: "model" }] });
+        return Response.json({
+          object: "list",
+          data: [{ id: "stub", object: "model", max_model_len: 200_000 }],
+        });
       await request.text();
       const usage = { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 };
       return new Response(
@@ -75,7 +82,7 @@ describe("a session's start, run from source", () => {
     const stderr = await start({});
     const notes = stderr.split("\n").filter((line) => line.includes("SEC_USER_AGENT"));
     expect(notes).toHaveLength(1);
-    expect(notes[0]).toStartWith("warning: SEC_USER_AGENT is not set, so SEC filings");
+    expect(notes[0]).toStartWith("warning: SEC_USER_AGENT is not set, so nothing is read from SEC EDGAR");
     expect(notes[0]).toContain('SEC_USER_AGENT="Your Name you@example.com"');
   }, 60_000);
 

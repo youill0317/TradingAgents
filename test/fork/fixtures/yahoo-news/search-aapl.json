@@ -1,0 +1,222 @@
+{
+ "explains": [],
+ "count": 12,
+ "quotes": [],
+ "news": [
+  {
+   "uuid": "2d2e8284-9078-5da7-a3d8-26c60e2727f7",
+   "title": "Apple shares close lower as tech stocks slip",
+   "publisher": "Example Newswire",
+   "link": "https://finance.yahoo.com/news/apple-shares-close-lower-tech-795639500.html",
+   "providerPublishTime": 1795639500,
+   "type": "STORY",
+   "thumbnail": {
+    "resolutions": [
+     {
+      "url": "https://s.yimg.com/uu/api/res/1.2/fixture0/original.jpg",
+      "width": 1200,
+      "height": 800,
+      "tag": "original"
+     },
+     {
+      "url": "https://s.yimg.com/uu/api/res/1.2/fixture0/140x140.jpg",
+      "width": 140,
+      "height": 140,
+      "tag": "140x140"
+     }
+    ]
+   },
+   "relatedTickers": [
+    "AAPL"
+   ]
+  },
+  {
+   "uuid": "99afe3b8-3f35-525e-8e5f-82e55a76647f",
+   "title": "Apple supplier outlook points to steady iPhone demand",
+   "publisher": "Sample Markets Daily",
+   "link": "https://finance.yahoo.com/news/apple-supplier-outlook-steady-iphone-795630200.html",
+   "providerPublishTime": 1795630200,
+   "type": "STORY",
+   "relatedTickers": [
+    "AAPL"
+   ]
+  },
+  {
+   "uuid": "4d91cafe-78a8-5ec5-a866-70d3fe9c4076",
+   "title": "What to watch in Apple's services business",
+   "publisher": "Example Investor",
+   "link": "https://finance.yahoo.com/news/what-watch-apple-services-795617000.html",
+   "providerPublishTime": 1795617000,
+   "type": "VIDEO",
+   "relatedTickers": [
+    "AAPL"
+   ]
+  },
+  {
+   "uuid": "e87242ba-c1f3-5755-bbea-c65b81a14809",
+   "title": "Big tech stocks mixed after the close",
+   "publisher": "Example Newswire",
+   "link": "https://finance.yahoo.com/news/big-tech-stocks-mixed-close-795554300.html",
+   "providerPublishTime": 1795554300,
+   "type": "STORY",
+   "thumbnail": {
+    "resolutions": [
+     {
+      "url": "https://s.yimg.com/uu/api/res/1.2/fixture3/original.jpg",
+      "width": 1200,
+      "height": 800,
+      "tag": "original"
+     },
+     {
+      "url": "https://s.yimg.com/uu/api/res/1.2/fixture3/140x140.jpg",
+      "width": 140,
+      "height": 140,
+      "tag": "140x140"
+     }
+    ]
+   },
+   "relatedTickers": [
+    "AAPL",
+    "MSFT",
+    "GOOGL"
+   ]
+  },
+  {
+   "uuid": "ca78c19a-b353-5be8-871b-5a6c085094c6",
+   "title": "Apple expands retail presence in India",
+   "publisher": "Sample Business Review",
+   "link": "https://finance.yahoo.com/news/apple-expands-retail-india-795537200.html",
+   "providerPublishTime": 1795537200,
+   "type": "STORY",
+   "relatedTickers": [
+    "AAPL"
+   ]
+  },
+  {
+   "uuid": "979ba9af-55ff-5f5e-aae5-b83fcf053bbb",
+   "title": "Analysts raise Apple price targets ahead of holiday quarter",
+   "publisher": "Example Markets",
+   "link": "https://finance.yahoo.com/news/analysts-raise-apple-targets-holiday-795521600.html",
+   "providerPublishTime": 1795521600,
+   "type": "STORY",
+   "relatedTickers": [
+    "AAPL"
+   ]
+  },
+  {
+   "uuid": "9ed7b808-46b4-5523-9c6f-0ce322880fbe",
+   "title": "Apple and Microsoft lead megacap gains",
+   "publisher": "Example Newswire",
+   "link": "https://finance.yahoo.com/news/apple-microsoft-lead-megacap-gains-795462800.html",
+   "providerPublishTime": 1795462800,
+   "type": "STORY",
+   "thumbnail": {
+    "resolutions": [
+     {
+      "url": "https://s.yimg.com/uu/api/res/1.2/fixture6/original.jpg",
+      "width": 1200,
+      "height": 800,
+      "tag": "original"
+     },
+     {
+      "url": "https://s.yimg.com/uu/api/res/1.2/fixture6/140x140.jpg",
+      "width": 140,
+      "height": 140,
+      "tag": "140x140"
+     }
+    ]
+   },
+   "relatedTickers": [
+    "AAPL",
+    "MSFT"
+   ]
+  },
+  {
+   "uuid": "b25a6acd-9e9b-542c-b9d7-e85b6e6daf95",
+   "title": "Apple's App Store policy changes take effect in Europe",
+   "publisher": "Sample Tech Journal",
+   "link": "https://finance.yahoo.com/news/apple-app-store-changes-europe-795439700.html",
+   "providerPublishTime": 1795439700,
+   "type": "STORY",
+   "relatedTickers": [
+    "AAPL"
+   ]
+  },
+  {
+   "uuid": "33abb04f-381a-543d-bb55-f18a506d82a2",
+   "title": "Weekend read: how Apple sets its product calendar",
+   "publisher": "Example Investor",
+   "link": "https://finance.yahoo.com/news/how-apple-sets-product-calendar-795359600.html",
+   "providerPublishTime": 1795359600,
+   "type": "STORY",
+   "relatedTickers": [
+    "AAPL"
+   ]
+  },
+  {
+   "uuid": "04182cd7-ee57-509f-b99d-d1f44758dbb3",
+   "title": "Apple stock ends week higher",
+   "publisher": "Sample Markets Daily",
+   "link": "https://finance.yahoo.com/news/apple-stock-ends-week-higher-795293000.html",
+   "providerPublishTime": 1795293000,
+   "type": "STORY",
+   "thumbnail": {
+    "resolutions": [
+     {
+      "url": "https://s.yimg.com/uu/api/res/1.2/fixture9/original.jpg",
+      "width": 1200,
+      "height": 800,
+      "tag": "original"
+     },
+     {
+      "url": "https://s.yimg.com/uu/api/res/1.2/fixture9/140x140.jpg",
+      "width": 140,
+      "height": 140,
+      "tag": "140x140"
+     }
+    ]
+   },
+   "relatedTickers": [
+    "AAPL"
+   ]
+  },
+  {
+   "uuid": "d6058f9a-01f4-50d3-920d-22feda8513dd",
+   "title": "Apple chip unit hires for modem program",
+   "publisher": "Sample Tech Journal",
+   "link": "https://finance.yahoo.com/news/apple-chip-unit-modem-hiring-795196700.html",
+   "providerPublishTime": 1795196700,
+   "type": "STORY",
+   "relatedTickers": [
+    "AAPL"
+   ]
+  },
+  {
+   "uuid": "fc87f846-86af-5cb9-afc3-9964a05228e6",
+   "title": "Apple holds annual developer grants event",
+   "publisher": "Example Newswire",
+   "link": "https://finance.yahoo.com/news/apple-developer-grants-event-795126200.html",
+   "providerPublishTime": 1795126200,
+   "type": "STORY",
+   "relatedTickers": [
+    "AAPL"
+   ]
+  }
+ ],
+ "nav": [],
+ "lists": [],
+ "researchReports": [],
+ "screenerFieldResults": [],
+ "culturalAssets": [],
+ "totalTime": 38,
+ "timeTakenForQuotes": 0,
+ "timeTakenForNews": 600,
+ "timeTakenForAlgowatchlist": 400,
+ "timeTakenForPredefinedScreener": 400,
+ "timeTakenForCrunchbase": 0,
+ "timeTakenForNav": 400,
+ "timeTakenForResearchReports": 0,
+ "timeTakenForScreenerField": 0,
+ "timeTakenForCulturalAssets": 0,
+ "timeTakenForSearchLists": 0
+}

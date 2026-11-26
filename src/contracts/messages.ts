@@ -103,7 +103,8 @@ const catalog = {
   An OpenAI-compatible server   set ${baseUrlVar} and ${modelVar} (the model as the server names it),
                                 and if the server needs a key: ${app} key model
 
-Prices come from Yahoo and event odds from Polymarket; the rest is not available.
+Market data comes from free public sources (Yahoo, the U.S. Treasury, the New York Fed, the ECB, FRED and
+GDELT, and SEC EDGAR once SEC_USER_AGENT is set) and event odds from Polymarket.
 `,
 
   // ChatGPT sign-in commands
@@ -263,7 +264,7 @@ Prices come from Yahoo and event odds from Polymarket; the rest is not available
   "app.queued": ({ text }: { text: string }) => `Queued: ${text}`,
   "app.queuedMore": ({ count }: { count: number }) => `+${count} more queued`,
   "app.queuePaused": () => "Queue paused: Enter sends the next one, Up takes it back",
-  "app.dataYahoo": () => "Yahoo prices and Polymarket odds",
+  "app.dataYahoo": () => "public data and Polymarket odds",
   "app.interrupted": () => "This question did not finish: the session ended while it ran.",
   "app.stoppedUnexpectedly": ({ reason }: { reason: string }) => `The run stopped unexpectedly: ${reason}`,
   "app.stoppedAtLimit": ({ cap }: { cap: string }) => `stopped at its ${CAP_WORDS[cap] ?? cap} limit`,

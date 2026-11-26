@@ -84,11 +84,11 @@ describe("where each setting is read from", () => {
     expect(config.fredKey).toBeUndefined();
     expect(config.eiaKey).toBeUndefined();
     expect(notes).toEqual([
-      `${paths.credentials}: data.FRED_API_KEY is not a usable value, so it is not used`,
-      `${paths.credentials}: data.EIA_API_KEY is not a usable value, so it is not used`,
       expect.stringContaining(
         `${paths.credentials}: data.FRED_KEY is not a setting this app reads (it reads SEC_USER_AGENT, FRED_API_KEY,`,
       ),
+      `${paths.credentials}: data.FRED_API_KEY is not text, so it is not used`,
+      `${paths.credentials}: data.EIA_API_KEY spans more than one line, so it is not used`,
     ]);
     expect(notes.join("\n")).not.toContain("typo-value-0123");
     await credentials({ data: ["not", "an", "object"] });
@@ -107,8 +107,8 @@ describe("SEC_USER_AGENT's notes", () => {
     expect(notes).toHaveLength(1);
     const [note] = notes as [string];
     for (const words of [
-      "SEC_USER_AGENT is not set",
-      "SEC filings, financial statements, insider trades and sector screens",
+      "SEC_USER_AGENT is not set, so nothing is read from SEC EDGAR",
+      "filings, financial statements, insider trades, sector screens",
       'SEC_USER_AGENT="Your Name you@example.com"',
       "SEC's fair-access rule",
       "it is not a secret",
@@ -126,11 +126,47 @@ describe("SEC_USER_AGENT's notes", () => {
     expect(notes[0]).not.toContain("Jane");
   });
 
-  test("characters a header cannot carry: not used, and said", async () => {
+  test("characters a header cannot carry: not used, and said as that, not as unset", async () => {
     const { config, notes } = await publicDataConfig({ SEC_USER_AGENT: "홍길동 hong@example.com" }, paths);
     expect(config.secUserAgent).toBeUndefined();
-    expect(notes[0]).toStartWith("SEC_USER_AGENT holds characters other than plain ASCII");
-    expect(notes[0]).not.toContain("hong@example.com");
+    expect(notes).toEqual([
+      "SEC_USER_AGENT in the environment holds characters other than plain ASCII letters, digits and punctuation, which a User-Agent cannot carry, so it is not used",
+      'SEC_USER_AGENT has no value that can be used, so nothing is read from SEC EDGAR: write it as your name and email, such as SEC_USER_AGENT="Your Name you@example.com".',
+    ]);
+    expect(notes.join("\n")).not.toContain("hong@example.com");
+  });
+
+  test("on more than one line: not used, and said as that, not as unset", async () => {
+    const { config, notes } = await publicDataConfig({ SEC_USER_AGENT: "Jane Doe\njane@example.com" }, paths);
+    expect(config.secUserAgent).toBeUndefined();
+    expect(notes[0]).toBe("SEC_USER_AGENT in the environment spans more than one line, so it is not used");
+    expect(notes[1]).toStartWith("SEC_USER_AGENT has no value that can be used");
+    expect(notes.join("\n")).not.toContain("is not set");
+    expect(notes.join("\n")).not.toContain("jane@example.com");
+  });
+
+  test("an environment value that cannot be used gives way to credentials.json's, and says so", async () => {
+    await credentials({ data: { SEC_USER_AGENT: UA, FRED_API_KEY: "stored-fred-0123" } });
+    const { config, notes } = await publicDataConfig(
+      { SEC_USER_AGENT: "Jöhn Doe john@example.com", FRED_API_KEY: "two\nlines" },
+      paths,
+    );
+    expect(config.secUserAgent).toBe(UA);
+    expect(config.fredKey).toBe("stored-fred-0123");
+    expect(notes).toEqual([
+      `SEC_USER_AGENT in the environment holds characters other than plain ASCII letters, digits and punctuation, which a User-Agent cannot carry, so it is not used; the one under "data" in ${paths.credentials} is used instead`,
+      `FRED_API_KEY in the environment spans more than one line, so it is not used; the one under "data" in ${paths.credentials} is used instead`,
+    ]);
+    expect(notes.join("\n")).not.toContain("john@example.com");
+    expect(notes.join("\n")).not.toContain("stored-fred-0123");
+    // Stored in characters a header cannot carry, with nothing else set: said for the file, then that SEC is not read.
+    await credentials({ data: { SEC_USER_AGENT: "Jöhn Doe john@example.com" } });
+    const stored = await publicDataConfig({}, paths);
+    expect(stored.config.secUserAgent).toBeUndefined();
+    expect(stored.notes).toEqual([
+      `${paths.credentials}: data.SEC_USER_AGENT holds characters other than plain ASCII letters, digits and punctuation, which a User-Agent cannot carry, so it is not used`,
+      expect.stringContaining("SEC_USER_AGENT has no value that can be used"),
+    ]);
   });
 
   test("a good one says nothing", async () => {

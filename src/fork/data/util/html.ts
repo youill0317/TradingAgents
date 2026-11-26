@@ -4,16 +4,36 @@
 /**
  * HTML (and DART's XML-like report documents) as plain text, for a filing's sections: block elements
  * break lines, paragraphs and headings are set apart by a blank line, a table row is one line of
- * tab-separated cells, and character references are decoded (a no-break space reads as a space).
- * Scripts, styles, the document's head, templates, SVG, form selects and inline XBRL's hidden header
- * (`ix:header`) are left out. Whitespace runs collapse to one space except inside `pre`. It is tolerant
- * as browsers are: unclosed or stray tags, unquoted attributes and a `<` that starts no tag never stop
- * it, and it reads in one pass without recursion.
+ * tab-separated cells (a table inside a cell stays on the cell's line), and character references are
+ * decoded (a no-break space reads as a space). Scripts, styles, the document's head, templates, SVG, form
+ * selects and inline XBRL's hidden header (`ix:header`) are left out. Whitespace runs collapse to one space
+ * except inside `pre`. It is tolerant as browsers are: unclosed or stray tags, unquoted attributes, a `<`
+ * that starts no tag and a head whose end tag is left out (it ends where the body's content starts) never
+ * stop it. It reads in one pass, in time proportional to its input, without recursion.
  */
 import { decodeEntities, HTML_ENTITIES } from "./entities.js";
 
-/** Elements whose content is not text a reader sees. */
-const SKIPPED = new Set(["script", "style", "head", "template", "svg", "noscript", "select", "ix:header"]);
+/** Elements whose content is not text a reader sees, wherever they are. */
+const SKIPPED = new Set(["script", "style", "template", "svg", "noscript", "select", "ix:header"]);
+
+/**
+ * What a document's head holds (HTML's "in head" elements); any other start tag, or text, ends a head
+ * whose end tag was left out, and is read as the body's.
+ */
+const HEAD_CONTENT = new Set([
+  "base",
+  "basefont",
+  "bgsound",
+  "head",
+  "link",
+  "meta",
+  "noframes",
+  "noscript",
+  "script",
+  "style",
+  "template",
+  "title",
+]);
 
 /** Elements that start and end a line. */
 const BLOCK = new Set([
@@ -67,15 +87,40 @@ const PRE_SPACE = String.fromCharCode(0xe000);
 const PRE_TAB = String.fromCharCode(0xe001);
 /** A no-break space, which reads as a space. */
 const NBSP = String.fromCharCode(0xa0);
+/** A run of what reads as blank in a cell, `pre`'s stand-ins included; and a character that does not. */
+const BLANKS = new RegExp(`[\\s${PRE_SPACE}${PRE_TAB}]+`, "g");
+const VISIBLE = new RegExp(`[^\\s${PRE_SPACE}${PRE_TAB}]`);
 
-type Table = { row: string[] | null; cell: string | null; lines: string[] };
+/**
+ * A table cell's content: text as written (its whitespace not collapsed yet) and the tables inside it, in
+ * order; `filled` once it holds anything a reader sees.
+ */
+type Cell = { pieces: (string | Table)[]; filled: boolean };
+/**
+ * A table being read: its rows that hold something (each up to its last filled cell), and the row and the
+ * cell open. A table inside a cell is kept whole in it and written out with the outermost table, once.
+ */
+type Table = { rows: Cell[][]; row: Cell[] | null; cell: Cell | null };
 
 /** The text a reader sees in `html`. */
 export function htmlToText(html: string): string {
-  let out = "";
+  // The page so far, in parts joined at the end; `tail` holds its last characters, the only ones read
+  // back (never the whole page, which would copy it at each read).
+  const parts: string[] = [];
+  let tail = "";
   const tables: Table[] = [];
   let pre = 0;
+  // The head: open from its start tag until its end tag or the body's first content; one head per page,
+  // before any content (text or a table).
+  let inHead = false;
+  let headSeen = false;
+  let content = false;
 
+  const append = (text: string) => {
+    if (!text) return;
+    parts.push(text);
+    tail = text.length >= 4 ? text.slice(-4) : (tail + text).slice(-4);
+  };
   const table = () => tables[tables.length - 1];
   /**
    * Text into the open cell, else the open table's next cell, else the page. On the page, a space after a
@@ -83,25 +128,27 @@ export function htmlToText(html: string): string {
    * in more than one space.
    */
   const write = (text: string) => {
+    if (!content && VISIBLE.test(text)) content = true;
     const open = table();
     if (open) {
       if (open.cell === null) {
-        if (!text.trim()) return;
+        if (!VISIBLE.test(text)) return;
         open.row ??= [];
-        open.cell = "";
+        open.cell = { pieces: [], filled: false };
       }
-      open.cell += text;
+      open.cell.pieces.push(text);
+      if (!open.cell.filled && VISIBLE.test(text)) open.cell.filled = true;
       return;
     }
-    const last = out.charCodeAt(out.length - 1);
-    out += text.charCodeAt(0) === 32 && (out === "" || last === 32 || last === 10) ? text.slice(1) : text;
+    const last = tail.charCodeAt(tail.length - 1);
+    append(text.charCodeAt(0) === 32 && (tail === "" || last === 32 || last === 10) ? text.slice(1) : text);
   };
-  /** How many line ends close the page, past a space after them, counting to `most` at most. */
+  /** How many line ends close the page, past a space after them, counting to `most` (2 at most) at most. */
   const trailingBreaks = (most: number) => {
-    let end = out.length;
-    if (end > 0 && out.charCodeAt(end - 1) === 32) end--;
+    let end = tail.length;
+    if (end > 0 && tail.charCodeAt(end - 1) === 32) end--;
     let breaks = 0;
-    while (breaks < most && breaks < end && out.charCodeAt(end - breaks - 1) === 10) breaks++;
+    while (breaks < most && breaks < end && tail.charCodeAt(end - breaks - 1) === 10) breaks++;
     return breaks;
   };
   /**
@@ -111,12 +158,12 @@ export function htmlToText(html: string): string {
   const lineBreak = (blank: boolean) => {
     const open = table();
     if (open) {
-      if (open.cell !== null) open.cell += " ";
+      if (open.cell !== null) open.cell.pieces.push(" ");
       return;
     }
     const wanted = blank ? 2 : 1;
     const breaks = trailingBreaks(wanted);
-    if (breaks < wanted) out += "\n".repeat(wanted - breaks);
+    if (breaks < wanted) append("\n".repeat(wanted - breaks));
   };
   /**
    * A line break as written (`<br>`): each one counts, up to one blank line (the most the text keeps).
@@ -125,15 +172,15 @@ export function htmlToText(html: string): string {
   const newLine = () => {
     const open = table();
     if (open) {
-      if (open.cell !== null) open.cell += " ";
+      if (open.cell !== null) open.cell.pieces.push(" ");
       return;
     }
-    if (trailingBreaks(2) < 2) out += "\n";
+    if (trailingBreaks(2) < 2) append("\n");
   };
   const endCell = (open: Table) => {
     if (open.cell === null) return;
     open.row ??= [];
-    open.row.push(collapse(open.cell));
+    open.row.push(open.cell);
     open.cell = null;
   };
   const endRow = (open: Table) => {
@@ -141,8 +188,8 @@ export function htmlToText(html: string): string {
     if (open.row) {
       // Empty cells at the row's end are left out; a row of empty cells is no line.
       let last = open.row.length;
-      while (last > 0 && open.row[last - 1] === "") last--;
-      if (last > 0) open.lines.push(open.row.slice(0, last).join("\t"));
+      while (last > 0 && !(open.row[last - 1] as Cell).filled) last--;
+      if (last > 0) open.rows.push(open.row.slice(0, last));
     }
     open.row = null;
   };
@@ -152,13 +199,20 @@ export function htmlToText(html: string): string {
     endRow(open);
     const outer = table();
     if (outer) {
-      // A table inside a cell: its rows, in one line of the outer cell.
-      if (open.lines.length) write(` ${open.lines.map((line) => line.replaceAll("\t", " ")).join("; ")} `);
+      // A table inside a cell: its rows, in one line of the outer cell, written with the outermost table.
+      if (open.rows.length) {
+        if (outer.cell === null) {
+          outer.row ??= [];
+          outer.cell = { pieces: [], filled: false };
+        }
+        outer.cell.pieces.push(open);
+        outer.cell.filled = true;
+      }
       return;
     }
-    if (!open.lines.length) return;
+    if (!open.rows.length) return;
     lineBreak(true);
-    out += open.lines.join("\n");
+    append(open.rows.map((row) => row.map(cellText).join("\t")).join("\n"));
     lineBreak(true);
   };
 
@@ -166,7 +220,13 @@ export function htmlToText(html: string): string {
   while (at < html.length) {
     const lt = html.indexOf("<", at);
     const chunk = html.slice(at, lt < 0 ? html.length : lt);
-    if (chunk) write(textOf(chunk, pre > 0));
+    if (chunk) {
+      // Text in the head, other than the blanks between its elements, is the body's start.
+      if (!inHead || !/^[\t\n\f\r ]*$/.test(chunk)) {
+        inHead = false;
+        write(textOf(chunk, pre > 0));
+      }
+    }
     if (lt < 0) break;
     if (html.startsWith("<!--", lt)) {
       const end = html.indexOf("-->", lt + 4);
@@ -182,6 +242,7 @@ export function htmlToText(html: string): string {
     const nameStart = lt + (closing ? 2 : 1);
     const nameEnd = tagNameEnd(html, nameStart);
     if (nameEnd === nameStart || !startsName(html.charCodeAt(nameStart))) {
+      inHead = false;
       write("<");
       at = lt + 1;
       continue;
@@ -191,6 +252,15 @@ export function htmlToText(html: string): string {
     at = end;
     const selfClosing = html.charCodeAt(end - 2) === 47; /* "/>" */
     if (closing) {
+      if (inHead) {
+        // The head's end; or the body's or the page's, which end it too. Other end tags mean nothing there.
+        if (name === "head") {
+          inHead = false;
+          continue;
+        }
+        if (name !== "body" && name !== "html" && name !== "br") continue;
+        inHead = false;
+      }
       if (CELL.has(name)) {
         const open = table();
         if (open) endCell(open);
@@ -209,15 +279,29 @@ export function htmlToText(html: string): string {
       }
       continue;
     }
+    if (inHead) {
+      if (HEAD_CONTENT.has(name)) {
+        // The head's title is the document's name, not its text.
+        if ((name === "title" || name === "noframes") && !selfClosing) at = skippedEnd(html, end, name);
+        else if (SKIPPED.has(name) && !selfClosing) at = skippedEnd(html, end, name);
+        continue;
+      }
+      inHead = false;
+    }
     if (SKIPPED.has(name) && !selfClosing) {
       at = skippedEnd(html, end, name);
       continue;
     }
-    if (name === "br") {
+    if (name === "head") {
+      // A head opens only before anything is written; a stray one later is ignored, as browsers do.
+      if (!headSeen && !content && !selfClosing) inHead = true;
+      headSeen = true;
+    } else if (name === "br") {
       newLine();
     } else if (name === "table") {
       lineBreak(true);
-      tables.push({ row: null, cell: null, lines: [] });
+      content = true;
+      tables.push({ rows: [], row: null, cell: null });
     } else if (name === "tr") {
       const open = table();
       if (open) {
@@ -229,7 +313,7 @@ export function htmlToText(html: string): string {
       if (open) {
         endCell(open);
         open.row ??= [];
-        open.cell = "";
+        open.cell = { pieces: [], filled: false };
       } else write(" ");
     } else if (name === "pre") {
       lineBreak(true);
@@ -241,7 +325,7 @@ export function htmlToText(html: string): string {
     }
   }
   while (tables.length) endTable();
-  return tidy(out);
+  return tidy(parts.join(""));
 }
 
 /** A run of text as it reads: references decoded; outside `pre`, whitespace runs as one space. */
@@ -251,9 +335,61 @@ function textOf(raw: string, pre: boolean): string {
   return decoded.replace(/\s+/g, " ");
 }
 
-/** A cell's text on one line. */
-function collapse(text: string): string {
-  return text.replaceAll(PRE_SPACE, " ").replaceAll(PRE_TAB, " ").replace(/\s+/g, " ").trim();
+/**
+ * A cell's text on one line, its blanks collapsed to single spaces; a table inside it reads as its rows,
+ * their cells a space apart and the rows "; " apart, set off by spaces. Each piece is read once, depth
+ * first, without recursion.
+ */
+function cellText(cell: Cell): string {
+  const out: string[] = [];
+  // A space owed before the next text, if more text comes.
+  let owed = false;
+  const say = (raw: string) => {
+    const text = raw.replace(BLANKS, " ");
+    if (text === " ") owed = true;
+    if (text === " " || text === "") return;
+    const lead = text.charCodeAt(0) === 32;
+    const trail = text.charCodeAt(text.length - 1) === 32;
+    if ((owed || lead) && out.length) out.push(" ");
+    out.push(text.slice(lead ? 1 : 0, trail ? text.length - 1 : text.length));
+    owed = trail;
+  };
+  type Frame = { pieces: (string | Table)[]; at: number } | { rows: Cell[][]; row: number; cell: number };
+  const stack: Frame[] = [{ pieces: cell.pieces, at: 0 }];
+  while (stack.length) {
+    const top = stack[stack.length - 1] as Frame;
+    if ("pieces" in top) {
+      const piece = top.pieces[top.at++];
+      if (piece === undefined) stack.pop();
+      else if (typeof piece === "string") say(piece);
+      else {
+        owed = true;
+        stack.push({ rows: piece.rows, row: 0, cell: 0 });
+      }
+      continue;
+    }
+    const row = top.rows[top.row];
+    if (row === undefined) {
+      owed = true;
+      stack.pop();
+      continue;
+    }
+    const next = row[top.cell];
+    if (next === undefined) {
+      top.row++;
+      top.cell = 0;
+      if (top.row < top.rows.length) {
+        // Rows apart by "; ": the semicolon right after the row's text.
+        if (out.length) out.push(";");
+        owed = true;
+      }
+      continue;
+    }
+    if (top.cell > 0) owed = true;
+    top.cell++;
+    stack.push({ pieces: next.pieces, at: 0 });
+  }
+  return out.join("");
 }
 
 /** Lines trimmed, at most one blank line in a row, none at either end. */

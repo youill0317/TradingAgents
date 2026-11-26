@@ -7,7 +7,10 @@
  * <home>/cache/fork-data with TRADINGAGENTS_HOME), on disk across runs.
  *
  * - `remember(key, ttl, load)` answers a fresh kept value, else loads it; callers asking for the same key
- *   while it loads share that one load (a caller whose load was cancelled under it loads for itself).
+ *   while it loads share that one load. Each caller waits under its own `signal`: its cancellation stops
+ *   its own wait, never a load another caller waits on; and when the caller whose load it is was
+ *   cancelled (its signal aborted, whatever the error says), a caller waiting on it looks again and loads
+ *   for itself, or joins the load another waiting caller started first.
  * - A failed load is never kept. With `staleOnError`, a value past its time is served instead (and said
  *   to be stale) when reloading it fails for a reason of the source's (unavailable, rate_limited, quota).
  * - A key holding any configured secret is refused: a key is written in each disk entry, so a URL with
@@ -16,7 +19,8 @@
  *   cannot be read is a miss, and one that cannot be written leaves the value in memory only.
  *
  * Nothing limits how much is kept; entries past their time are dropped from memory as they are found,
- * and from disk once they are a month past it.
+ * and from disk once they are a month past it, with any temporary file a write left behind (a process
+ * stopped between writing and renaming) once it is an hour old.
  */
 import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
@@ -24,6 +28,7 @@ import { join } from "node:path";
 import { DataError } from "../../data/errors.js";
 import { writeAtomic } from "../../store/index.js";
 import { holdsSecret } from "./redact.js";
+import { abortable } from "./timer.js";
 
 /** How a value is written to disk: as JSON (plain data only), text or bytes. */
 export type DiskKind = "json" | "text" | "bytes";
@@ -35,6 +40,11 @@ export type KeepOptions = {
   memory?: boolean;
   /** Serve the value past its time when reloading it fails for a reason of the source's. */
   staleOnError?: boolean;
+  /**
+   * The caller's cancellation (the call's signal, which `load` should use too): it ends this caller's wait
+   * with the signal's reason, and tells a load cancelled under its caller from one that failed.
+   */
+  signal?: AbortSignal | undefined;
 };
 
 /** A kept value, when it was stored (epoch ms), and whether it is past its time. */
@@ -62,8 +72,17 @@ export type CacheOptions = {
 /** How long past its time a disk entry stays for `staleOnError` before it is swept. */
 const DISK_KEPT_PAST_MS = 30 * 86_400_000;
 
+/**
+ * How old a temporary file (`.<hex>.tmp`, writeAtomic's) is when it is swept: one that old belongs to no
+ * write still under way, in this process or another sharing the directory.
+ */
+const TEMPORARY_KEPT_MS = 3_600_000;
+
 /** Entries memory holds, by key, and what to sweep. */
 type Held = { value: unknown; storedAt: number; expires: number; stale: boolean };
+
+/** A load under way, and the signal of the caller whose load it is. */
+type Loading = { promise: Promise<Kept<unknown>>; signal: AbortSignal | undefined };
 
 /** The first line of a disk entry. */
 type Header = { v: 1; key: string; storedAt: number; expires: number; kind: DiskKind };
@@ -76,7 +95,7 @@ export function createCache(options: CacheOptions = {}): Cache {
   const secrets = options.secrets ?? [];
   const { dir } = options;
   const memory = new Map<string, Held>();
-  const loading = new Map<string, Promise<Kept<unknown>>>();
+  const loading = new Map<string, Loading>();
   let swept = false;
 
   const pathOf = (key: string) =>
@@ -155,18 +174,25 @@ export function createCache(options: CacheOptions = {}): Cache {
     options: KeepOptions = {},
   ): Promise<Kept<T>> {
     if (holdsSecret(key, secrets)) throw new Error("a cache key may not hold a key or secret");
-    const held = memory.get(key);
-    if (held && held.expires > now())
-      return { value: held.value as T, storedAt: held.storedAt, stale: false };
-    const pending = loading.get(key);
-    if (pending) {
+    const { signal } = options;
+    for (;;) {
+      if (signal?.aborted) throw signal.reason;
+      const fresh = memory.get(key);
+      if (fresh && fresh.expires > now())
+        return { value: fresh.value as T, storedAt: fresh.storedAt, stale: false };
+      const pending = loading.get(key);
+      if (!pending) break;
       try {
-        return (await pending) as Kept<T>;
+        return (await abortable(pending.promise, signal)) as Kept<T>;
       } catch (error) {
-        // Another caller's load was cancelled under it: this one loads for itself.
-        if (!isAbort(error)) throw error;
+        // This caller's own cancellation ends its wait.
+        if (signal?.aborted) throw signal.reason;
+        // A load that failed is the answer for everyone waiting on it; one cancelled under its own caller
+        // is not: look again (another caller waiting on it may have started its own load first).
+        if (!cancelledUnder(pending, error)) throw error;
       }
     }
+    const held = memory.get(key);
     const started = (async (): Promise<Kept<unknown>> => {
       const disk = options.disk ? await readDisk(key) : undefined;
       if (disk && disk.header.expires > now()) {
@@ -192,12 +218,13 @@ export function createCache(options: CacheOptions = {}): Cache {
       if (options.disk) await writeDisk(key, options.disk, value, storedAt, expires);
       return kept;
     })();
-    loading.set(key, started);
+    const entry: Loading = { promise: started, signal };
+    loading.set(key, entry);
     const done = () => {
-      if (loading.get(key) === started) loading.delete(key);
+      if (loading.get(key) === entry) loading.delete(key);
     };
     started.then(done, done);
-    return (await started) as Kept<T>;
+    return (await abortable(started, signal)) as Kept<T>;
   }
 
   return {
@@ -210,9 +237,14 @@ export function createCache(options: CacheOptions = {}): Cache {
   };
 }
 
-/** Whether `error` is a cancellation. */
-function isAbort(error: unknown): boolean {
-  return (error as { name?: unknown } | null)?.name === "AbortError";
+/**
+ * Whether the load `pending` ended because its caller was cancelled: that caller's signal is aborted; for a
+ * caller that gave none, the error is a cancellation or a timeout of its own.
+ */
+function cancelledUnder(pending: Loading, error: unknown): boolean {
+  if (pending.signal) return pending.signal.aborted;
+  const name = (error as { name?: unknown } | null)?.name;
+  return name === "AbortError" || name === "TimeoutError";
 }
 
 /** Whether `error` is the source failing (not the request, not an answer about the market, not a bug). */
@@ -220,7 +252,10 @@ function isSourceFailure(error: unknown): boolean {
   return error instanceof DataError && SOURCE_FAILURES.has(error.kind);
 }
 
-/** Removes the entries in `dir` that are more than DISK_KEPT_PAST_MS past their time. */
+/**
+ * Removes the entries in `dir` that are more than DISK_KEPT_PAST_MS past their time (by `at`, the cache's
+ * clock), and the temporary files of writes that never finished (by their age on the file system's clock).
+ */
 async function sweep(dir: string, at: number): Promise<void> {
   let names: string[];
   try {
@@ -229,6 +264,16 @@ async function sweep(dir: string, at: number): Promise<void> {
     return;
   }
   for (const name of names) {
+    if (/^\.[0-9a-f]+\.tmp$/.test(name)) {
+      const path = join(dir, name);
+      try {
+        const { mtimeMs } = await fs.stat(path);
+        if (mtimeMs < Date.now() - TEMPORARY_KEPT_MS) await fs.rm(path, { force: true });
+      } catch {
+        // Gone already, or not ours to remove.
+      }
+      continue;
+    }
     if (!name.endsWith(".entry")) continue;
     const path = join(dir, name);
     try {

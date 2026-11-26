@@ -1,0 +1,11 @@
+{
+  "source": "nyfed",
+  "name": "effr-search-2008-12",
+  "url": "https://markets.newyorkfed.org/api/rates/unsecured/effr/search.json?startDate=2008-12-12&endDate=2008-12-19",
+  "status": 200,
+  "content_type": "application/json;charset=utf-8",
+  "recorded_at": "2026-11-25T15:11:20.000Z",
+  "bytes": 1223,
+  "hand_made": false,
+  "note": "A real answer, kept whole: saved with the planning samples (macro/raw/nyfed-effr-search-2008-12.json, byte for byte), not recorded again; recorded_at is that answer's HTTP Date."
+}

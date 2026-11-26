@@ -1,0 +1,11 @@
+{
+  "source": "nyfed",
+  "name": "obfr-last5",
+  "url": "https://markets.newyorkfed.org/api/rates/unsecured/obfr/last/5.json",
+  "status": 200,
+  "content_type": "application/json;charset=utf-8",
+  "recorded_at": "2026-11-25T14:57:53.000Z",
+  "bytes": 1203,
+  "hand_made": false,
+  "note": "A real answer, kept whole: saved with the planning samples (macro/raw/nyfed-obfr-last5.json, byte for byte), not recorded again; recorded_at is that answer's HTTP Date."
+}

@@ -26,6 +26,7 @@
 import { readdirSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { ExtendedCookieJar } from "yahoo-finance2/lib/cookieJar";
 import { resolvePaths } from "../../src/config/paths.js";
 import { type PublicDataConfig, publicDataConfig, secretsOf } from "../../src/fork/data/config.js";
 import { forkDeps, type YahooFinanceClient, yahooClient } from "../../src/fork/data/deps.js";
@@ -136,8 +137,12 @@ function urlOf(one: FixtureCase, config: PublicDataConfig): string | undefined {
   return typeof one.url === "function" ? one.url(config) : one.url;
 }
 
-/** Yahoo's raw answers to calls made through `fetch` (see YahooAnswer). */
+/**
+ * Yahoo's raw answers to calls made through `fetch` (see YahooAnswer). Its clients share one cookie jar, so
+ * a run asks Yahoo for its cookie and crumb once, as the app's one client does.
+ */
 export function yahooAnswerer(fetchImpl: typeof globalThis.fetch): YahooAnswer {
+  const cookieJar = new ExtendedCookieJar();
   return async (call, match) => {
     const answers: {
       url: string;
@@ -163,7 +168,7 @@ export function yahooAnswerer(fetchImpl: typeof globalThis.fetch): YahooAnswer {
     }) as typeof globalThis.fetch;
     let failure: unknown;
     try {
-      await call(yahooClient(capturing));
+      await call(yahooClient(capturing, { cookieJar }));
     } catch (error) {
       // The raw answer is what is recorded; the library's refusal of it is said only when there is none.
       failure = error;

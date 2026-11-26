@@ -1,0 +1,1 @@
+{ "refRates": [ { "effectiveDate": "2026-11-24", "type": "TGCR" ,"percentRate": 3.92 ,"percentPercentile1": 3.84 ,"percentPercentile25": 3.92 ,"percentPercentile75": 3.93 ,"percentPercentile99": 3.95 ,"volumeInBillions": 1225 ,"revisionIndicator": "" } ] }

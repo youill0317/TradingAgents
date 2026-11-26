@@ -1,0 +1,11 @@
+{
+  "source": "nyfed",
+  "name": "sofr-search-weekend",
+  "url": "https://markets.newyorkfed.org/api/rates/secured/sofr/search.json?startDate=2026-11-21&endDate=2026-11-22",
+  "status": 200,
+  "content_type": "application/json;charset=utf-8",
+  "recorded_at": "2026-11-25T14:58:20.000Z",
+  "bytes": 19,
+  "hand_made": false,
+  "note": "A real answer, kept whole: saved with the planning samples (macro/raw/nyfed-sofr-search-weekend.json, byte for byte), not recorded again; recorded_at is that answer's HTTP Date."
+}

@@ -1,0 +1,11 @@
+{
+  "source": "treasury",
+  "name": "real-2026",
+  "url": "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/2026/all?type=daily_treasury_real_yield_curve&field_tdr_date_value=2026&page&_format=csv",
+  "status": 200,
+  "content_type": "text/csv; charset=UTF-8",
+  "recorded_at": "2026-11-25T14:57:03.000Z",
+  "bytes": 8142,
+  "hand_made": false,
+  "note": "A real answer, kept whole: saved with the planning samples (macro/raw/treasury-real-2026.csv, byte for byte), not recorded again; recorded_at is that answer's HTTP Date."
+}

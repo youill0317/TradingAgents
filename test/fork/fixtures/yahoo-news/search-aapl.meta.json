@@ -1,0 +1,11 @@
+{
+  "source": "yahoo-news",
+  "name": "search-aapl",
+  "url": "https://query2.finance.yahoo.com/v1/finance/search?lang=en-US&region=US&quotesCount=0&newsCount=12&enableFuzzyQuery=false&quotesQueryId=tss_match_phrase_query&multiQuoteQueryId=multi_quote_single_token_query&newsQueryId=news_cie_vespa&enableCb=true&enableNavLinks=true&enableEnhancedTrivialQuery=true&q=AAPL",
+  "status": 200,
+  "content_type": "application/json;charset=utf-8",
+  "recorded_at": "2026-11-25T22:00:00.000Z",
+  "bytes": 6086,
+  "hand_made": true,
+  "note": "Hand-made, not recorded (Yahoo answers only yahoo-finance2's own User-Agent, and none was recorded here): Yahoo's v1 search answer in the shape yahoo-finance2 4.0.6's search schema validates (SearchResult with SearchNews items: uuid, title, publisher, link, providerPublishTime in epoch seconds, type, thumbnail, relatedTickers), asked with quotesCount 0, with invented articles and publishers: twelve articles about AAPL published 2026-11-19 to 2026-11-25, newest first; a test serves the first newsCount of them, as Yahoo answers at most that many."
+}

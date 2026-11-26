@@ -1,0 +1,73 @@
+{
+ "explains": [],
+ "count": 3,
+ "quotes": [],
+ "news": [
+  {
+   "uuid": "63ceedb2-c36a-5007-b6f0-a2469d7b5493",
+   "title": "Samsung Electronics shares rise on memory chip pricing",
+   "publisher": "Example Asia Wire",
+   "link": "https://finance.yahoo.com/news/samsung-electronics-shares-rise-memory-795591200.html",
+   "providerPublishTime": 1795591200,
+   "type": "STORY",
+   "thumbnail": {
+    "resolutions": [
+     {
+      "url": "https://s.yimg.com/uu/api/res/1.2/fixture0/original.jpg",
+      "width": 1200,
+      "height": 800,
+      "tag": "original"
+     },
+     {
+      "url": "https://s.yimg.com/uu/api/res/1.2/fixture0/140x140.jpg",
+      "width": 140,
+      "height": 140,
+      "tag": "140x140"
+     }
+    ]
+   },
+   "relatedTickers": [
+    "005930.KS"
+   ]
+  },
+  {
+   "uuid": "54f3b33e-662f-556a-8361-bfb2c33936f9",
+   "title": "KOSPI opens higher as chip stocks gain",
+   "publisher": "Sample Markets Daily",
+   "link": "https://finance.yahoo.com/news/kospi-opens-higher-chip-stocks-795561500.html",
+   "providerPublishTime": 1795561500,
+   "type": "STORY",
+   "relatedTickers": [
+    "005930.KS",
+    "000660.KS"
+   ]
+  },
+  {
+   "uuid": "7887282e-38b6-5c46-a3a9-1d1bbf42364d",
+   "title": "Samsung foundry unit updates customers on 2nm schedule",
+   "publisher": "Example Business Korea",
+   "link": "https://finance.yahoo.com/news/samsung-foundry-customer-update-795488000.html",
+   "providerPublishTime": 1795488000,
+   "type": "STORY",
+   "relatedTickers": [
+    "005930.KS"
+   ]
+  }
+ ],
+ "nav": [],
+ "lists": [],
+ "researchReports": [],
+ "screenerFieldResults": [],
+ "culturalAssets": [],
+ "totalTime": 38,
+ "timeTakenForQuotes": 0,
+ "timeTakenForNews": 600,
+ "timeTakenForAlgowatchlist": 400,
+ "timeTakenForPredefinedScreener": 400,
+ "timeTakenForCrunchbase": 0,
+ "timeTakenForNav": 400,
+ "timeTakenForResearchReports": 0,
+ "timeTakenForScreenerField": 0,
+ "timeTakenForCulturalAssets": 0,
+ "timeTakenForSearchLists": 0
+}

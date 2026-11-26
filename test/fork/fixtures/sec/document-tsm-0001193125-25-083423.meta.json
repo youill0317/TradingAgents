@@ -1,0 +1,11 @@
+{
+  "source": "sec",
+  "name": "document-tsm-0001193125-25-083423",
+  "url": "https://www.sec.gov/Archives/edgar/data/1046179/000119312525083423/d896993d20f.htm",
+  "status": 200,
+  "content_type": "text/html",
+  "recorded_at": "2026-11-26T00:00:00.000Z",
+  "bytes": 3980,
+  "hand_made": true,
+  "note": "Hand-made, not recorded (www.sec.gov answers only a User-Agent that names a contact): a short stand-in for the primary document of TSMC's 20-F for 2024 (filing 0001193125-25-083423, d896993d20f.htm as SEC's filing index names it), laid out as EDGAR's 20-F documents are: a table of contents listing every Item with its page, the body's Part and Item headings, sections a few paragraphs long. The text is written for the tests, not the filer's own; the statement figures shown are those SEC's XBRL data holds for the filing, any other figure is invented. To be checked against the live document once SEC_USER_AGENT is set."
+}

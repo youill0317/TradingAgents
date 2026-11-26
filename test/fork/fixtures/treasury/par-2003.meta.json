@@ -1,0 +1,11 @@
+{
+  "source": "treasury",
+  "name": "par-2003",
+  "url": "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/2003/all?type=daily_treasury_yield_curve&field_tdr_date_value=2003&page&_format=csv",
+  "status": 200,
+  "content_type": "text/csv; charset=UTF-8",
+  "recorded_at": "2026-11-25T15:08:43.000Z",
+  "bytes": 381,
+  "hand_made": false,
+  "note": "An excerpt of a real answer: the header and the 3 newest and 2 oldest rows of the 2003 par yield curve file saved with the planning samples (macro/raw/treasury-par-2003.csv, 15,326 bytes whole), not recorded again; recorded_at is that answer's HTTP Date. Kept for its columns, which differ from 2026's."
+}

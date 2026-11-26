@@ -1,0 +1,11 @@
+{
+  "source": "ecb",
+  "name": "exr-xxx-nodata",
+  "url": "https://data-api.ecb.europa.eu/service/data/EXR/D.XXX.EUR.SP00.A?format=csvdata&lastNObservations=1",
+  "status": 404,
+  "content_type": "application/problem+json",
+  "recorded_at": "2026-11-25T15:00:01.000Z",
+  "bytes": 430,
+  "hand_made": false,
+  "note": "A real answer, kept whole: saved with the planning samples (macro/raw/ecb-exr-xxx-nodata.csv, byte for byte), not recorded again; recorded_at is that answer's HTTP Date."
+}

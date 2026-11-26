@@ -1,0 +1,11 @@
+{
+  "source": "yahoo",
+  "name": "chart-aapl-events",
+  "url": "https://query2.finance.yahoo.com/v8/finance/chart/AAPL?interval=1d&events=div%7Csplit&period1=1927-01-01",
+  "status": 200,
+  "content_type": "application/json;charset=utf-8",
+  "recorded_at": "2026-11-25T22:00:00.000Z",
+  "bytes": 2258,
+  "hand_made": true,
+  "note": "Hand-made, not recorded: Yahoo's v8 chart answer for AAPL's whole daily history with its events, in the shape yahoo-finance2 4.0.6's chart schema validates: AAPL's real split dates and ratios (1987, 2000, 2005: 2:1; 2014: 7:1; 2020: 4:1) and quarterly dividends since 2024 (split adjusted, the 2026 amounts invented), keyed by epoch seconds as Yahoo keys them; the bars are cut to the last five sessions (a real answer holds every session since 1980)."
+}

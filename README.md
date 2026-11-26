@@ -15,8 +15,13 @@ key or plan, and keeps your sessions on this computer.
 
 - **Models**: OpenAI, Anthropic, Google, DeepSeek and OpenRouter with your API key, a ChatGPT plan, or a
   model you serve yourself behind an OpenAI-compatible API (vLLM, Ollama, LM Studio).
-- **Market data**: quotes and daily price history from Yahoo (`quote`, `price_history`), and event odds from
-  Polymarket's prediction markets (`prediction_markets`).
+- **Market data** from free public sources ([which serves what](docs/fork/data-sources.md)): quotes, daily
+  and intraday prices, technicals, company profiles and analyst estimates, corporate actions, institutional
+  holders and news by symbol from Yahoo; economic series from the U.S. Treasury, the New York Fed, the ECB
+  and FRED; currency pairs' reference rates from the ECB; news by words or topic from GDELT; event odds from
+  Polymarket's prediction markets. With `SEC_USER_AGENT` set (your name and email,
+  [configuration](docs/configuration.md#public-data)), SEC EDGAR adds financial statements, filings and
+  their sections, insider transactions, and sector screens over the S&P 1500.
 - **Web search**: `web_search`, through Anthropic's or OpenAI's own web search, or Google's when named
   ([below](#web-search)).
 - **Compute**: arithmetic, statistics, returns and risk, correlation and beta, technical indicators,
@@ -25,20 +30,19 @@ key or plan, and keeps your sessions on this computer.
 - **Sessions and output**: plan mode, sessions to resume, an answer saved as a PDF report or Markdown, and
   `tradingagents -p` for one question from a script.
 
-The other data tools answer that they are not available in this setup: financial statements, SEC filings,
-news, company profiles and estimates, ownership, corporate actions, the `technicals` snapshot, macro series,
-instrument search, market overviews and sector screens.
+Instrument search (`find_instrument`) and market overviews (`markets`) are not served yet: they answer that
+they are not available in this setup.
 
-For now the main agent researches on its own. Each of the four built-in agents (Equity Research, Macro
-Strategy, Quant Research and Risk Analysis) needs some of that data and is offered once it is there, and the
-sixteen built-in skills, written for them, come with them; `/agents` and `/skills` show which are offered. An
-agent of your own is offered when the data tools it names have a source
+With `SEC_USER_AGENT` set, three of the four built-in agents (Equity Research, Quant Research and Risk
+Analysis) are offered, and the sixteen built-in skills, written for them, come with them; Macro Strategy is
+offered once market overviews are served. Without it, the main agent researches on its own. `/agents` and
+`/skills` show which are offered. An agent of your own is offered when the data tools it names have a source
 ([docs/usage.md](docs/usage.md#your-own-agents-and-skills)).
 
 ## What is coming
 
-Free public data sources are being added, among them SEC EDGAR, FRED, the ECB, OpenDART, ECOS, KOSIS and
-data.go.kr. The built-in agents and skills are offered as the data they need becomes available.
+Market overviews and instrument search, then Korean sources: OpenDART, ECOS, KOSIS and data.go.kr. Macro
+Strategy is offered once market overviews are served.
 
 ## Build and install
 

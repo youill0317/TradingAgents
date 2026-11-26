@@ -1,0 +1,11 @@
+{
+  "source": "sec",
+  "name": "companyfacts-bac",
+  "url": "https://data.sec.gov/api/xbrl/companyfacts/CIK0000070858.json",
+  "status": 200,
+  "content_type": "application/json",
+  "recorded_at": "2026-11-25T14:39:29.000Z",
+  "bytes": 54446,
+  "hand_made": false,
+  "note": "SEC's answer saved from data.sec.gov on 2026-11-25 with the SEC area's live samples (companyfacts-bac.trimmed.json, itself cut from the complete 7,015,252-byte answer), trimmed for the tests to every concept the line catalog reads and dei's EntityCommonStockSharesOutstanding, facts whose period ends on or after 2025-01-01, 305 facts in all; every fact, concept and unit kept is as SEC answered it."
+}

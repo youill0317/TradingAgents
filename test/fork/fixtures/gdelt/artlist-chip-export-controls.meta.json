@@ -1,0 +1,11 @@
+{
+  "source": "gdelt",
+  "name": "artlist-chip-export-controls",
+  "url": "https://api.gdeltproject.org/api/v2/doc/doc?query=chip+export+controls&mode=artlist&format=json&maxrecords=250&sort=datedesc",
+  "status": 200,
+  "content_type": "application/json; charset=utf-8",
+  "recorded_at": "2026-11-25T22:00:00.000Z",
+  "bytes": 1669,
+  "hand_made": true,
+  "note": "Hand-made, not recorded (api.gdeltproject.org was not reachable from the development session): GDELT DOC 2.0's ArtList answer in its documented JSON form ({articles: [{url, url_mobile, title, seendate, socialimage, domain, language, sourcecountry}]}, newest first), with invented articles at reserved example domains: four articles matching \"chip export controls\" seen 2026-11-23 to 2026-11-25, one of them in German."
+}

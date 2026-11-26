@@ -3,7 +3,7 @@
 // Added in this fork of TradingAgents 1.0.0.
 /** The cache in memory and in a temporary directory, with a clock the tests move. */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DataError } from "../../../src/data/errors.js";
@@ -89,6 +89,101 @@ describe("in memory", () => {
     await expect(first).rejects.toMatchObject({ name: "AbortError" });
     expect(await second).toBe("mine");
     expect(calls).toBe(2);
+  });
+
+  test("a load cancelled under its caller, whatever the reason given, is loaded again for a caller waiting on it", async () => {
+    for (const reason of [
+      new DOMException("The operation timed out.", "TimeoutError"),
+      new Error("question cancelled"),
+    ]) {
+      const cache = createCache({ now: clock });
+      const controller = new AbortController();
+      let release = () => {};
+      // The first caller's load ends when its call is cancelled, with the call's reason.
+      const theirs = () =>
+        new Promise<string>((_, reject) => {
+          release = () => reject(controller.signal.reason);
+        });
+      const first = cache.remember("list", 1_000, theirs, { signal: controller.signal });
+      const second = cache.remember("list", 1_000, async () => "fresh list");
+      controller.abort(reason);
+      release();
+      await expect(first).rejects.toBe(reason);
+      expect(await second).toBe("fresh list");
+    }
+  });
+
+  test("a caller's own cancellation ends its wait at once; the load it waited on goes on and is kept", async () => {
+    const cache = createCache({ now: clock });
+    let finish = (_: string) => {};
+    let calls = 0;
+    const slow = () => {
+      calls++;
+      return new Promise<string>((resolve) => {
+        finish = resolve;
+      });
+    };
+    const loading = cache.remember("k", 60_000, slow);
+    const leaving = new AbortController();
+    const waiting = cache.remember("k", 60_000, slow, { signal: leaving.signal });
+    leaving.abort(new Error("left"));
+    await expect(waiting).rejects.toThrow("left");
+    finish("loaded");
+    expect(await loading).toBe("loaded");
+    expect(await cache.remember("k", 60_000, slow)).toBe("loaded");
+    expect(calls).toBe(1);
+    // A caller cancelled before it asks loads nothing.
+    const gone = new AbortController();
+    gone.abort();
+    await expect(cache.remember("other", 60_000, slow, { signal: gone.signal })).rejects.toMatchObject({
+      name: "AbortError",
+    });
+    expect(calls).toBe(1);
+  });
+
+  test("after a load cancelled under its caller, the callers that waited on it share one new load", async () => {
+    const cache = createCache({ now: clock });
+    const controller = new AbortController();
+    let calls = 0;
+    const cancelledLoad = () => {
+      calls++;
+      return new Promise<string>((_, reject) => {
+        controller.signal.addEventListener("abort", () => reject(controller.signal.reason));
+      });
+    };
+    const load = async () => {
+      calls++;
+      return "shared";
+    };
+    const first = cache.remember("k", 1_000, cancelledLoad, { signal: controller.signal });
+    const waiting = [cache.remember("k", 1_000, load), cache.remember("k", 1_000, load)];
+    controller.abort();
+    await expect(first).rejects.toMatchObject({ name: "AbortError" });
+    expect(await Promise.all(waiting)).toEqual(["shared", "shared"]);
+    expect(calls).toBe(2);
+  });
+
+  test("a load that fails for a reason of its own is the answer of every caller waiting on it", async () => {
+    const cache = createCache({ now: clock });
+    let calls = 0;
+    let fail = () => {};
+    const load = () => {
+      calls++;
+      return new Promise<string>((_, reject) => {
+        fail = () => reject(new DataError("unavailable", "down", { source: "X" }));
+      });
+    };
+    const signal = new AbortController().signal;
+    const asked = Promise.allSettled([
+      cache.remember("k", 1_000, load, { signal }),
+      cache.remember("k", 1_000, load, { signal }),
+    ]);
+    fail();
+    expect((await asked).map((one) => (one.status === "rejected" ? String(one.reason) : one.value))).toEqual([
+      "DataError: down",
+      "DataError: down",
+    ]);
+    expect(calls).toBe(1);
   });
 
   test("a stale value is served when reloading fails for the source's reason, and said to be stale", async () => {
@@ -232,6 +327,20 @@ describe("on disk", () => {
     await cache.forget("k");
     expect(await readdir(dir)).toEqual([]);
     expect(await cache.remember("k", 60_000, async () => "w", { disk: "text" })).toBe("w");
+  });
+
+  test("temporary files a stopped write left behind are swept once they are an hour old", async () => {
+    const left = join(dir, ".0123456789abcdef.tmp");
+    const writing = join(dir, ".fedcba9876543210.tmp");
+    await writeFile(left, "half an entry");
+    await writeFile(writing, "an entry being written");
+    const twoHoursAgo = new Date(Date.now() - 2 * 3_600_000);
+    await utimes(left, twoHoursAgo, twoHoursAgo);
+    await createCache({ dir, now: clock }).remember("k", 60_000, async () => "v", { disk: "text" });
+    const names = await readdir(dir);
+    expect(names).not.toContain(".0123456789abcdef.tmp");
+    expect(names).toContain(".fedcba9876543210.tmp");
+    expect(names.filter((name) => name.endsWith(".entry"))).toHaveLength(1);
   });
 
   test("entries a month past their time are swept when the cache first writes", async () => {

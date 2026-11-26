@@ -314,8 +314,18 @@ describe("waits and retries", () => {
       source: "ECB",
       signal: controller.signal,
     });
+    while (!requests.length) await Bun.sleep(0);
     controller.abort();
     await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    expect(requests).toHaveLength(1);
+    // Cancelled before it was sent, it sends nothing.
+    const early = new AbortController();
+    const unsent = client(fetch).http.get("https://data-api.ecb.europa.eu/y", {
+      source: "ECB",
+      signal: early.signal,
+    });
+    early.abort();
+    await expect(unsent).rejects.toMatchObject({ name: "AbortError" });
     expect(requests).toHaveLength(1);
   });
 
@@ -335,10 +345,14 @@ describe("the rates services publish", () => {
       ["www.sec.gov", "data.sec.gov", "efts.sec.gov", "SEC.GOV"].map((host) => ruleFor(host)?.name),
     ).toEqual(["sec.gov", "sec.gov", "sec.gov", "sec.gov"]);
     expect(ruleFor("api.stlouisfed.org")?.pace).toEqual({ requests: 120, perMs: 60_000 });
+    // FRED's website: robots.txt's Crawl-delay of one second.
+    expect(ruleFor("fred.stlouisfed.org")?.pace).toEqual({ requests: 1, perMs: 1_000 });
     expect(ruleFor("api.gdeltproject.org")?.pace).toEqual({ requests: 1, perMs: 5_000 });
-    expect(
-      ["notsec.gov", "fred.stlouisfed.org", "data-api.ecb.europa.eu"].map((host) => ruleFor(host)),
-    ).toEqual([undefined, undefined, undefined]);
+    expect(["notsec.gov", "stlouisfed.org", "data-api.ecb.europa.eu"].map((host) => ruleFor(host))).toEqual([
+      undefined,
+      undefined,
+      undefined,
+    ]);
   });
 
   test("SEC: ten requests in any second, across its hosts", async () => {
@@ -479,5 +493,166 @@ describe("who is named, and what is never said", () => {
     await expect(
       client(scripted(ok("")).fetch).http.get(`not a url ${KEY}`, { source: "X" }),
     ).rejects.toThrow("the data client was given something that is not a URL");
+  });
+});
+
+describe("pauses a source asks for, shared requests, and starts that run late", () => {
+  const wiki = (title: string) => `https://en.wikipedia.org/w/index.php?title=${title}&action=raw`;
+
+  test("a Retry-After holds for the host's next requests: refused unsent while it outlasts their deadline, waited for when it fits", async () => {
+    const { fetch, requests } = scripted(status(429, { "retry-after": "120" }), ok("list"));
+    const { http, timer } = client(fetch);
+    const first = await failure(http.text(wiki("A"), { source: "Wikipedia" }));
+    expect([first.kind, first.details.retryAfterMs]).toEqual(["rate_limited", 120_000]);
+    // No time has passed: Wikipedia asked for 120 s of quiet, so the next request is not sent.
+    const second = await failure(http.text(wiki("B"), { source: "Wikipedia" }));
+    expect([second.kind, second.details.retryAfterMs]).toEqual(["rate_limited", 120_000]);
+    expect(second.message).toBe(
+      "Wikipedia asked to wait before its next request, 120 s more: longer than this one's 30 s deadline.",
+    );
+    expect(requests).toHaveLength(1);
+    // Another host is not held.
+    expect(await http.text("https://markets.newyorkfed.org/api/x", { source: "New York Fed" })).toBe("list");
+    // A caller whose deadline the pause fits waits it out, then asks.
+    expect(await http.text(wiki("C"), { source: "Wikipedia", timeoutMs: 150_000 })).toBe("list");
+    expect(timer.slept).toEqual([120_000]);
+    expect(requests.map((request) => request.url)).toEqual([
+      wiki("A"),
+      "https://markets.newyorkfed.org/api/x",
+      wiki("C"),
+    ]);
+    // Once it has passed, requests go at once.
+    expect(await http.text(wiki("D"), { source: "Wikipedia" })).toBe("list");
+    expect(timer.slept).toEqual([120_000]);
+  });
+
+  test("SEC's hosts share their pause, as they share their rate", async () => {
+    const { fetch, requests } = scripted(status(503, { "retry-after": "40" }), ok("{}"));
+    const { http } = client(fetch, { secUserAgent: "Jane Doe jane@example.com" });
+    const refused = await failure(http.text("https://www.sec.gov/files/x.json", { source: "SEC EDGAR" }));
+    expect([refused.kind, refused.details.status]).toEqual(["rate_limited", 503]);
+    const held = await failure(
+      http.text("https://data.sec.gov/submissions/CIK0000320193.json", { source: "SEC EDGAR" }),
+    );
+    expect([held.kind, held.details.retryAfterMs]).toEqual(["rate_limited", 40_000]);
+    expect(requests).toHaveLength(1);
+  });
+
+  test("a host is the same host in capitals or with the trailing dot of a fully-qualified name", async () => {
+    expect(ruleFor("DATA.SEC.GOV.")?.name).toBe("sec.gov");
+    expect(ruleFor("api.gdeltproject.org.")?.name).toBe("api.gdeltproject.org");
+    expect(requestTimeout("data-api.ecb.europa.eu.")).toBe(FORK_REQUEST_MS.slow);
+    const { fetch, requests } = scripted(ok("{}"));
+    for (const url of [
+      "https://query1.finance.yahoo.com./v7/finance/quote?symbols=AAPL",
+      "https://FINANCE.YAHOO.COM../quote/AAPL",
+    ]) {
+      await expect(client(fetch).http.get(url, { source: "x" })).rejects.toThrow("yahoo-finance2");
+    }
+    expect(requests).toEqual([]);
+    const { http, timer } = client(fetch, { secUserAgent: "Jane Doe jane@example.com" });
+    await Promise.all(
+      Array.from({ length: 15 }, () =>
+        http.text("https://data.sec.gov./submissions/CIK0000320193.json", { source: "SEC EDGAR" }),
+      ),
+    );
+    expect(timer.slept).toEqual([1_000, 1_000, 1_000, 1_000, 1_000]);
+    expect(new Set(requests.map((request) => request.headers.get("user-agent")))).toEqual(
+      new Set(["Jane Doe jane@example.com"]),
+    );
+  });
+
+  const gdelt = (query: string) =>
+    `https://api.gdeltproject.org/api/v2/doc/doc?query=${query}&mode=ArtList&format=json`;
+  /** Lets the fake timer wake every sleeper there is. */
+  const settle = async () => {
+    for (let i = 0; i < 20; i++) await new Promise((resolve) => setImmediate(resolve));
+  };
+
+  test("GDELT: a request every caller has cancelled is cancelled unsent, and its turn given back", async () => {
+    const { fetch, requests } = scripted((url) => ok(url));
+    const { http, timer } = client(fetch);
+    await http.text(gdelt("first"), { source: "GDELT" });
+    // Six questions at once, each waiting for its turn; the person cancels the run.
+    const controller = new AbortController();
+    const asked = ["fed", "ecb", "oil", "china", "jobs", "chips"].map((query) =>
+      http
+        .text(gdelt(query), { source: "GDELT", signal: controller.signal })
+        .catch((error: Error) => error.name),
+    );
+    controller.abort();
+    expect(await Promise.all(asked)).toEqual(Array.from({ length: 6 }, () => "AbortError"));
+    await settle();
+    expect(requests.map((request) => new URL(request.url).searchParams.get("query"))).toEqual(["first"]);
+    // The next question takes the first turn after "first", not one after the cancelled six.
+    expect(await http.text(gdelt("again"), { source: "GDELT" })).toBe(gdelt("again"));
+    expect(timer.slept.at(-1)).toBe(5_000);
+    expect(requests).toHaveLength(2);
+  });
+
+  test("GDELT: a caller already cancelled starts nothing", async () => {
+    const { fetch, requests } = scripted((url) => ok(url));
+    const { http } = client(fetch);
+    const gone = new AbortController();
+    gone.abort();
+    await expect(http.text(gdelt("fed"), { source: "GDELT", signal: gone.signal })).rejects.toMatchObject({
+      name: "AbortError",
+    });
+    expect(requests).toHaveLength(0);
+    expect(await http.text(gdelt("fed"), { source: "GDELT" })).toBe(gdelt("fed"));
+    expect(requests).toHaveLength(1);
+  });
+
+  test("GDELT: a caller does not join a shared request whose turn comes after its own deadline", async () => {
+    const { fetch, requests } = scripted((url) => ok(url));
+    const { http } = client(fetch);
+    await http.text(gdelt("first"), { source: "GDELT" });
+    const waiting = http.text(gdelt("second"), { source: "GDELT" });
+    const hurried = await failure(http.text(gdelt("second"), { source: "GDELT", timeoutMs: 1_000 }));
+    expect([hurried.kind, hurried.details.retryAfterMs]).toEqual(["rate_limited", 5_000]);
+    expect(hurried.message).toContain("this one's turn comes after its 1 s deadline");
+    const patient = http.text(gdelt("second"), { source: "GDELT", timeoutMs: 10_000 });
+    expect(await waiting).toBe(gdelt("second"));
+    expect(await patient).toBe(gdelt("second"));
+    expect(requests).toHaveLength(2);
+  });
+
+  test("a turn cancelled while it waits is given back to those after it", async () => {
+    const { fetch } = scripted(ok("{}"));
+    const { http, timer } = client(fetch);
+    const sec = (i: number) => `https://data.sec.gov/x/${i}`;
+    await Promise.all(Array.from({ length: 10 }, (_, i) => http.text(sec(i), { source: "SEC EDGAR" })));
+    // Ten more would wait for the next second; they are cancelled while they wait.
+    const controller = new AbortController();
+    const cancelled = Array.from({ length: 10 }, (_, i) =>
+      http.text(sec(10 + i), { source: "SEC EDGAR", signal: controller.signal }).catch(() => "cancelled"),
+    );
+    controller.abort();
+    await Promise.all(cancelled);
+    await http.text(sec(99), { source: "SEC EDGAR" });
+    // The next second's first turn, not the one after the ten cancelled.
+    expect(timer.slept.at(-1)).toBe(1_000);
+  });
+
+  test("starts are counted when they are made: requests woken late never put more in a second than SEC allows", async () => {
+    const starts: number[] = [];
+    // The second second's turns are woken 4 ms late, the third's 1 ms late, as a busy timer may.
+    const timer = fakeTimer(0, (index) => (index < 10 ? 4 : 1));
+    const fetch = (async () => {
+      starts.push(timer.now());
+      return ok("{}");
+    }) as unknown as typeof globalThis.fetch;
+    const http = createHttp({ fetch, timer, pacer: new Pacer(), secUserAgent: "Jane Doe jane@example.com" });
+    const hosts = ["https://data.sec.gov/x", "https://www.sec.gov/y", "https://efts.sec.gov/z"];
+    await Promise.all(
+      Array.from({ length: 25 }, (_, i) => http.text(`${hosts[i % 3]}/${i}`, { source: "SEC EDGAR" })),
+    );
+    expect(starts).toHaveLength(25);
+    const most = Math.max(
+      ...starts.map((start) => starts.filter((t) => t >= start && t < start + 1_000).length),
+    );
+    expect(most).toBe(10);
+    // The third second's requests waited for the second's late starts to leave the window.
+    expect(Math.min(...starts.slice(20))).toBeGreaterThanOrEqual(Math.max(...starts.slice(10, 20)) + 1_000);
   });
 });

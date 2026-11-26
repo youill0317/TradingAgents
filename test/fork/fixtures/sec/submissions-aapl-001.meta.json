@@ -1,0 +1,11 @@
+{
+  "source": "sec",
+  "name": "submissions-aapl-001",
+  "url": "https://data.sec.gov/submissions/CIK0000320193-submissions-001.json",
+  "status": 200,
+  "content_type": "application/json",
+  "recorded_at": "2026-11-25T14:38:08.000Z",
+  "bytes": 7676,
+  "hand_made": false,
+  "note": "SEC's answer saved from data.sec.gov on 2026-11-25 with the SEC area's live samples (submissions-aapl-001.json, 207,073 bytes), trimmed for the tests: its columns cut from 1,278 to 44 rows (every 10-K, 10-K405 and 10-K/A, and other filings than insider reports among its first 40), in SEC's order, at the top level as SEC writes an older page."
+}

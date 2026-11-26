@@ -9,12 +9,19 @@ or supported by Tauric Research.
 - Tauric's services are removed: the Tauric data provider, the Tauric AI model provider, Tauric keys, login
   and sign-up, session sync and account calls, and the `tauric_view` tool with the syntheses capability.
   Sessions stay on this computer.
-- Quotes and daily price history come from Yahoo, and prediction-market odds from Polymarket. Free
-  public-data providers will be added; until one serves a capability, asking for it answers that it is not
-  available in this setup. The built-in agents and skills are offered as the data they need becomes
-  available. Their settings, SEC's User-Agent and the agencies' keys, are read from the environment or
-  from a `"data"` object in `credentials.json` ([configuration](docs/configuration.md#public-data)); how the
-  providers are built is in [docs/fork/data-architecture.md](docs/fork/data-architecture.md).
+- Market data comes from free public sources: Yahoo (quotes, daily and intraday prices, technicals, company
+  profiles and analyst estimates, corporate actions, institutional holders, news by symbol), SEC EDGAR
+  (financial statements, filings and their sections, insider transactions, and sector screens over the
+  S&P 1500 lists on Wikipedia), the U.S. Treasury, the New York Fed, the ECB and FRED (economic series, and
+  the ECB's reference rates for currency pairs), GDELT (news by words or topic) and Polymarket
+  (prediction-market odds). SEC EDGAR is read only with `SEC_USER_AGENT` set. The market views and
+  instrument search are not served yet: asking for them answers that they are not available in this setup.
+  A built-in agent is offered when every data tool it names is served: equity, quant and risk with
+  `SEC_USER_AGENT`, with the built-in skills; macro once the market views are. The settings, SEC's
+  User-Agent and the agencies' keys, are read from the environment or from a `"data"` object in
+  `credentials.json` ([configuration](docs/configuration.md#public-data)); which source serves what is in
+  [docs/fork/data-sources.md](docs/fork/data-sources.md), and how the providers are built in
+  [docs/fork/data-architecture.md](docs/fork/data-architecture.md).
 - A `web_search` tool searches the web through Anthropic's or OpenAI's own search when a key for one of
   them is set (the chat model's provider first when it is one of them), or through Google Search grounding
   when `TRADINGAGENTS_WEB_SEARCH` names Google.
@@ -148,7 +155,10 @@ this fork.
    ```
 
    The tests make no real call: `bunfig.toml` runs them behind a network guard (`test/fork/preload.ts`)
-   that fails any test reaching a host other than 127.0.0.1 or localhost.
+   that fails any test reaching a host other than 127.0.0.1 or localhost. Run them from the repository
+   root, where `bunfig.toml` is read. `check-notices.sh` also refuses a tracked symbolic link (a
+   worktree's `node_modules` link, which `.gitignore`'s `node_modules/` does not match): untrack one with
+   `git rm --cached <path>`.
 
    Then push the work branch, and no tags: `git push origin claude/dazzling-fermat-ik4q5y`. The Fork
    workflow runs the same checks on each push to it and each pull request into it.
