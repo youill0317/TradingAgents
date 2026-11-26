@@ -3,8 +3,10 @@
 // Added in this fork of TradingAgents 1.0.0.
 /**
  * "SEC EDGAR", routes.ts key `filers`: what companies file with the SEC. Served only when SEC_USER_AGENT is set
- * (SEC's fair-access rule asks every program to name its sender); without it nothing is declared, so these
- * capabilities show as not available and the start-up note says what to set.
+ * (SEC's fair-access rule asks every program to name its sender); without it statements and filings are not
+ * declared, so they show as not available and the start-up note says what to set. Ownership is offered either
+ * way (Yahoo serves its institutional view), so without it the insider view answers not_configured, naming
+ * SEC_USER_AGENT and the view that is served.
  *
  * - statements.statement: SEC's XBRL facts (companyfacts), us-gaap or, for 20-F filers, ifrs-full in the
  *   reporting currency (never mixed with the USD convenience translations those filers add), each value the
@@ -12,9 +14,10 @@
  *   8-K recast, a prospectus or a proxy statement never wins), with its filing and acceptance time. Facts are
  *   classified by the length of their period, not by the filing's fy/fp. Quarters are three-month values;
  *   additive flows not filed for a quarter alone are computed (a cash-flow quarter as year-to-date differences,
- *   a fourth quarter as the year less nine months), each computed value naming both filings; per-share
- *   figures and share counts are never computed. A newest periodic report that SEC's XBRL data does not hold yet
- *   is said in the filer's coverage.
+ *   a fourth quarter as the year less nine months) from the line's first concept that gives the quarter, its two
+ *   values as they stood at one time (one restated after the other's last filing is taken as filed before, and
+ *   said), each computed value naming both filings; per-share figures and share counts are never computed. A
+ *   newest periodic report that SEC's XBRL data does not hold yet is said in the filer's coverage.
  * - filings.list: the filing index (submissions), its recent filings and as many older pages as the page and
  *   the cursor need, newest accepted first, filtered by exact form ("/A" amendments when asked for), each with
  *   the sections filing_section reads for its form.
@@ -26,6 +29,7 @@
  * SEC links no predecessor filers, so each answer's succession names the company's own CIK and says that history
  * before it is not linked. In Phase 4 the provider adds OpenDART for Korean filers.
  */
+import { NOTICE } from "../../../contracts/index.js";
 import type {
   DataProvider,
   FieldStates,
@@ -39,7 +43,15 @@ import type {
   Succession,
 } from "../../../data/capabilities.js";
 import { DataError } from "../../../data/errors.js";
-import { type CatalogLine, type LineFormula, linesOf, type StatementKind } from "../catalog/lines.js";
+import {
+  type CatalogLine,
+  evaluateFormula,
+  formulaConcepts,
+  formulaWords,
+  type LineFormula,
+  linesOf,
+  type StatementKind,
+} from "../catalog/lines.js";
 import type { ForkDeps } from "../deps.js";
 import {
   ANNUAL_FORMS,
@@ -72,8 +84,28 @@ const DAY_MS = 86_400_000;
 const invalid = (message: string) =>
   new DataError("invalid", message, { source: SEC_SOURCE, retry: "change_request" });
 
+/** The insider view's answer without SEC_USER_AGENT: what to set, and the view that is served. */
+export function insiderNeedsSec(): DataError {
+  return new DataError(
+    "not_configured",
+    `Insider transactions come from SEC EDGAR, which is read only with SEC_USER_AGENT set (a name and email, in the environment or under "data" in credentials.json): SEC's fair-access rule asks every program that reads EDGAR to name its sender. Institutional holders are served: ownership with view=institutional.`,
+    { source: SEC_SOURCE, code: NOTICE.capabilityUnavailable, retry: "never" },
+  );
+}
+
 export function filersProvider(deps: ForkDeps): DataProvider {
-  if (!deps.config.secUserAgent) return { name: SEC_SOURCE, capabilities: {} };
+  if (!deps.config.secUserAgent) {
+    return {
+      name: SEC_SOURCE,
+      capabilities: {
+        ownership: {
+          transactions: async () => {
+            throw insiderNeedsSec();
+          },
+        },
+      },
+    };
+  }
   const sec = secSource(deps);
   return {
     name: SEC_SOURCE,
@@ -160,8 +192,11 @@ function weekdaysAfter(date: string, count: number): string {
 
 type Taxonomy = "us-gaap" | "ifrs-full";
 
-/** A fact chosen for its period: the latest filed, and the first filed (a restatement when they differ). */
-type Chosen = { fact: Fact; first: Fact };
+/**
+ * A fact chosen for its period: the latest filed, the first filed (a restatement when they differ), and every
+ * fact filed for the period, in the order filed.
+ */
+type Chosen = { fact: Fact; first: Fact; history: Fact[] };
 
 /** One concept's facts in one unit, the latest filed per period: by period, and by period end. */
 type Series = { byPeriod: Map<string, Chosen>; byEnd: Map<string, Chosen[]> };
@@ -189,14 +224,16 @@ function seriesOf(facts: readonly Fact[]): Series {
   for (const fact of facts) {
     const key = fact.start ? `${fact.start}/${fact.end}` : fact.end;
     const held = byPeriod.get(key);
-    if (!held) byPeriod.set(key, { fact, first: fact });
+    if (!held) byPeriod.set(key, { fact, first: fact, history: [fact] });
     else {
       if (filedAfter(fact, held.fact)) held.fact = fact;
       if (filedAfter(held.first, fact)) held.first = fact;
+      held.history.push(fact);
     }
   }
   const byEnd = new Map<string, Chosen[]>();
   for (const chosen of byPeriod.values()) {
+    chosen.history.sort((a, b) => (filedAfter(a, b) ? 1 : filedAfter(b, a) ? -1 : 0));
     const list = byEnd.get(chosen.fact.end);
     if (list) list.push(chosen);
     else byEnd.set(chosen.fact.end, [chosen]);
@@ -250,8 +287,7 @@ class Book {
   /** Whether the filer ever filed a value of the line (its concepts, its formula's, its cover-page count). */
   knows(line: CatalogLine): boolean {
     const unit = this.unitOf(line);
-    const formula = this.formula(line);
-    const concepts = [...this.tags(line), ...(formula?.add ?? []), ...(formula?.subtract ?? [])];
+    const concepts = [...this.tags(line), ...formulaConcepts(this.formula(line), true)];
     if (concepts.some((concept) => this.series(concept, unit).byPeriod.size > 0)) return true;
     return line.dei !== undefined && this.series(line.dei, "shares", "dei").byPeriod.size > 0;
   }
@@ -465,36 +501,73 @@ function annualCell(book: Book, line: CatalogLine, period: Period): Cell {
   return missing("not filed for this fiscal year");
 }
 
-/** The value of a duration line in a quarter: filed for the quarter, or computed from year-to-date values. */
+/** The value a period's fact had when `other` was filed: the last filed with it or before it, else the first. */
+function asOf(chosen: Chosen, other: Fact): Fact {
+  let found = chosen.first;
+  for (const fact of chosen.history) if (!filedAfter(fact, other)) found = fact;
+  return found;
+}
+
+/** The first filing of a period's latest value, since which every filing has given it. */
+function latestSince(chosen: Chosen): Fact {
+  let since = chosen.fact;
+  for (let index = chosen.history.length - 1; index >= 0; index--) {
+    const fact = chosen.history[index] as Fact;
+    if (fact.val !== chosen.fact.val) break;
+    since = fact;
+  }
+  return since;
+}
+
+/**
+ * A quarter as the difference of two of one concept's year-to-date (or annual) values. Both are taken as they
+ * stood at one time: a value restated after the other's last filing is taken as filed before the restatement.
+ */
+function differenceCell(line: CatalogLine, concept: string, through: Chosen, before: Chosen): Cell {
+  let [a, b] = [through.fact, before.fact];
+  let restated: string | undefined;
+  for (const [changed, other] of [
+    [through, before],
+    [before, through],
+  ] as const) {
+    const then = asOf(changed, other.fact);
+    if (then.val === changed.fact.val) continue;
+    if (changed === through) a = then;
+    else b = then;
+    restated = `the ${span(changed.fact)} was restated to ${amount(changed.fact.val)} in ${filing(latestSince(changed))}, after the last filing of the ${span(other.fact)}, so it is taken as filed before then`;
+    break;
+  }
+  const states: Cell["states"] = {
+    value: { reason: `computed: ${filing(a)} (${span(a)}) less ${filing(b)} (${span(b)})`, retry: "never" },
+  };
+  if (restated) states.restated = { reason: restated, retry: null };
+  const note = line.notes?.[concept];
+  if (note) states.concept = { reason: note, retry: null };
+  return { value: a.val - b.val, facts: [a, b], states };
+}
+
+/**
+ * The value of a duration line in a quarter: each concept in order, filed for the quarter or computed from its
+ * own year-to-date values, so a line keeps to one concept where that concept gives the quarter either way.
+ */
 function quarterCell(book: Book, line: CatalogLine, period: Period): Cell {
   const unit = book.unitOf(line);
   const start = period.start as string;
-  for (const concept of book.tags(line)) {
-    const found = nearest(book.series(concept, unit), period.end, ["quarter"], start, 7);
-    if (found) return filedCell(line, concept, found);
-  }
   const yearStart = period.yearStart;
+  const computable = line.additive && yearStart !== undefined && yearStart !== start;
+  for (const concept of book.tags(line)) {
+    const series = book.series(concept, unit);
+    const found = nearest(series, period.end, ["quarter"], start, 7);
+    if (found) return filedCell(line, concept, found);
+    if (!computable) continue;
+    const through = nearest(series, period.end, ["half", "nine", "year"], yearStart, 3);
+    const before = nearest(series, addDays(start, -1), ["quarter", "half", "nine"], yearStart, 3);
+    if (through && before) return differenceCell(line, concept, through, before);
+  }
   if (!line.additive) {
     return missing(
       "no three-month value filed; per-share figures and share counts are not computed from year-to-date or annual values",
     );
-  }
-  if (yearStart && yearStart !== start) {
-    for (const concept of book.tags(line)) {
-      const series = book.series(concept, unit);
-      const through = nearest(series, period.end, ["half", "nine", "year"], yearStart, 3);
-      const before = nearest(series, addDays(start, -1), ["quarter", "half", "nine"], yearStart, 3);
-      if (!through || !before) continue;
-      const states: Cell["states"] = {
-        value: {
-          reason: `computed: ${filing(through.fact)} (${span(through.fact)}) less ${filing(before.fact)} (${span(before.fact)})`,
-          retry: "never",
-        },
-      };
-      const note = line.notes?.[concept];
-      if (note) states.concept = { reason: note, retry: null };
-      return { value: through.fact.val - before.fact.val, facts: [through.fact, before.fact], states };
-    }
   }
   return missing("not filed for this quarter");
 }
@@ -511,34 +584,17 @@ function instantCell(book: Book, line: CatalogLine, period: Period): Cell {
     if (found) return filedCell(line, concept, found);
   }
   const formula = book.formula(line);
-  if (formula) {
-    const added = formula.add.map((concept) => [concept, at(concept)] as const).filter(([, found]) => found);
-    const subtracted = (formula.subtract ?? [])
-      .map((concept) => [concept, at(concept)] as const)
-      .filter(([, found]) => found);
-    const complete =
-      formula.needs === "any"
-        ? added.length > 0
-        : added.length === formula.add.length && subtracted.length === (formula.subtract ?? []).length;
-    if (complete) {
-      const facts = [...added, ...subtracted].map(([, found]) => (found as Chosen).fact);
-      const value =
-        added.reduce((sum, [, found]) => sum + (found as Chosen).fact.val, 0) -
-        subtracted.reduce((sum, [, found]) => sum + (found as Chosen).fact.val, 0);
-      const names = (list: readonly (readonly [string, unknown])[]) =>
-        list.map(([concept]) => concept).join(" + ");
-      const sources = [...new Set(facts.map(filing))].join(", ");
-      return {
-        value,
-        facts,
-        states: {
-          value: {
-            reason: `computed: ${names(added)}${subtracted.length ? ` less ${names(subtracted)}` : ""}, as filed in ${sources}`,
-            retry: "never",
-          },
-        },
-      };
-    }
+  const derived = formula ? evaluateFormula(formula, at, (found) => found.fact.val) : undefined;
+  if (derived) {
+    const facts = [...derived.added, ...derived.subtracted].map(([, found]) => found.fact);
+    const sources = [...new Set(facts.map(filing))].join(", ");
+    return {
+      value: derived.value,
+      facts,
+      states: {
+        value: { reason: `computed: ${formulaWords(derived)}, as filed in ${sources}`, retry: "never" },
+      },
+    };
   }
   if (line.dei) {
     // The cover page states the count at a date after the period's end (the report's own date).

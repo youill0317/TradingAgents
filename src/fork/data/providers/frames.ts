@@ -32,7 +32,15 @@ import type {
 } from "../../../data/capabilities.js";
 import { DataError } from "../../../data/errors.js";
 import { SECTOR_NAMES } from "../catalog/gics.js";
-import { type CatalogLine, findLine, LINES, type LineFormula } from "../catalog/lines.js";
+import {
+  type CatalogLine,
+  evaluateFormula,
+  findLine,
+  formulaConcepts,
+  formulaWords,
+  LINES,
+  type LineFormula,
+} from "../catalog/lines.js";
 import type { ForkDeps } from "../deps.js";
 import { SEC_SOURCE } from "../sources/sec.js";
 import {
@@ -199,27 +207,15 @@ function computed(
   formula: LineFormula,
   rowFor: (concept: string) => FrameRow | undefined,
 ): Value | undefined {
-  const found = (concepts: readonly string[]) =>
-    concepts.map((concept) => [concept, rowFor(concept)] as const).filter(([, row]) => row);
-  const added = found(formula.add);
-  const subtracted = found(formula.subtract ?? []);
-  const complete =
-    formula.needs === "any"
-      ? added.length > 0
-      : added.length === formula.add.length && subtracted.length === (formula.subtract ?? []).length;
-  const first = (added[0] ?? subtracted[0])?.[1];
-  if (!complete || !first) return undefined;
-  const value =
-    added.reduce((sum, [, row]) => sum + (row as FrameRow).value, 0) -
-    subtracted.reduce((sum, [, row]) => sum + (row as FrameRow).value, 0);
-  const names = (list: readonly (readonly [string, unknown])[]) =>
-    list.map(([concept]) => concept).join(" + ");
+  const derived = evaluateFormula(formula, rowFor, (row) => row.value);
+  const first = (derived?.added[0] ?? derived?.subtracted[0])?.[1];
+  if (!derived || !first) return undefined;
   return {
-    value,
+    value: derived.value,
     start: first.start,
     end: first.end,
     accession: first.accession,
-    derivation: `${names(added)}${subtracted.length ? ` less ${names(subtracted)}` : ""}`,
+    derivation: formulaWords(derived),
   };
 }
 
@@ -263,9 +259,8 @@ async function durationValues(
   }
   const formula = line.compute?.usGaap;
   if (formula && lacking().length) {
-    const concepts = [...formula.add, ...(formula.subtract ?? [])];
     const pairs = new Map<string, readonly [Frame, Frame]>();
-    for (const concept of concepts) pairs.set(concept, await yearsOf(concept));
+    for (const concept of formulaConcepts(formula)) pairs.set(concept, await yearsOf(concept));
     for (const member of lacking()) {
       const cik = member.cik as string;
       // The components must be of one period: the first one found sets it.
@@ -370,9 +365,7 @@ async function instantValues(
   const formula = line.compute?.usGaap;
   if (formula && lacking().length) {
     const lists = new Map<string, Frame[]>();
-    for (const concept of [...formula.add, ...(formula.subtract ?? [])]) {
-      lists.set(concept, await quartersOf(concept));
-    }
+    for (const concept of formulaConcepts(formula)) lists.set(concept, await quartersOf(concept));
     for (const member of lacking()) {
       const cik = member.cik as string;
       const end = ends.get(cik) as string;

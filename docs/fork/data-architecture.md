@@ -40,6 +40,7 @@ src/fork/data/
     lines.ts        statement lines: names as the tools write them, XBRL concepts in order, formulas (statements, screens)
     series.ts       the economic series macro_series names, under the skills' names, with aliases and FRED codes
     gics.ts         GICS's 2023 tree: each sub-industry's industry, industry group and sector
+    markets.ts      what each market view lists: keys, the Treasury's maturities, rates, FRED series, Yahoo's screens
   compute/
     technicals.ts   the technicals capability's 22 indicators from daily bars
   sources/
@@ -84,11 +85,14 @@ daily, intraday and paired price history, technicals, profiles (profile, analyst
 and institutional holders (upstream's Yahoo provider, unchanged, answers US listings and its venues; the
 composite answers Korean listings, futures, currency and crypto pairs and price series itself); `ecbProvider`
 a pair's reference rates; `statisticsProvider` macro series (the Treasury, the New York Fed, the ECB, FRED);
-`newsProvider` news by symbol (Yahoo) and by words, topic or the market's latest (GDELT). With SEC_USER_AGENT:
+`newsProvider` news by symbol (Yahoo) and by words, topic or the market's latest (GDELT); `marketsProvider`
+the 22 market views (Yahoo, the Treasury, the New York Fed, the ECB, FRED); `instrumentsProvider` instrument
+search (the catalogs and Yahoo's search, and SEC's ticker list with SEC_USER_AGENT). With SEC_USER_AGENT:
 `filersProvider` statements, filings (list and section) and insider transactions, `framesProvider` sector
-screens. `marketsProvider` and `instrumentsProvider` declare nothing yet. So the engine offers no built-in
-agent without SEC_USER_AGENT, and equity, quant and risk with the 16 built-in skills with it; macro waits for
-the market views (`test/fork/gating.test.ts`).
+screens; without it `filersProvider` declares only insider transactions, which answer `not_configured`
+naming SEC_USER_AGENT (ownership is offered either way: Yahoo serves its institutional view). So the engine
+offers macro with the 16 built-in skills without SEC_USER_AGENT, and all four built-in agents with it
+(`test/fork/gating.test.ts`).
 
 ### Who changes what
 
@@ -96,19 +100,21 @@ the market views (`test/fork/gating.test.ts`).
   `catalog/<name>.ts`, `compute/<name>.ts`, tests under `test/fork/data/`, fixtures under
   `test/fork/fixtures/<source>/`, case modules under `scripts/fork/fixture-cases/<source>.ts`.
 - Shared, changed only on their own and with their tests: `index.ts`, `deps.ts`, `config.ts`, `http.ts`,
-  `cache.ts`, `listings.ts`, `redact.ts`, `timer.ts`, `util/*`, `catalog/instruments.ts`,
+  `cache.ts`, `listings.ts`, `redact.ts`, `timer.ts`, `util/*`, `catalog/instruments.ts`, `catalog/series.ts`,
   `sources/sec-tickers.ts`, `sources/yahoo-call.ts`, `test/fork/net-guard.ts`, `test/fork/preload.ts`,
   `test/fork/data/harness.ts` and the fixture `test/fork/fixtures/sec/company-tickers-exchange.json`. Rows
-  added to `catalog/instruments.ts` never change what an existing key names. Their interfaces are fixed so
-  the providers can be built in parallel on them; a provider that needs more of one says so rather than
-  writing its own copy.
+  added to `catalog/instruments.ts` or `catalog/series.ts` never change what an existing key names. Their
+  interfaces are fixed so the providers can be built in parallel on them; a provider that needs more of one
+  says so rather than writing its own copy.
 - SEC's ticker list (filers, frames, instrument search) is `sources/sec-tickers.ts`, and every Yahoo read
   maps its failures with `sources/yahoo-call.ts`. Any other source more than one provider reads has one
   module, which the next provider reuses rather than writing its own: the market views read Yahoo's quotes
   and charts through `sources/yahoo.ts` (`planOf`, `readQuotes`, `quoteOf`, `readDaily`), the yield curve
-  and breakevens through `sources/treasury.ts`, the rate indicators through `sources/nyfed.ts`, and the
-  central banks through `sources/nyfed.ts` and `sources/ecb.ts`; instrument search reads the catalogs
-  (`catalog/instruments.ts`, `catalog/series.ts`) and SEC's ticker list.
+  and breakevens through `sources/treasury.ts`, the rate indicators through `sources/nyfed.ts`, the
+  central banks through `sources/nyfed.ts`, `sources/ecb.ts` and `sources/fred.ts`, and FRED's series
+  through `sources/fred.ts`; every value-series key a view gives (the Treasury's, the New York Fed's, the
+  ECB's, FRED's) is one `catalog/series.ts` holds, so macro_series reads it as given. Instrument search reads the catalogs (`catalog/instruments.ts`, `catalog/series.ts`)
+  and SEC's ticker list.
 - Upstream files stay as they are except `src/data/routes.ts` (the routing table), `src/engine/factory.ts`
   (`EngineSettings.publicData` and `dataProviders`), `src/cli/main.tsx` (the config read once, passed to
   each engine, its notes said at start) and docs. Never edit `src/data/capabilities.ts`,
@@ -188,6 +194,9 @@ its environment variable, else from the `"data"` object in `credentials.json` un
 | `beaKey`, `eiaKey`                   | `BEA_API_KEY`, `EIA_API_KEY`                                                                                   |
 | `cacheDir`                           | `<home>/cache/fork-data` with `TRADINGAGENTS_HOME`, else `${XDG_CACHE_HOME:-~/.cache}/tradingagents/fork-data` |
 
+No provider reads `dartKey` through `eiaKey`: they are read for sources this version does not have (Korea's,
+Naver's news search, BEA, EIA), and `docs/configuration.md` says so.
+
 The notes it returns are said as the session starts, like web_search's: SEC_USER_AGENT unset (nothing is
 read from SEC EDGAR, how to set it, that it is SEC's fair-access rule and not a secret), or set without an
 email; a setting set where it cannot be used, said as such and not used: on more than one line, not text,
@@ -199,10 +208,11 @@ not an object, or a name in it the app does not read, is said too. A note names 
 client and the cache are built with it.
 
 A capability whose source needs a setting that is not there is not declared when the whole capability rests
-on it: without SEC_USER_AGENT the SEC-backed capabilities (statements, filings, insider transactions,
-screens) are not declared, so they show as not available and the agents that need them are not offered,
-while the start-up note says what to set. Where only some requests need a key (one FRED series in a catalog
-of keyless ones), the call answers `not_configured`, naming the variable and where to get a key.
+on it: without SEC_USER_AGENT the SEC-backed capabilities (statements, filings, screens) are not declared,
+so they show as not available and the agents that need them are not offered, while the start-up note says
+what to set. Where only some requests need a setting (one FRED series in a catalog of keyless ones;
+ownership's insider view, whose institutional view Yahoo serves), the call answers `not_configured`, naming
+the variable (and where to get a key) in a message shown as it is (`code: NOTICE.capabilityUnavailable`).
 
 ## HTTP: http.ts
 
@@ -386,17 +396,19 @@ A provider is a `DataProvider`: `{ name, capabilities }`, each capability an `Im
 answer the data alone; the router adds `source`, `notes` and `after`. Declare a capability only when the
 provider can serve it in this setup; declare only the methods it serves (the router asks the next provider
 in the chain for a method a provider lacks). A declaration is what gating counts: an agent is offered only
-when every data tool it names has a provider, so never declare a capability that will always fail.
+when every data tool it names has a provider, so never declare a capability that will always fail. The one
+exception is a method of a capability another provider serves, declared to say which setting it needs
+(ownership's insider view without SEC_USER_AGENT): gating counts capabilities, so it changes nothing there.
 
 ```ts
-export function filersProvider(deps: ForkDeps): DataProvider {
+export function framesProvider(deps: ForkDeps): DataProvider {
   if (!deps.config.secUserAgent) return { name: "SEC EDGAR", capabilities: {} };
+  const sources = { universe: spUniverse(deps), tickers: secTickers(deps), frames: secFrames(deps) };
   return {
     name: "SEC EDGAR",
     capabilities: {
-      filings: {
-        list: (symbol, query, call) => listFilings(deps, symbol, query, call),
-        section: (target, query, call) => readSection(deps, target, query, call),
+      crossSections: {
+        financials: (query, call) => financials(deps, sources, query, call),
       },
     },
   };
@@ -566,20 +578,27 @@ expect(fetch.unmatched).toEqual([]);
 - Golden render tests run each data tool a provider serves through `runTool` and compare `text`; the read
   check asserts `run.reads.missing()` holds only fields the provider leaves out on purpose.
 - `test/fork/data/all-tools.test.ts` runs every data tool once (once per method where a tool reads more than
-  one) through all the fork's providers together, as a setup with SEC_USER_AGENT builds them, and Polymarket,
-  on the providers' fixtures: each call answers, from the source the router names, with no field the tool
-  reads left out (upstream Yahoo's own optional fields aside), so a change that drops one fails there. A data
-  tool added without a call there fails it too.
-- `test/fork/gating.test.ts` pins the agents and skills an engine offers: as built (`AS_BUILT`: none), and
-  with the fork's providers as each configuration builds them over a fixture fetch (none without
-  SEC_USER_AGENT; equity, quant and risk with the 16 built-in skills with it, whatever other key is set;
-  macro once the market views are served). Update it as each provider lands.
+  one, statements annual and quarterly, news by symbol and by topic, markets once per view) through all the
+  fork's providers together, as a setup with SEC_USER_AGENT builds them, and Polymarket, on the providers'
+  fixtures: each call answers, from the source the router names, with no field the tool reads by name left
+  out (upstream Yahoo's own optional fields aside) and, of a record it passes on whole, none of the keys
+  `SPREAD_KEYS` or a view's `VIEW_KEYS` (`markets-routes.test.ts`) name, so a change that drops one fails
+  there. A data tool added without a call there fails it too.
+- `test/fork/gating.test.ts` pins the agents and skills an engine offers: as built (`AS_BUILT`: macro with
+  the 16 built-in skills), and with the fork's providers as each configuration builds them over a fixture
+  fetch (macro without SEC_USER_AGENT; all four with it, whatever other key is set), each the agents whose
+  every data tool the routed providers serve. Update it when a provider changes what it declares.
 
 Before a change is done, run the checks FORK.md lists under "Taking an upstream release" (step 5), from
 `npm run typecheck` through `sh scripts/fork/check-notices.sh main` (with `export
 PATH=/opt/node22/bin:/root/.bun/bin:$PATH` in the cloud session; never `npm ci` or `npm install` there).
 The compiled executable may be run only against a local stub model that answers without a tool call, so
-it asks no source for data.
+it asks no source for data. A stub model lists its context window in `/v1/models` as vLLM does
+(`max_model_len`, as the stubs of `scripts/smoke.sh` and of the fork's check of the request the executable
+sends a model do): with the built-in agents and skills offered, the app's estimate of the main agent's first
+request (two characters a token, plus the step's output, at most a quarter of the window, and a margin of
+2,048 tokens) is more than the 32,768 tokens assumed for a server that reports none
+(`test/fork/context-window.test.ts`).
 
 Biome's formatter rewrites a Unicode escape in a string or a regular expression (a backslash, `u` and four
 hex digits) as the character itself, invisible ones included: write such a character with

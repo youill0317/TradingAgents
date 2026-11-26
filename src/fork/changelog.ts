@@ -20,7 +20,8 @@ const FORK_NOTES: { readonly [version: string]: VersionNotes["sections"] } = {
       heading: "This fork",
       items: [
         "This fork needs no data account, and sessions stay on this computer.",
-        "Data: prices from Yahoo and event odds from Polymarket. Free public data sources are being added; the built-in agents and skills listed below are offered once the data they need is, and none is yet.",
+        "Data: quotes and prices, company data, economic series, news, market overviews, event odds and instrument search from free public sources (Yahoo, the U.S. Treasury, the New York Fed, the ECB, FRED, GDELT, Polymarket), and with SEC_USER_AGENT set SEC EDGAR's statements, filings, insider transactions and sector screens over Wikipedia's S&P lists.",
+        "Agents: Macro Strategy and the built-in skills are offered in every setup; Equity Research, Quant Research and Risk Analysis with SEC_USER_AGENT set.",
         "Web search: `web_search` searches the web through Anthropic's or OpenAI's own search with your key for it, or through Google's when TRADINGAGENTS_WEB_SEARCH names it.",
         "Models: OpenAI, Anthropic, Google, DeepSeek, OpenRouter, AI subscriptions (ChatGPT), or self-hosted models.",
       ],

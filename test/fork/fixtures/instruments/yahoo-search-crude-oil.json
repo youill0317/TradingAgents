@@ -1,0 +1,57 @@
+{
+ "explains": [],
+ "count": 3,
+ "quotes": [
+  {
+   "exchange": "NYM",
+   "shortname": "Crude Oil Jan 27",
+   "quoteType": "FUTURE",
+   "symbol": "CL=F",
+   "index": "quotes",
+   "score": 20580,
+   "typeDisp": "Futures",
+   "exchDisp": "NY Mercantile",
+   "isYahooFinance": true
+  },
+  {
+   "exchange": "NYM",
+   "shortname": "Brent Crude Oil Last Day Financ",
+   "quoteType": "FUTURE",
+   "symbol": "BZ=F",
+   "index": "quotes",
+   "score": 20320,
+   "typeDisp": "Futures",
+   "exchDisp": "NY Mercantile",
+   "isYahooFinance": true
+  },
+  {
+   "exchange": "PCX",
+   "shortname": "United States Oil Fund",
+   "quoteType": "ETF",
+   "symbol": "USO",
+   "index": "quotes",
+   "score": 20150,
+   "typeDisp": "ETF",
+   "longname": "United States Oil Fund, LP",
+   "exchDisp": "NYSEArca",
+   "isYahooFinance": true
+  }
+ ],
+ "news": [],
+ "nav": [],
+ "lists": [],
+ "researchReports": [],
+ "screenerFieldResults": [],
+ "culturalAssets": [],
+ "totalTime": 31,
+ "timeTakenForQuotes": 412,
+ "timeTakenForNews": 0,
+ "timeTakenForAlgowatchlist": 400,
+ "timeTakenForPredefinedScreener": 400,
+ "timeTakenForCrunchbase": 0,
+ "timeTakenForNav": 400,
+ "timeTakenForResearchReports": 0,
+ "timeTakenForScreenerField": 0,
+ "timeTakenForCulturalAssets": 0,
+ "timeTakenForSearchLists": 0
+}

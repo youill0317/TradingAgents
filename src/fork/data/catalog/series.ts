@@ -15,8 +15,9 @@
  * Publishers: the U.S. Treasury's daily par and real yield curves (and the breakevens and spreads derived
  * from them, the derivation stated), the New York Fed's reference rates, the ECB's key interest rates, and
  * FRED for the statistics no keyless official source among them publishes (the U.S. Bureau of Labor
- * Statistics', the Bureau of Economic Analysis', the Fed's); each FRED entry carries what FRED says of the
- * series (title words aside), so it can be described without asking FRED.
+ * Statistics', the Bureau of Economic Analysis', the Fed's, and the OECD's central bank rates of Japan and
+ * India); each FRED entry carries what FRED says of the series (title words aside), so it can be described
+ * without asking FRED.
  */
 
 /** How a value's changes read: percents and points give differences, the others percent changes. */
@@ -766,6 +767,32 @@ export const SERIES: readonly CatalogSeries[] = [
     ["ECB marginal lending rate", "marginal lending facility rate"],
     "ECBMLFR",
   ),
+
+  // Other central banks' rates, from the OECD's Main Economic Indicators on FRED (the market views' central_banks).
+  fred({
+    key: "us.fred.irstcb01jpm156n",
+    name: "Bank of Japan rate",
+    id: "IRSTCB01JPM156N",
+    aliases: ["BOJ rate", "Japan central bank rate"],
+    keywords: [...RATES, "japan", "boj", "policy rates", "central banks", "monetary policy"],
+    unit: PERCENT,
+    period: "month",
+    units: "Percent",
+    frequency: "Monthly",
+    adjustment: NSA,
+  }),
+  fred({
+    key: "us.fred.irstcb01inm156n",
+    name: "Reserve Bank of India rate",
+    id: "IRSTCB01INM156N",
+    aliases: ["RBI rate", "India central bank rate"],
+    keywords: [...RATES, "india", "rbi", "policy rates", "central banks", "monetary policy"],
+    unit: PERCENT,
+    period: "month",
+    units: "Percent",
+    frequency: "Monthly",
+    adjustment: NSA,
+  }),
 ];
 
 /** Words a query leaves out when matched against names: they add nothing to these (mostly U.S.) series. */

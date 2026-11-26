@@ -12,7 +12,8 @@
 #   without their Tauric items): each, in any case, may appear only as often as those notes hold it;
 # - nothing the executable sends a model mentions Tauric: one -p question to a recording stub, with a
 #   stand-in Anthropic key so that web_search, its description and its instructions are in the request
-#   (the stub answers without a tool call, so nothing is searched).
+#   (the stub answers without a tool call, so nothing is searched, and lists its model's context window as
+#   vLLM does, max_model_len, large enough for the main prompt).
 set -eu
 bin=$(cd "$(dirname "$1")" && pwd)/$(basename "$1")
 mkdir -p "$2"
@@ -106,7 +107,7 @@ const server = require("node:http").createServer((req, res) => {
   let body = "";
   req.on("data", (d) => (body += d));
   req.on("end", () => {
-    if (req.method === "GET") return res.end(JSON.stringify({ object: "list", data: [{ id: "stub", object: "model" }] }));
+    if (req.method === "GET") return res.end(JSON.stringify({ object: "list", data: [{ id: "stub", object: "model", max_model_len: 200000 }] }));
     fs.appendFileSync(log, `${body}\n`);
     res.writeHead(200, { "content-type": "text/event-stream" });
     reply(res, { choices: [{ index: 0, delta: { role: "assistant", content: "ok" }, finish_reason: null }] });

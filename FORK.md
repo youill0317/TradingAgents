@@ -14,13 +14,13 @@ or supported by Tauric Research.
   (financial statements, filings and their sections, insider transactions, and sector screens over the
   S&P 1500 lists on Wikipedia), the U.S. Treasury, the New York Fed, the ECB and FRED (economic series, and
   the ECB's reference rates for currency pairs), GDELT (news by words or topic) and Polymarket
-  (prediction-market odds). SEC EDGAR is read only with `SEC_USER_AGENT` set. The market views and
-  instrument search are not served yet: asking for them answers that they are not available in this setup.
-  A built-in agent is offered when every data tool it names is served: equity, quant and risk with
-  `SEC_USER_AGENT`, with the built-in skills; macro once the market views are. The settings, SEC's
-  User-Agent and the agencies' keys, are read from the environment or from a `"data"` object in
-  `credentials.json` ([configuration](docs/configuration.md#public-data)); which source serves what is in
-  [docs/fork/data-sources.md](docs/fork/data-sources.md), and how the providers are built in
+  (prediction-market odds); the 22 market views come from Yahoo, the Treasury, the New York Fed, the ECB and
+  FRED, and instrument search reads the fork's catalogs, Yahoo's search and SEC's ticker list. SEC EDGAR is
+  read only with `SEC_USER_AGENT` set. A built-in agent is offered when every data tool it names is served:
+  macro in every setup, equity, quant and risk with `SEC_USER_AGENT`; the built-in skills come with them.
+  The settings, SEC's User-Agent and the agencies' keys, are read from the environment or from a `"data"`
+  object in `credentials.json` ([configuration](docs/configuration.md#public-data)); which source serves
+  what is in [docs/fork/data-sources.md](docs/fork/data-sources.md), and how the providers are built in
   [docs/fork/data-architecture.md](docs/fork/data-architecture.md).
 - A `web_search` tool searches the web through Anthropic's or OpenAI's own search when a key for one of
   them is set (the chat model's provider first when it is one of them), or through Google Search grounding
@@ -120,7 +120,9 @@ this fork.
    - A file the removal of Tauric's services edited (likeliest `src/engine/session.ts`,
      `src/contracts/messages.ts`, `src/cli/main.tsx`, `src/cli/interactive.tsx`, `src/cli/ChatApp.tsx`,
      `src/cli/setup/setup-flows.ts`, `src/engine/factory.ts`): take upstream's change, then remove its
-     Tauric parts again.
+     Tauric parts again, and keep the fork's own additions there: `src/engine/factory.ts`'s
+     `dataProviders` over `forkProviders`, `EngineSettings.publicData` and the web search wiring
+     (`webSearchTools`); `src/cli/main.tsx`'s `publicDataConfig`, its start-up notes and `webSearchFor`.
    - `specs/agents/equity.md` and `src/agents/builtin.generated.ts`: take upstream's, then drop `tauric_view`
      and its sentence again.
    - `src/data/routes.ts`: keep the fork's routes, and route any new capability.

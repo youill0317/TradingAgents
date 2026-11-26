@@ -5,7 +5,7 @@
   "status": 200,
   "content_type": "application/json",
   "recorded_at": "2026-11-25T14:39:27.000Z",
-  "bytes": 148231,
+  "bytes": 152379,
   "hand_made": false,
-  "note": "SEC's answer saved from data.sec.gov on 2026-11-25 with the SEC area's live samples (companyfacts-wmt.trimmed.json, itself cut from the complete 3,771,831-byte answer), trimmed for the tests to every concept the line catalog reads and dei's EntityCommonStockSharesOutstanding, facts whose period ends on or after 2024-01-01, 937 facts in all; every fact, concept and unit kept is as SEC answered it."
+  "note": "SEC's complete answer saved from data.sec.gov on 2026-11-25 with the SEC area's live samples (companyfacts-wmt.full.json.gz, 3,771,831 bytes decoded), cut for the tests to every concept the line catalog reads, dei's EntityCommonStockSharesOutstanding, facts whose period ends on or after 2024-01-01, 963 facts in all; every fact, concept and unit kept is as SEC answered it."
 }

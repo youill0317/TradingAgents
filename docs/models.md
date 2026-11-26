@@ -34,6 +34,8 @@ A model is named `provider/id`. `--reasoning` takes `none`, `minimal`, `low`, `m
 
 With no model named and exactly one provider connected, its default model is used.
 
+A model whose context window TradingAgents does not know says so as the session starts. Set its window in the provider's block of `config.json`, as that note says (`"providers": { "openrouter": { "contextWindow": 131072 } }`): the 32,768 tokens assumed without it are too few for a session's first request.
+
 ## An OpenAI-compatible server
 
 vLLM, Ollama, LM Studio and similar servers work through their OpenAI-style API. Set the server in `config.json`:
@@ -49,7 +51,7 @@ vLLM, Ollama, LM Studio and similar servers work through their OpenAI-style API.
 
 or with `TRADINGAGENTS_BASE_URL` and `TRADINGAGENTS_MODEL` (the model as the server names it). A server key stored with `tradingagents key model` is kept for the address it was stored for, and is not sent to another one.
 
-The context window is read from the server when it reports one; to set it, add `"contextWindow": 131072` to the provider's block.
+The context window is read from the server when it reports one, as vLLM does (`max_model_len`). For a server that reports none, add `"contextWindow": 131072` (the window the server runs the model with) to the provider's block: without it 32,768 tokens is assumed, which a session's first request does not fit, since it offers the built-in agents and skills, and every question ends with "This question needs more context than the model has".
 
 ### Thinking models on a server
 

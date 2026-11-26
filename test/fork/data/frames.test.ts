@@ -51,6 +51,7 @@ const FILES: Readonly<Record<string, string>> = {
   Liabilities: "liabilities",
   LiabilitiesAndStockholdersEquity: "liabilities-and-equity",
   StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest: "equity-including-nci",
+  RedeemableNoncontrollingInterestEquityCarryingAmount: "redeemable-nci",
 };
 
 /** The frames these tests hold, by concept and period. */
@@ -72,6 +73,7 @@ const HELD: readonly (readonly [string, string])[] = [
   ["Liabilities", "CY2024Q4I"],
   ["LiabilitiesAndStockholdersEquity", "CY2024Q4I"],
   ["StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest", "CY2024Q4I"],
+  ["RedeemableNoncontrollingInterestEquityCarryingAmount", "CY2024Q4I"],
 ];
 
 const FRAMES: FixtureRoute[] = HELD.map(([concept, period]) => ({
@@ -201,6 +203,14 @@ describe("sector screens as the model reads them", () => {
       { sector: "consumer_staples", line: "Total Liabilities", fiscal_year: 2025 },
       GOLDEN.staplesLiabilities,
     );
+    // Walmart's liabilities and equity less its equity and its redeemable noncontrolling interest (temporary
+    // equity): 260,823,000,000 - 97,421,000,000 - 271,000,000, the sum of the liability lines it files.
+    const { byTicker } = await rowsOf({
+      sector: "consumer_staples",
+      line: "Total Liabilities",
+      fiscalYear: 2025,
+    });
+    expect(byTicker("WMT")).toMatchObject({ value: 163_131_000_000, period_end: "2025-01-31" });
   });
 });
 
@@ -481,5 +491,5 @@ consumer staples: Total Liabilities, fiscal years ending in 2025, ranked by valu
 incomplete: S&P 1500 members only (Wikipedia's S&P lists, CC BY-SA 4.0); this is not a ranking of the whole sector
 5 companies read, 1 with a value, 1 of them in USD and ranked; without: 4 not in SEC's frames at its fiscal year end
 fiscal years end 2025-01-31 to 2025-01-31, most in 2025-01; 1 values derived rather than filed, marked
-1. Walmart (WMT): 163B, year ending 2025-01-31 [derived: LiabilitiesAndStockholdersEquity less StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest]; 0000104169-26-000055`,
+1. Walmart (WMT): 163B, year ending 2025-01-31 [derived: LiabilitiesAndStockholdersEquity less StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest and RedeemableNoncontrollingInterestEquityCarryingAmount]; 0000104169-26-000055`,
 };

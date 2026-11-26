@@ -6,15 +6,20 @@
  * Polymarket, as the engine adds it), the router and the ToolRegistry, on the fixtures the providers' own tests
  * use (test/fork/fixtures: real answers saved earlier, and hand-made ones in the sources' documented formats).
  * Every answer is behind the read check, so a change that drops a field a tool reads fails here: each call is
- * pinned to answer, to name the source the router chose, and to leave out no field the tool read (upstream
- * Yahoo's own quote aside). A tool reading more than one method runs once per method; dcf reads a statement
- * from SEC EDGAR and a profile from Yahoo together. A tool whose capability no provider serves yet
- * (find_instrument, markets) says it is not available. The providers' own tests hold the golden texts. No
- * request reaches the network.
+ * pinned to answer, to name the source the router chose, and to leave out no field the tool reads by name
+ * (upstream Yahoo's own quote aside). Of a record a tool passes on whole, the check sees only the keys named
+ * for it: SPREAD_KEYS (technicals, estimates, institutional holders) and each market view's row and summary
+ * keys (VIEW_KEYS); the other fields of such records (a quote's day and 52-week range, the analyst record's
+ * other targets) are the providers' own tests' business. A tool reading more than one method runs once per
+ * method; dcf reads a statement from SEC EDGAR and a profile from Yahoo together; statements runs annual and
+ * quarterly, news by symbol (Yahoo) and by topic (GDELT); markets runs each of its 22 views. The providers'
+ * own tests hold the golden texts. No request reaches the network.
  */
 import { describe, expect, test } from "bun:test";
+import { MARKET_VIEWS } from "../../../src/data/capabilities.js";
 import { PolymarketClient } from "../../../src/data/polymarket/client.js";
 import { polymarketProvider } from "../../../src/data/polymarket/provider.js";
+import { gdeltQuery } from "../../../src/fork/data/sources/gdelt.js";
 import { frameUrl } from "../../../src/fork/data/sources/sec-frames.js";
 import { SEC_TICKERS_URL } from "../../../src/fork/data/sources/sec-tickers.js";
 import { SP_LISTS, wikitextUrl } from "../../../src/fork/data/sources/wikipedia.js";
@@ -22,13 +27,16 @@ import { MODULES } from "../../../src/fork/data/sources/yahoo.js";
 import { DATA_TOOLS } from "../../../src/tools/catalog.js";
 import {
   buildTools,
+  expectKeys,
   type FixtureFetch,
   type FixtureRoute,
   fixtureFetch,
+  readLog,
   type ToolRun,
   testProviders,
   YAHOO_AAPL,
 } from "./harness.js";
+import { ROUTES as MARKET_ROUTES, POOL, VIEW_KEYS, yahooPath } from "./markets-routes.test.js";
 
 // Fixture routes, by source ------------------------------------------------------------------------------
 
@@ -76,6 +84,11 @@ const YAHOO: FixtureRoute[] = [
   {
     match: (url) => url.pathname === "/v1/finance/search" && url.searchParams.get("q") === "AAPL",
     file: "yahoo-news/search-aapl.json",
+  },
+  // The instrument search's (listings only, no news).
+  {
+    match: (url) => url.pathname === "/v1/finance/search" && url.searchParams.get("q") === "Apple",
+    file: "instruments/yahoo-search-apple.json",
   },
 ];
 
@@ -159,6 +172,29 @@ const AGENCIES: FixtureRoute[] = [
   },
 ];
 
+/** The header of a quote answer made from the market views' pool of quote rows. */
+const POOLED = "x-fixture-pooled";
+
+/**
+ * The market views' routes (markets-routes.test.ts: Yahoo's screens and charts, the agencies' series), and
+ * Yahoo's batched quote requests no route above answers, answered from its pool of quote rows (see allFetch).
+ */
+const MARKETS: FixtureRoute[] = [
+  {
+    match: yahooPath("/v7/finance/quote"),
+    body: "{}",
+    headers: { "content-type": "application/json;charset=utf-8", [POOLED]: "1" },
+  },
+  ...MARKET_ROUTES,
+];
+
+/** GDELT's article list for the topic fed (hand-made in its documented ArtList form). */
+const GDELT: FixtureRoute = {
+  match: (url) =>
+    url.hostname === "api.gdeltproject.org" && url.searchParams.get("query") === gdeltQuery({ topic: "fed" }),
+  file: "gdelt/artlist-fed.json",
+};
+
 /** Polymarket's search (an excerpt of a saved answer). */
 const POLYMARKET: FixtureRoute = {
   match: (url) => url.hostname === "gamma-api.polymarket.com" && url.pathname === "/public-search",
@@ -167,13 +203,31 @@ const POLYMARKET: FixtureRoute = {
 
 /**
  * A fixture fetch over every route whose Yahoo news search answers as Yahoo does: at most `newsCount` of the
- * fixture's articles, the newest first.
+ * fixture's articles, the newest first; and whose pooled quote route answers the rows of the symbols asked
+ * that the pool holds, as Yahoo leaves out the symbols it does not know.
  */
 function allFetch(): FixtureFetch {
-  const base = fixtureFetch([...YAHOO, ...SEC, ...SCREENS, ...AGENCIES, POLYMARKET, ...YAHOO_AAPL]);
+  const base = fixtureFetch([
+    ...YAHOO,
+    ...SEC,
+    ...SCREENS,
+    ...AGENCIES,
+    GDELT,
+    POLYMARKET,
+    ...YAHOO_AAPL,
+    ...MARKETS,
+  ]);
   const answer = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
     const response = await base(input, init);
     const url = new URL(input instanceof Request ? input.url : String(input));
+    if (response.headers.has(POOLED)) {
+      const asked = (url.searchParams.get("symbols") ?? "").split(",");
+      const result = asked.flatMap((symbol) => POOL.get(symbol) ?? []);
+      return new Response(JSON.stringify({ quoteResponse: { result, error: null } }), {
+        status: 200,
+        headers: { "content-type": "application/json;charset=utf-8" },
+      });
+    }
     if (url.pathname !== "/v1/finance/search" || !response.ok) return response;
     const body = (await response.json()) as { news?: unknown[] };
     if (Array.isArray(body.news)) body.news = body.news.slice(0, Number(url.searchParams.get("newsCount")));
@@ -236,12 +290,14 @@ async function check(
 // The calls ---------------------------------------------------------------------------------------------------
 
 describe("every data tool, through every provider together, every field it reads supplied", () => {
-  test("what the setup serves: everything but the market views and instrument search", () => {
+  test("what the setup serves: every capability", () => {
     expect([...available].sort()).toEqual([
       "corporateActions",
       "crossSections",
       "filings",
+      "instruments",
       "macroSeries",
+      "markets",
       "news",
       "ownership",
       "predictionMarkets",
@@ -270,7 +326,12 @@ describe("every data tool, through every provider together, every field it reads
     await check("price_history", { symbol: "fx:EURUSD", period: "5d" }, "ECB");
   });
 
-  test("statements, then dcf on that statement and Yahoo's profile", async () => {
+  test("statements, annual and quarterly, then dcf on the annual statement and Yahoo's profile", async () => {
+    await check(
+      "statements",
+      { symbol: "AAPL", statement: "income_statement", period_type: "quarterly", periods: 1 },
+      "SEC EDGAR",
+    );
     const statement = await check(
       "statements",
       { symbol: "AAPL", statement: "cash_flow", period_type: "annual", periods: 1 },
@@ -303,11 +364,15 @@ describe("every data tool, through every provider together, every field it reads
     );
   });
 
-  test("news by symbol, then article on what it listed", async () => {
+  test("news by symbol (Yahoo) and by topic (GDELT), then article on what each listed", async () => {
     const news = await check("news", { symbol: "AAPL" }, "News search");
     const id = (news.payload as { articles: { id: string }[] }).articles[0]?.id;
     expect(id).toStartWith("yh:");
     await check("article", { id }, "News search");
+    const topic = await check("news", { topic: "fed" }, "News search");
+    const listed = (topic.payload as { articles: { id: string }[] }).articles[0]?.id;
+    expect(listed).toStartWith("gd:");
+    await check("article", { id: listed }, "News search");
   });
 
   test("estimates and comps", async () => {
@@ -348,15 +413,21 @@ describe("every data tool, through every provider together, every field it reads
     await check("prediction_markets", { topic: "fed rate" }, "Polymarket");
   });
 
-  test("find_instrument and markets: no provider serves them yet, and each says so", async () => {
-    for (const [tool, input] of [
-      ["find_instrument", { query: "Apple" }],
-      ["markets", { view: "yield_curve" }],
-    ] as const) {
-      ran.add(tool);
-      const run = await runTool(tool, input);
-      expect(run.failure, tool).toBe("data_not_configured");
-      expect(run.text, tool).toEndWith(": not available in this setup.");
+  test("find_instrument: a company's name, from SEC's ticker list, Yahoo's search and the catalogs", async () => {
+    const run = await check("find_instrument", { query: "Apple" }, "Instrument search");
+    const [first] = (run.payload as { matches: { key: string; tools: string[] }[] }).matches;
+    expect(first?.key).toBe("AAPL");
+    expect(first?.tools).toContain("statements");
+  });
+
+  test("markets: every view, from Yahoo, the Treasury, the New York Fed, the ECB and FRED, its rows' keys too", async () => {
+    for (const view of MARKET_VIEWS) {
+      const run = await check("markets", { view }, "Market overview");
+      // The rows and the summary are passed on whole: the keys the previews and the specs read, on each.
+      const log = readLog();
+      expectKeys(JSON.parse(JSON.stringify(run.payload)), VIEW_KEYS[view], log);
+      expect(log.missing(), view).toEqual([]);
+      expect(log.paths().length, view).toBeGreaterThan(0);
     }
   });
 

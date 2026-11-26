@@ -94,7 +94,7 @@ describe("statements as the model reads them", () => {
     expect(period?.label).toBe("fiscal Q4 of the year ending around September 2026");
   });
 
-  test("a cash-flow quarter is a difference of year-to-date values; a three-month value filed is used as filed", async () => {
+  test("a cash-flow quarter is a difference of its own concept's year-to-date values, never another concept's quarter", async () => {
     await golden(
       { symbol: "AAPL", statement: "cash_flow", period_type: "quarterly", periods: 1, after: "2026-09-26" },
       GOLDEN.aaplCashQ3,
@@ -419,6 +419,195 @@ describe("statements built from the facts", () => {
     expect(local?.periods.map(({ cells }) => cells.get("Revenue")?.value)).toEqual([300, 200, 100]);
   });
 
+  test("short-term debt counts the bonds' current portion once: TSMC's financing liabilities add up with it", () => {
+    // TSMC's own total of the liabilities arising from financing activities, and its lease liabilities, as filed
+    // (the fixture keeps both concepts for this check; the statements do not read them).
+    const raw = JSON.parse(readFileSync(join(FIXTURES, "sec/companyfacts-tsm.json"), "utf8")) as {
+      facts: Record<string, Record<string, { units: Record<string, Fact[]> }>>;
+    };
+    const filed = (concept: string, end: string) => {
+      const list = (raw.facts["ifrs-full"]?.[concept]?.units.TWD ?? []).filter(
+        (one) => one.end === end && !one.start,
+      );
+      return list.sort((a, b) => (a.filed < b.filed ? -1 : a.filed > b.filed ? 1 : 0)).at(-1)?.val;
+    };
+    const built = buildStatement(facts("tsm", "1046179"), "balance_sheet", "annual");
+    for (const end of ["2024-12-31", "2022-12-31"]) {
+      const cells = built?.periods.find(({ period }) => period.end === end)?.cells;
+      const debt = (cells?.get("Short-Term Debt")?.value ?? 0) + (cells?.get("Long-Term Debt")?.value ?? 0);
+      expect(debt + (filed("LeaseLiabilities", end) ?? 0)).toBe(
+        filed("LiabilitiesArisingFromFinancingActivities", end) as number,
+      );
+    }
+    // The current portion of long-term borrowings holds the bonds' (57,148,000,000), never added again.
+    expect(built?.periods[0]?.cells.get("Short-Term Debt")?.value).toBe(59_857_900_000);
+    expect(filed("CurrentBondsIssuedAndCurrentPortionOfNoncurrentBondsIssued", "2024-12-31")).toBe(
+      57_148_000_000,
+    );
+  });
+
+  test("a part filed beside its whole is not added to it; temporary equity is not counted as a liability", () => {
+    const at = (end: string, val: number, accn = "0000000001-10-000001"): Fact => ({
+      start: null,
+      end,
+      val,
+      accn,
+      form: "10-K",
+      filed: "2010-03-30",
+    });
+    const company = (concepts: Record<string, Fact[]>): CompanyFacts => ({
+      cik: "0000000001",
+      facts: {
+        "us-gaap": Object.fromEntries(Object.entries(concepts).map(([name, list]) => [name, { USD: list }])),
+      },
+      financialAccessions: ["0000000001-10-000001"],
+    });
+    // Walmart's 2009-01-31 balance sheet: short-term borrowings of 1,506,000,000, all of it commercial paper,
+    // filed under both concepts.
+    const both = buildStatement(
+      company({
+        Assets: [at("2009-01-31", 163_429_000_000)],
+        LongTermDebtCurrent: [at("2009-01-31", 5_848_000_000)],
+        ShortTermBorrowings: [at("2009-01-31", 1_506_000_000)],
+        CommercialPaper: [at("2009-01-31", 1_506_000_000)],
+      }),
+      "balance_sheet",
+      "quarterly",
+    );
+    expect(both?.periods[0]?.cells.get("Short-Term Debt")).toMatchObject({
+      value: 7_354_000_000,
+      states: {
+        value: {
+          reason:
+            "computed: LongTermDebtCurrent + ShortTermBorrowings, as filed in 10-K 0000000001-10-000001",
+        },
+      },
+    });
+    // Liabilities and equity hold temporary equity (Walmart's redeemable noncontrolling interest) beside equity.
+    const temporary = buildStatement(
+      company({
+        Assets: [at("2026-01-31", 284_668_000_000)],
+        LiabilitiesAndStockholdersEquity: [at("2026-01-31", 284_668_000_000)],
+        StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest: [
+          at("2026-01-31", 105_887_000_000),
+        ],
+        RedeemableNoncontrollingInterestEquityCarryingAmount: [at("2026-01-31", 293_000_000)],
+      }),
+      "balance_sheet",
+      "quarterly",
+    );
+    expect(temporary?.periods[0]?.cells.get("Total Liabilities")?.value).toBe(178_488_000_000);
+    // Its total, where filed, is subtracted alone (never with its parts again).
+    const total = buildStatement(
+      company({
+        Assets: [at("2026-01-31", 284_668_000_000)],
+        LiabilitiesAndStockholdersEquity: [at("2026-01-31", 284_668_000_000)],
+        StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest: [
+          at("2026-01-31", 105_887_000_000),
+        ],
+        TemporaryEquityCarryingAmountIncludingPortionAttributableToNoncontrollingInterest: [
+          at("2026-01-31", 393_000_000),
+        ],
+        RedeemableNoncontrollingInterestEquityCarryingAmount: [at("2026-01-31", 293_000_000)],
+      }),
+      "balance_sheet",
+      "quarterly",
+    );
+    expect(total?.periods[0]?.cells.get("Total Liabilities")).toMatchObject({
+      value: 178_388_000_000,
+      states: {
+        value: {
+          reason:
+            "computed: LiabilitiesAndStockholdersEquity less StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest and TemporaryEquityCarryingAmountIncludingPortionAttributableToNoncontrollingInterest, as filed in 10-K 0000000001-10-000001",
+        },
+      },
+    });
+  });
+
+  test("a quarter keeps to the line's first concept that gives it, filed or computed, on one basis", () => {
+    const fact = (
+      concept: [string, string],
+      start: string,
+      end: string,
+      val: number,
+      accn: string,
+      filed: string,
+    ) => [concept[0], { start, end, val, accn, form: concept[1], filed }] as const;
+    const company = (list: readonly (readonly [string, Fact])[]): CompanyFacts => {
+      const concepts: Record<string, { USD: Fact[] }> = {};
+      for (const [name, one] of list) {
+        const held = concepts[name] ?? { USD: [] };
+        held.USD.push(one);
+        concepts[name] = held;
+      }
+      return {
+        cik: "0000000001",
+        facts: { "us-gaap": concepts },
+        financialAccessions: [...new Set(list.map(([, one]) => one.accn))],
+      };
+    };
+    // Walmart's fiscal 2010: Revenues for the year and nine months, and net sales (SalesRevenueNet), a narrower
+    // measure, filed for the fourth quarter alone. The quarter is Revenues' year less nine months.
+    const revenues: [string, string] = ["Revenues", "10-K"];
+    const nine: [string, string] = ["Revenues", "10-Q"];
+    const walmart = buildStatement(
+      company([
+        fact(revenues, "2009-02-01", "2010-01-31", 408_085_000_000, "0000000001-11-000001", "2011-03-30"),
+        fact(nine, "2009-02-01", "2009-10-31", 294_463_000_000, "0000000001-10-000003", "2010-12-01"),
+        fact(nine, "2009-08-01", "2009-10-31", 99_373_000_000, "0000000001-10-000003", "2010-12-01"),
+        fact(
+          ["SalesRevenueNet", "10-K"],
+          "2009-11-01",
+          "2010-01-31",
+          112_826_000_000,
+          "0000000001-11-000001",
+          "2011-03-30",
+        ),
+      ]),
+      "income_statement",
+      "quarterly",
+    );
+    const q4 = walmart?.periods.find(({ period }) => period.end === "2010-01-31")?.cells.get("Revenue");
+    expect(q4?.value).toBe(113_622_000_000);
+    expect(q4?.states.value?.reason).toBe(
+      "computed: 10-K 0000000001-11-000001 (year to 2010-01-31) less 10-Q 0000000001-10-000003 (nine months to 2009-10-31)",
+    );
+    // Apple's fiscal 2008: the year restated (32,479,000,000 to 37,491,000,000) after the nine months were last
+    // filed. The quarter is taken from the year as it stood then, not from terms of two bases.
+    const apple = buildStatement(
+      company([
+        fact(revenues, "2007-09-30", "2008-09-27", 32_479_000_000, "0000000001-09-000010", "2009-10-27"),
+        fact(
+          ["Revenues", "10-K/A"],
+          "2007-09-30",
+          "2008-09-27",
+          37_491_000_000,
+          "0000000001-10-000001",
+          "2010-01-25",
+        ),
+        fact(revenues, "2007-09-30", "2008-09-27", 37_491_000_000, "0000000001-10-000020", "2010-10-27"),
+        fact(nine, "2007-09-30", "2008-06-28", 24_584_000_000, "0000000001-09-000005", "2009-07-22"),
+        fact(nine, "2008-03-30", "2008-06-28", 7_464_000_000, "0000000001-09-000005", "2009-07-22"),
+      ]),
+      "income_statement",
+      "quarterly",
+    );
+    const restated = apple?.periods.find(({ period }) => period.end === "2008-09-27")?.cells.get("Revenue");
+    expect(restated?.value).toBe(7_895_000_000);
+    expect(restated?.states).toEqual({
+      value: {
+        reason:
+          "computed: 10-K 0000000001-09-000010 (year to 2008-09-27) less 10-Q 0000000001-09-000005 (nine months to 2008-06-28)",
+        retry: "never",
+      },
+      restated: {
+        reason:
+          "the year to 2008-09-27 was restated to 37,491,000,000 in 10-K/A 0000000001-10-000001, after the last filing of the nine months to 2008-06-28, so it is taken as filed before then",
+        retry: null,
+      },
+    });
+  });
+
   test("Walmart's fiscal quarters: three months filed, a fourth from the year less nine months", () => {
     const built = buildStatement(facts("wmt", "104169"), "income_statement", "quarterly");
     expect(built?.periods.slice(0, 4).map(({ period }) => period)).toEqual([
@@ -479,6 +668,7 @@ history before CIK 0000320193 is not linked by the source, so any earlier predec
   Gross Profit: 233,602,000,000 USD
   Research and Development: 45,765,000,000 USD
   Selling, General and Administrative: 29,774,000,000 USD
+  General and Administrative: 8,640,000,000 USD
   Operating Income (Loss): 158,063,000,000 USD
   Income (Loss) Before Income Taxes: 159,237,000,000 USD
   Income Tax Expense (Benefit): 27,062,000,000 USD
@@ -497,6 +687,7 @@ history before CIK 0000320193 is not linked by the source, so any earlier predec
   Gross Profit: 54,820,000,000 USD (value: computed: 10-K 0000320193-26-000026 (year to 2026-09-26) less 10-Q 0000320193-26-000020 (nine months to 2026-06-27), settled)
   Research and Development: 11,730,000,000 USD (value: computed: 10-K 0000320193-26-000026 (year to 2026-09-26) less 10-Q 0000320193-26-000020 (nine months to 2026-06-27), settled)
   Selling, General and Administrative: 7,459,000,000 USD (value: computed: 10-K 0000320193-26-000026 (year to 2026-09-26) less 10-Q 0000320193-26-000020 (nine months to 2026-06-27), settled)
+  General and Administrative: 1,957,000,000 USD (value: computed: 10-K 0000320193-26-000026 (year to 2026-09-26) less 10-Q 0000320193-26-000020 (nine months to 2026-06-27), settled)
   Operating Income (Loss): 35,631,000,000 USD (value: computed: 10-K 0000320193-26-000026 (year to 2026-09-26) less 10-Q 0000320193-26-000020 (nine months to 2026-06-27), settled)
   Income (Loss) Before Income Taxes: 36,135,000,000 USD (value: computed: 10-K 0000320193-26-000026 (year to 2026-09-26) less 10-Q 0000320193-26-000020 (nine months to 2026-06-27), settled)
   Income Tax Expense (Benefit): 5,424,000,000 USD (value: computed: 10-K 0000320193-26-000026 (year to 2026-09-26) less 10-Q 0000320193-26-000020 (nine months to 2026-06-27), settled)
@@ -512,7 +703,7 @@ history before CIK 0000320193 is not linked by the source, so any earlier predec
 2026-03-29 to 2026-06-27, fiscal Q3 of the year ending around September 2026 (from 10-Q 0000320193-26-000020 accepted 2026-07-31T10:01:02Z; 10-Q 0000320193-26-000013 accepted 2026-05-01T10:01:00Z)
   Net Cash from Operating Activities: 34,369,000,000 USD (value: computed: 10-Q 0000320193-26-000020 (nine months to 2026-06-27) less 10-Q 0000320193-26-000013 (six months to 2026-03-28), settled)
   Depreciation and Amortization: 3,320,000,000 USD (value: computed: 10-Q 0000320193-26-000020 (nine months to 2026-06-27) less 10-Q 0000320193-26-000013 (six months to 2026-03-28), settled)
-  Share-Based Compensation: 3,401,000,000 USD
+  Share-Based Compensation: 3,401,000,000 USD (value: computed: 10-Q 0000320193-26-000020 (nine months to 2026-06-27) less 10-Q 0000320193-26-000013 (six months to 2026-03-28), settled)
   Payments to Acquire PP&E: 2,455,000,000 USD (value: computed: 10-Q 0000320193-26-000020 (nine months to 2026-06-27) less 10-Q 0000320193-26-000013 (six months to 2026-03-28), settled)
   Net Cash from Investing Activities: -7,757,000,000 USD (value: computed: 10-Q 0000320193-26-000020 (nine months to 2026-06-27) less 10-Q 0000320193-26-000013 (six months to 2026-03-28), settled)
   Net Cash from Financing Activities: -32,640,000,000 USD (value: computed: 10-Q 0000320193-26-000020 (nine months to 2026-06-27) less 10-Q 0000320193-26-000013 (six months to 2026-03-28), settled)
@@ -630,7 +821,7 @@ at 2026-01-31, fiscal year ending 2026-01-31 (from 10-Q 0000104169-26-000154 acc
   Short-Term Debt: 10,138,000,000 USD (value: computed: LongTermDebtCurrent + ShortTermBorrowings, as filed in 10-Q 0000104169-26-000154, settled)
   Total Current Liabilities: 107,469,000,000 USD
   Long-Term Debt: 34,624,000,000 USD
-  Total Liabilities: 178,781,000,000 USD (value: computed: LiabilitiesAndStockholdersEquity less StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest, as filed in 10-Q 0000104169-26-000154, settled)
+  Total Liabilities: 178,488,000,000 USD (value: computed: LiabilitiesAndStockholdersEquity less StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest and RedeemableNoncontrollingInterestEquityCarryingAmount, as filed in 10-Q 0000104169-26-000154, settled)
   Stockholders' Equity: 99,617,000,000 USD
   Total Equity: 105,887,000,000 USD
   Total Liabilities and Equity: 284,668,000,000 USD
@@ -646,6 +837,7 @@ history before CIK 0001046179 is not linked by the source, so any earlier predec
   Cost of Revenue: 1,269,954,100,000 TWD
   Gross Profit: 1,624,353,600,000 TWD
   Research and Development: 204,181,800,000 TWD
+  General and Administrative: 83,745,000,000 TWD
   Operating Income (Loss): 1,322,053,000,000 TWD
   Interest Expense: 10,495,400,000 TWD (concept: finance costs (ifrs-full FinanceCosts), interest and other costs of borrowing)
   Income (Loss) Before Income Taxes: 1,405,840,000,000 TWD
@@ -654,6 +846,7 @@ history before CIK 0001046179 is not linked by the source, so any earlier predec
   Net Income (Loss) Including Noncontrolling Interests: 1,157,523,900,000 TWD
   EPS (Basic): 44.68 TWD/shares
   EPS (Diluted): 44.67 TWD/shares
+  Weighted Average Shares (Diluted): 25,929,700,000 shares
 next periods: statements with after=2024-12-31, periods=1`,
   tsmCashAnnual: `[e1] statements TSM cash flow, annual (as of Tuesday 2024-12-31; reference its data as {"ref":"e1","path":"<field>"})
 source: SEC EDGAR
@@ -684,7 +877,7 @@ at 2024-12-31, fiscal year ending 2024-12-31 (from 20-F 0001193125-25-083423 acc
   Property, Plant and Equipment, Net: 3,234,980,100,000 TWD
   Total Assets: 6,691,764,700,000 TWD
   Accounts Payable: 72,800,600,000 TWD (concept: payables to trade suppliers only (TradeAndOtherCurrentPayablesToTradeSuppliers))
-  Short-Term Debt: 117,005,900,000 TWD (value: computed: CurrentPortionOfLongtermBorrowings + CurrentBondsIssuedAndCurrentPortionOfNoncurrentBondsIssued, as filed in 20-F 0001193125-25-083423, settled)
+  Short-Term Debt: 59,857,900,000 TWD (value: computed: CurrentPortionOfLongtermBorrowings, as filed in 20-F 0001193125-25-083423, settled)
   Total Current Liabilities: 1,308,655,900,000 TWD
   Long-Term Debt: 958,428,900,000 TWD (value: computed: LongtermBorrowings + NoncurrentPortionOfNoncurrentBondsIssued, as filed in 20-F 0001193125-25-083423, settled)
   Total Liabilities: 2,412,493,100,000 TWD

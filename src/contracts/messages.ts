@@ -104,7 +104,8 @@ const catalog = {
                                 and if the server needs a key: ${app} key model
 
 Market data comes from free public sources (Yahoo, the U.S. Treasury, the New York Fed, the ECB, FRED and
-GDELT, and SEC EDGAR once SEC_USER_AGENT is set) and event odds from Polymarket.
+GDELT, and once SEC_USER_AGENT is set SEC EDGAR, with Wikipedia's S&P lists for sector screens) and event
+odds from Polymarket.
 `,
 
   // ChatGPT sign-in commands

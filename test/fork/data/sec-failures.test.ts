@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Added in this fork of TradingAgents 1.0.0.
 /**
- * How the filers provider fails, offline: without SEC_USER_AGENT it declares nothing and asks nothing; SEC
+ * How the filers provider fails, offline: without SEC_USER_AGENT it declares only the insider view, which says
+ * what to set, and asks nothing; SEC
  * failing, refusing, pausing, answering nothing or something unreadable gives the DataError kind the router acts
  * on (a listing elsewhere passes the call on; a request about the market, or one to change, stops it); a filing
  * document or insider report SEC lacks is said, not taken for none; and the SEC User-Agent (it names a person) is
@@ -47,19 +48,27 @@ async function failure(promise: Promise<unknown> | undefined): Promise<DataError
 }
 
 describe("without SEC_USER_AGENT", () => {
-  test("nothing is declared, so the tools say the data is not available here, and SEC is asked nothing", async () => {
+  test("statements and filings are not declared; the insider view says what to set; SEC is asked nothing", async () => {
     const { provider, runTool, fetch, available } = sec([TICKERS, AAPL_INDEX], {});
-    expect(provider).toEqual({ name: "SEC EDGAR", capabilities: {} });
-    expect(available.size).toBe(0);
+    // Ownership is offered either way (Yahoo serves its institutional view), so its insider view is declared
+    // to say what it needs.
+    expect(
+      Object.fromEntries(
+        Object.entries(provider.capabilities).map(([name, methods]) => [name, Object.keys(methods ?? {})]),
+      ),
+    ).toEqual({ ownership: ["transactions"] });
+    expect([...available]).toEqual(["ownership"]);
+    const insider = await runTool("ownership", { symbol: "AAPL" });
+    expect(insider.failure).toBe("data_not_configured");
     const said = [
       (await runTool("statements", { symbol: "AAPL", statement: "income_statement" })).text,
       (await runTool("filings", { symbol: "AAPL" })).text,
-      (await runTool("ownership", { symbol: "AAPL" })).text,
+      insider.text,
     ];
     expect(said).toEqual([
       "Financial statements: not available in this setup.",
       "SEC filings: not available in this setup.",
-      "Insider and institutional ownership: not available in this setup.",
+      'Insider transactions come from SEC EDGAR, which is read only with SEC_USER_AGENT set (a name and email, in the environment or under "data" in credentials.json): SEC\'s fair-access rule asks every program that reads EDGAR to name its sender. Institutional holders are served: ownership with view=institutional.',
     ]);
     expect(fetch.requests).toEqual([]);
   });

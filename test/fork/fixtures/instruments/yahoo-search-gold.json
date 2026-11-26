@@ -1,0 +1,69 @@
+{
+ "explains": [],
+ "count": 4,
+ "quotes": [
+  {
+   "exchange": "CMX",
+   "shortname": "Gold Feb 27",
+   "quoteType": "FUTURE",
+   "symbol": "GC=F",
+   "index": "quotes",
+   "score": 20600,
+   "typeDisp": "Futures",
+   "exchDisp": "COMEX",
+   "isYahooFinance": true
+  },
+  {
+   "exchange": "PCX",
+   "shortname": "SPDR Gold Trust",
+   "quoteType": "ETF",
+   "symbol": "GLD",
+   "index": "quotes",
+   "score": 20330,
+   "typeDisp": "ETF",
+   "longname": "SPDR Gold Shares",
+   "exchDisp": "NYSEArca",
+   "isYahooFinance": true
+  },
+  {
+   "exchange": "PCX",
+   "shortname": "iShares Gold Trust",
+   "quoteType": "ETF",
+   "symbol": "IAU",
+   "index": "quotes",
+   "score": 20210,
+   "typeDisp": "ETF",
+   "longname": "iShares Gold Trust",
+   "exchDisp": "NYSEArca",
+   "isYahooFinance": true
+  },
+  {
+   "exchange": "CMX",
+   "shortname": "Micro Gold Futures,Feb-2027",
+   "quoteType": "FUTURE",
+   "symbol": "MGC=F",
+   "index": "quotes",
+   "score": 20050,
+   "typeDisp": "Futures",
+   "exchDisp": "COMEX",
+   "isYahooFinance": true
+  }
+ ],
+ "news": [],
+ "nav": [],
+ "lists": [],
+ "researchReports": [],
+ "screenerFieldResults": [],
+ "culturalAssets": [],
+ "totalTime": 31,
+ "timeTakenForQuotes": 412,
+ "timeTakenForNews": 0,
+ "timeTakenForAlgowatchlist": 400,
+ "timeTakenForPredefinedScreener": 400,
+ "timeTakenForCrunchbase": 0,
+ "timeTakenForNav": 400,
+ "timeTakenForResearchReports": 0,
+ "timeTakenForScreenerField": 0,
+ "timeTakenForCulturalAssets": 0,
+ "timeTakenForSearchLists": 0
+}

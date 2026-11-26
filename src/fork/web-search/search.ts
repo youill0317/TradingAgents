@@ -727,7 +727,7 @@ export function answerOf(
       ...(failed.length
         ? [`some searches failed (${failed.join(", ")}); the pages are those the others found`]
         : []),
-      ...(stopped ? [`${stopped}; the findings may be incomplete`] : []),
+      ...(stopped ? [`${stopped}; the findings are those it wrote before then`] : []),
     ],
   };
 }

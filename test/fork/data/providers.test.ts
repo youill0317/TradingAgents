@@ -3,8 +3,8 @@
 // Added in this fork of TradingAgents 1.0.0.
 /**
  * The fork's providers as a setup builds them: one per routing-table key (FSC aside until Phase 4), each
- * declaring what it serves in that setup (the SEC-backed ones only with SEC_USER_AGENT; the market views and
- * instrument search nothing yet); built without a request or a file.
+ * declaring what it serves in that setup (the SEC-backed ones only with SEC_USER_AGENT); built without a
+ * request or a file.
  */
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
@@ -14,6 +14,7 @@ import { join } from "node:path";
 import { ROUTES } from "../../../src/data/routes.js";
 import { dataProviders } from "../../../src/engine/factory.js";
 import { forkProviders } from "../../../src/fork/data/index.js";
+import { MODULES } from "../../../src/fork/data/sources/yahoo.js";
 import { buildTools, fixture, fixtureFetch, testProviders, YAHOO_AAPL } from "./harness.js";
 
 let dir: string;
@@ -57,7 +58,10 @@ function declared(config: Parameters<typeof testProviders>[0]) {
   return { served, fetch };
 }
 
-/** What is declared in every setup: the sources that need no key (Yahoo, the ECB, the agencies' series, news). */
+/**
+ * What is declared in every setup: the sources that need no key (Yahoo, the ECB, the agencies' series, news,
+ * the market views, instrument search).
+ */
 const KEYLESS = {
   yahoo: {
     quotes: ["many", "quote"],
@@ -71,18 +75,43 @@ const KEYLESS = {
   ecb: { priceHistory: ["referenceRates"] },
   statistics: { macroSeries: ["observations", "search"] },
   news: { news: ["article", "articles"] },
-  // Not built yet: the market views and instrument search declare nothing in any setup.
-  markets: {},
-  instruments: {},
+  // Yahoo, the Treasury, the New York Fed, the ECB and FRED's keyless download.
+  markets: { markets: ["view"] },
+  // The catalogs and Yahoo's search (SEC's ticker list joins with SEC_USER_AGENT, inside the same method).
+  instruments: { instruments: ["search"] },
 };
 
 test("without SEC_USER_AGENT the keyless sources serve, and nothing is read from SEC EDGAR", () => {
-  // FRED_API_KEY adds no capability: macro series are served without it, from the keyless publishers.
+  // FRED_API_KEY adds no capability: macro series are served without it, from the keyless publishers. SEC
+  // EDGAR declares only ownership's insider view, which answers what to set (Yahoo serves the institutional).
   for (const config of [{}, { fredKey: "fred-0123456789" }]) {
     const { served, fetch } = declared(config);
-    expect(served).toEqual({ ...KEYLESS, filers: {}, frames: {} });
+    expect(served).toEqual({ ...KEYLESS, filers: { ownership: ["transactions"] }, frames: {} });
     expect(fetch.requests).toEqual([]);
   }
+});
+
+test("without SEC_USER_AGENT, ownership's insider view says what to set; its institutional view is Yahoo's", async () => {
+  const holders = {
+    match: (url: URL) =>
+      decodeURIComponent(url.pathname) === "/v10/finance/quoteSummary/AAPL" &&
+      url.searchParams.get("modules") === MODULES.holders.join(","),
+    file: "yahoo/quotesummary-aapl-holders.json",
+  };
+  const { providers, fetch, clock } = testProviders({}, [holders, ...YAHOO_AAPL]);
+  const { runTool } = buildTools(providers, { clock, check: true });
+  const insider = await runTool("ownership", { symbol: "AAPL" });
+  expect(insider.failure).toBe("data_not_configured");
+  expect(insider.text).toStartWith(
+    "Insider transactions come from SEC EDGAR, which is read only with SEC_USER_AGENT",
+  );
+  expect(insider.text).toEndWith("Institutional holders are served: ownership with view=institutional.");
+  const institutional = await runTool("ownership", { symbol: "AAPL", view: "institutional" });
+  expect(institutional.failure).toBeUndefined();
+  expect(institutional.source).toBe("Yahoo");
+  // Nothing was asked of SEC.
+  expect(fetch.requests.some((request) => request.url.includes("sec.gov"))).toBe(false);
+  expect(fetch.unmatched).toEqual([]);
 });
 
 test("with SEC_USER_AGENT, SEC EDGAR serves statements, filings, insider transactions and screens too", () => {
