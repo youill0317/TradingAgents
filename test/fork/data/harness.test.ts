@@ -142,13 +142,14 @@ describe("the harness on upstream Yahoo, offline", () => {
   });
 
   test("a tool whose capability no provider serves in the setup says so", async () => {
-    // Without SEC_USER_AGENT: the keyless sources only, nothing from SEC EDGAR; the market views and
-    // instrument search are not built yet.
+    // Without SEC_USER_AGENT: the keyless sources only, nothing from SEC EDGAR.
     const { providers, fetch, clock } = testProviders();
     const { runTool, available } = buildTools(providers, { clock });
     expect([...available].sort()).toEqual([
       "corporateActions",
+      "instruments",
       "macroSeries",
+      "markets",
       "news",
       "ownership",
       "priceHistory",
@@ -159,8 +160,6 @@ describe("the harness on upstream Yahoo, offline", () => {
     const run = await runTool("statements", { symbol: "AAPL", statement: "income_statement" });
     expect(run.failure).toBe("data_not_configured");
     expect(run.text).toBe("Financial statements: not available in this setup.");
-    const markets = await runTool("markets", { view: "yield_curve" });
-    expect(markets.failure).toBe("data_not_configured");
     expect(fetch.requests).toEqual([]);
   });
 });

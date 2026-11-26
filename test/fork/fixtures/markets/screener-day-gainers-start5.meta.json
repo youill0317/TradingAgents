@@ -1,0 +1,11 @@
+{
+  "source": "markets",
+  "name": "screener-day-gainers-start5",
+  "url": "https://query2.finance.yahoo.com/v1/finance/screener/predefined/saved?lang=en-US&region=US&scrIds=day_gainers&count=250&start=5",
+  "status": 200,
+  "content_type": "application/json;charset=utf-8",
+  "recorded_at": "2026-11-25T22:00:00.000Z",
+  "bytes": 3376,
+  "hand_made": true,
+  "note": "Hand-made, not recorded (Yahoo answers only yahoo-finance2's own User-Agent, and none was recorded here): the second page of Yahoo's predefined screen day_gainers (from row 6, after the five of screener-day-gainers.json, its total seven), in the shape yahoo-finance2 4.0.6's screener schema describes (ScreenerResult with ScreenerQuote rows), with invented companies, tickers and values as of 2026-11-25."
+}

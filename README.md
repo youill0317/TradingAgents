@@ -19,9 +19,12 @@ key or plan, and keeps your sessions on this computer.
   and intraday prices, technicals, company profiles and analyst estimates, corporate actions, institutional
   holders and news by symbol from Yahoo; economic series from the U.S. Treasury, the New York Fed, the ECB
   and FRED; currency pairs' reference rates from the ECB; news by words or topic from GDELT; event odds from
-  Polymarket's prediction markets. With `SEC_USER_AGENT` set (your name and email,
-  [configuration](docs/configuration.md#public-data)), SEC EDGAR adds financial statements, filings and
-  their sections, insider transactions, and sector screens over the S&P 1500.
+  Polymarket's prediction markets; market overviews (indices, sectors and sector rotation, gainers and
+  losers, volatility, the yield curve and breakevens, rates and central banks, credit spreads, commodities,
+  currencies, crypto, macro indicators) from Yahoo, the Treasury, the New York Fed, the ECB and FRED; and
+  instrument search, which turns a name or code into the keys the tools take. With `SEC_USER_AGENT` set
+  (your name and email, [configuration](docs/configuration.md#public-data)), SEC EDGAR adds financial
+  statements, filings and their sections, insider transactions, and sector screens over the S&P 1500.
 - **Web search**: `web_search`, through Anthropic's or OpenAI's own web search, or Google's when named
   ([below](#web-search)).
 - **Compute**: arithmetic, statistics, returns and risk, correlation and beta, technical indicators,
@@ -30,19 +33,14 @@ key or plan, and keeps your sessions on this computer.
 - **Sessions and output**: plan mode, sessions to resume, an answer saved as a PDF report or Markdown, and
   `tradingagents -p` for one question from a script.
 
-Instrument search (`find_instrument`) and market overviews (`markets`) are not served yet: they answer that
-they are not available in this setup.
-
-With `SEC_USER_AGENT` set, three of the four built-in agents (Equity Research, Quant Research and Risk
-Analysis) are offered, and the sixteen built-in skills, written for them, come with them; Macro Strategy is
-offered once market overviews are served. Without it, the main agent researches on its own. `/agents` and
-`/skills` show which are offered. An agent of your own is offered when the data tools it names have a source
-([docs/usage.md](docs/usage.md#your-own-agents-and-skills)).
+Macro Strategy is offered in every setup, and the sixteen built-in skills, written for the built-in agents,
+come with it. With `SEC_USER_AGENT` set, Equity Research, Quant Research and Risk Analysis are offered too.
+`/agents` and `/skills` show which are offered. An agent of your own is offered when the data tools it names
+have a source ([docs/usage.md](docs/usage.md#your-own-agents-and-skills)).
 
 ## What is coming
 
-Market overviews and instrument search, then Korean sources: OpenDART, ECOS, KOSIS and data.go.kr. Macro
-Strategy is offered once market overviews are served.
+Korean sources: OpenDART, ECOS, KOSIS and data.go.kr.
 
 ## Build and install
 

@@ -22,14 +22,15 @@ fi
 "$bin" --version | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+'
 "$bin" --help | grep -q 'tradingagents -p'
 
-# A server that answers every chat request with one fixed sentence, streamed as chat completions are.
+# A server that answers every chat request with one fixed sentence, streamed as chat completions are. It
+# lists its model's context window as vLLM does (max_model_len), large enough for the main prompt.
 rm -f "$scratch/port"
 node -e '
 const reply = (res, chunk) => res.write(`data: ${JSON.stringify({ id: "s", object: "chat.completion.chunk", created: 0, model: "stub", ...chunk })}\n\n`);
 const server = require("node:http").createServer((req, res) => {
   req.resume();
   req.on("end", () => {
-    if (req.method === "GET") return res.end(JSON.stringify({ object: "list", data: [{ id: "stub", object: "model" }] }));
+    if (req.method === "GET") return res.end(JSON.stringify({ object: "list", data: [{ id: "stub", object: "model", max_model_len: 200000 }] }));
     res.writeHead(200, { "content-type": "text/event-stream" });
     reply(res, { choices: [{ index: 0, delta: { role: "assistant", content: "The smoke answer." }, finish_reason: null }] });
     reply(res, { choices: [{ index: 0, delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } });

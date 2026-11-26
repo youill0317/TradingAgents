@@ -1,0 +1,11 @@
+{
+  "source": "markets",
+  "name": "ecb-fm-mrr-fr-since2024",
+  "url": "https://data-api.ecb.europa.eu/service/data/FM/D.U2.EUR.4F.KR.MRR_FR.LEV?format=csvdata&detail=dataonly&startPeriod=2024-01-01",
+  "status": 200,
+  "content_type": "text/csv",
+  "recorded_at": "2026-11-25T14:59:59.000Z",
+  "bytes": 76030,
+  "hand_made": false,
+  "note": "An excerpt of a real answer: the header and the MRR_FR rows (1,060 days from 2024-01-01 to 2026-11-25) of the ECB's answer for its three key interest rates since 2024 (macro/raw/ecb-fm-policy-since2024-dataonly.csv, 215,507 bytes whole), saved with the planning samples and not recorded again, rows unchanged: what the MRR_FR series alone answers, as ecb/fm-dfr-since2024.csv is for DFR; recorded_at is that answer's HTTP Date."
+}

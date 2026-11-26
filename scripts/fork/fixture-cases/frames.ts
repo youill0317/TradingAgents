@@ -36,6 +36,7 @@ const FRAMES: readonly (readonly [concept: string, periods: readonly string[], s
     ["CY2024Q4I"],
     "equity-including-nci",
   ],
+  ["RedeemableNoncontrollingInterestEquityCarryingAmount", ["CY2024Q4I"], "redeemable-nci"],
 ];
 
 /** SEC's first rows a frame keeps besides the companies the lists name. */

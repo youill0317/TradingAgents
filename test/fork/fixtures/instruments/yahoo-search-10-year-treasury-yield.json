@@ -1,0 +1,58 @@
+{
+ "explains": [],
+ "count": 3,
+ "quotes": [
+  {
+   "exchange": "CGI",
+   "shortname": "CBOE Interest Rate 10 Year T No",
+   "quoteType": "INDEX",
+   "symbol": "^TNX",
+   "index": "quotes",
+   "score": 20400,
+   "typeDisp": "Index",
+   "longname": "CBOE Interest Rate 10 Year T No",
+   "exchDisp": "Cboe Indices",
+   "isYahooFinance": true
+  },
+  {
+   "exchange": "CBT",
+   "shortname": "10-Year T-Note Futures,Mar-2027",
+   "quoteType": "FUTURE",
+   "symbol": "ZN=F",
+   "index": "quotes",
+   "score": 20250,
+   "typeDisp": "Futures",
+   "exchDisp": "Chicago Board of Trade",
+   "isYahooFinance": true
+  },
+  {
+   "exchange": "NGM",
+   "shortname": "iShares 7-10 Year Treasury Bond",
+   "quoteType": "ETF",
+   "symbol": "IEF",
+   "index": "quotes",
+   "score": 20110,
+   "typeDisp": "ETF",
+   "longname": "iShares 7-10 Year Treasury Bond ETF",
+   "exchDisp": "NASDAQ",
+   "isYahooFinance": true
+  }
+ ],
+ "news": [],
+ "nav": [],
+ "lists": [],
+ "researchReports": [],
+ "screenerFieldResults": [],
+ "culturalAssets": [],
+ "totalTime": 31,
+ "timeTakenForQuotes": 412,
+ "timeTakenForNews": 0,
+ "timeTakenForAlgowatchlist": 400,
+ "timeTakenForPredefinedScreener": 400,
+ "timeTakenForCrunchbase": 0,
+ "timeTakenForNav": 400,
+ "timeTakenForResearchReports": 0,
+ "timeTakenForScreenerField": 0,
+ "timeTakenForCulturalAssets": 0,
+ "timeTakenForSearchLists": 0
+}

@@ -7,5 +7,5 @@
   "recorded_at": "2026-11-25T14:39:29.000Z",
   "bytes": 54446,
   "hand_made": false,
-  "note": "SEC's answer saved from data.sec.gov on 2026-11-25 with the SEC area's live samples (companyfacts-bac.trimmed.json, itself cut from the complete 7,015,252-byte answer), trimmed for the tests to every concept the line catalog reads and dei's EntityCommonStockSharesOutstanding, facts whose period ends on or after 2025-01-01, 305 facts in all; every fact, concept and unit kept is as SEC answered it."
+  "note": "SEC's answer saved from data.sec.gov on 2026-11-25 with the SEC area's live samples (companyfacts-bac.trimmed.json, itself cut from the complete 7,015,252-byte answer, which was not saved), trimmed for the tests to the concepts the line catalog read when the sample was cut (not GeneralAndAdministrativeExpense, NetCashProvidedByUsedInOperatingActivitiesContinuingOperations and its investing and financing counterparts, or the three temporary-equity concepts it reads now, so they are absent whether or not SEC's answer held them) and dei's EntityCommonStockSharesOutstanding, facts whose period ends on or after 2025-01-01, 305 facts in all; every fact, concept and unit kept is as SEC answered it."
 }

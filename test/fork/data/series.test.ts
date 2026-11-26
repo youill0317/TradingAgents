@@ -210,6 +210,8 @@ describe("a broader search", () => {
       "us.fred.fedfunds",
       "ea.ecb.mrr_fr",
       "ea.ecb.mlfr",
+      "us.fred.irstcb01jpm156n",
+      "us.fred.irstcb01inm156n",
     ]);
   });
 

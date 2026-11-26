@@ -16,7 +16,9 @@
  *   line. A concept whose meaning differs from the line's name carries a `notes` entry, said beside its value.
  * - `compute` derives a value when none of the concepts is filed for a period: the sum of the components filed
  *   (`any`: at least one of them; short-term debt is often filed in parts) or a difference that needs every
- *   term (`all`: total liabilities as liabilities and equity less equity). The derivation is said beside the value.
+ *   term (`all`: total liabilities as liabilities and equity less equity and temporary equity). A term whose
+ *   concepts overlap lists them in order, the first filed used alone (ShortTermBorrowings holds commercial
+ *   paper, which some filers also file as CommercialPaper). The derivation is said beside the value.
  * - `additive` flows add up over time: a quarter can be computed from year-to-date or annual values (a second
  *   quarter as the first half less the first quarter, a fourth as the year less nine months). Per-share figures
  *   and share counts never are: they are served for a quarter only when a three-month value was filed.
@@ -35,12 +37,21 @@ export type StatementKind = "income_statement" | "balance_sheet" | "cash_flow";
 /** What a line's value is: an amount in the reporting currency, an amount per share, or a count of shares. */
 export type LineUnit = "currency" | "per_share" | "shares";
 
+/**
+ * A term of a formula: a concept, or concepts tried in order, the first filed used alone (a later one is part of
+ * an earlier one, filed by those who do not file the whole). An entry that is itself a list is the sum of those
+ * of its concepts that are filed.
+ */
+export type FormulaTerm = string | readonly (string | readonly string[])[];
+
 /** A value derived from other concepts when the line's own are not filed. */
 export type LineFormula = {
-  /** Concepts added (and, for a difference, subtracted). */
-  add: readonly string[];
-  subtract?: readonly string[];
-  /** "any": the sum of the components filed, at least one; "all": every term must be filed. */
+  /** Terms added (and, for a difference, subtracted). */
+  add: readonly FormulaTerm[];
+  subtract?: readonly FormulaTerm[];
+  /** Terms subtracted where filed and left out where not (temporary equity). */
+  lessWhereFiled?: readonly FormulaTerm[];
+  /** "any": the sum of the components filed, at least one; "all": every add and subtract term must be filed. */
   needs: "any" | "all";
 };
 
@@ -279,15 +290,21 @@ export const LINES: readonly CatalogLine[] = [
       },
     },
   ),
+  // Short-term borrowings hold the commercial paper some filers also file on its own (Walmart filed both,
+  // 1,506,000,000 each, at 2009-01-31), and the current portion of long-term borrowings holds the bonds' (TSMC's
+  // liabilities arising from financing activities add up with it alone): each part is read only where its whole
+  // is not filed.
   instant("Short-Term Debt", ["DebtCurrent"], ["CurrentBorrowingsAndCurrentPortionOfNoncurrentBorrowings"], {
     aliases: ["current debt"],
     compute: {
-      usGaap: { add: ["LongTermDebtCurrent", "ShortTermBorrowings", "CommercialPaper"], needs: "any" },
+      usGaap: { add: ["LongTermDebtCurrent", ["ShortTermBorrowings", "CommercialPaper"]], needs: "any" },
       ifrs: {
         add: [
           "ShorttermBorrowings",
-          "CurrentPortionOfLongtermBorrowings",
-          "CurrentBondsIssuedAndCurrentPortionOfNoncurrentBondsIssued",
+          [
+            "CurrentPortionOfLongtermBorrowings",
+            "CurrentBondsIssuedAndCurrentPortionOfNoncurrentBondsIssued",
+          ],
         ],
         needs: "any",
       },
@@ -302,12 +319,23 @@ export const LINES: readonly CatalogLine[] = [
       ifrs: { add: ["LongtermBorrowings", "NoncurrentPortionOfNoncurrentBondsIssued"], needs: "any" },
     },
   }),
+  // Equity including noncontrolling interests leaves out temporary equity (redeemable shares and noncontrolling
+  // interests), which liabilities and equity hold: it is subtracted too where filed, as its total or its parts.
   instant("Total Liabilities", ["Liabilities"], ["Liabilities"], {
     aliases: ["liabilities"],
     compute: {
       usGaap: {
         add: ["LiabilitiesAndStockholdersEquity"],
         subtract: ["StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest"],
+        lessWhereFiled: [
+          [
+            "TemporaryEquityCarryingAmountIncludingPortionAttributableToNoncontrollingInterest",
+            [
+              "TemporaryEquityCarryingAmountAttributableToParent",
+              "RedeemableNoncontrollingInterestEquityCarryingAmount",
+            ],
+          ],
+        ],
         needs: "all",
       },
       ifrs: { add: ["EquityAndLiabilities"], subtract: ["Equity"], needs: "all" },
@@ -472,14 +500,89 @@ export function linesOf(statement: StatementKind): CatalogLine[] {
   return LINES.filter((line) => line.statement === statement);
 }
 
+/** The concepts of formula terms, each once, in order. */
+function termConcepts(terms: readonly FormulaTerm[]): string[] {
+  return [...new Set(terms.flatMap((term) => (typeof term === "string" ? [term] : term.flat())))];
+}
+
+/**
+ * Every concept a formula reads; `required` leaves out the terms subtracted only where filed, whose filing alone
+ * gives no value.
+ */
+export function formulaConcepts(formula: LineFormula | undefined, required = false): string[] {
+  if (!formula) return [];
+  return termConcepts([
+    ...formula.add,
+    ...(formula.subtract ?? []),
+    ...(required ? [] : (formula.lessWhereFiled ?? [])),
+  ]);
+}
+
 /** Every concept a line may be read from, per taxonomy (its own, its formula's, and dei's). */
 export function conceptsOf(line: CatalogLine): { usGaap: string[]; ifrs: string[]; dei: string[] } {
-  const formula = (one: LineFormula | undefined) => [...(one?.add ?? []), ...(one?.subtract ?? [])];
   return {
-    usGaap: [...line.usGaap, ...formula(line.compute?.usGaap)],
-    ifrs: [...line.ifrs, ...formula(line.compute?.ifrs)],
+    usGaap: [...line.usGaap, ...formulaConcepts(line.compute?.usGaap)],
+    ifrs: [...line.ifrs, ...formulaConcepts(line.compute?.ifrs)],
     dei: line.dei ? [line.dei] : [],
   };
+}
+
+/** A formula's value, with each concept it used and what was filed for it. */
+export type FormulaValue<T> = {
+  value: number;
+  added: (readonly [string, T])[];
+  subtracted: (readonly [string, T])[];
+};
+
+/** What one term uses of what is filed: its first alternative filed, or of a sum the concepts filed. */
+function termValue<T>(
+  term: FormulaTerm,
+  filed: (concept: string) => T | undefined,
+): (readonly [string, T])[] {
+  for (const alternative of typeof term === "string" ? [term] : term) {
+    const parts: (readonly [string, T])[] = [];
+    for (const concept of typeof alternative === "string" ? [alternative] : alternative) {
+      const found = filed(concept);
+      if (found !== undefined) parts.push([concept, found]);
+    }
+    if (parts.length) return parts;
+  }
+  return [];
+}
+
+/**
+ * A formula's value from what is filed for each concept (`filed` gives undefined where nothing is), or undefined
+ * when what it needs is not filed.
+ */
+export function evaluateFormula<T>(
+  formula: LineFormula,
+  filed: (concept: string) => T | undefined,
+  amountOf: (found: T) => number,
+): FormulaValue<T> | undefined {
+  const added = formula.add.map((term) => termValue(term, filed));
+  const subtracted = (formula.subtract ?? []).map((term) => termValue(term, filed));
+  const complete =
+    formula.needs === "any"
+      ? added.some((parts) => parts.length > 0)
+      : [...added, ...subtracted].every((parts) => parts.length > 0);
+  if (!complete) return undefined;
+  const plus = added.flat();
+  const less = [
+    ...subtracted,
+    ...(formula.lessWhereFiled ?? []).map((term) => termValue(term, filed)),
+  ].flat();
+  const sum = (list: readonly (readonly [string, T])[]) =>
+    list.reduce((total, [, found]) => total + amountOf(found), 0);
+  return { value: sum(plus) - sum(less), added: plus, subtracted: less };
+}
+
+/** How a formula's value was derived: "A + B", or "A less B and C". */
+export function formulaWords(value: FormulaValue<unknown>): string {
+  const added = value.added.map(([concept]) => concept).join(" + ");
+  const less = value.subtracted.map(([concept]) => concept);
+  if (!less.length) return added;
+  const listed = less.length > 1 ? `${less.slice(0, -1).join(", ")} and ${less.at(-1)}` : less[0];
+  return `${added} less ${listed}`;
 }
 
 /** Every concept of the catalog, by taxonomy as SEC names them ("us-gaap", "ifrs-full", "dei"). */

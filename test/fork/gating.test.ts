@@ -5,28 +5,31 @@
  * Which built-in agents and skills an engine offers its main agent, with no network: an agent only when
  * each data tool it names has a source, the built-in skills only with a built-in agent. As built, with
  * the data providers a setup has by default; with the fork's providers as each configuration builds them
- * (over a fixture fetch); then with one stand-in provider serving every capability, and every capability
- * but one, which shows the agents each capability holds back.
+ * (over a fixture fetch), which are exactly the agents whose every data tool the routed providers serve;
+ * then with one stand-in provider serving every capability, and every capability but one, which shows the
+ * agents each capability holds back.
  *
  * The agents' data tools (specs/agents/*.md) and the capabilities they read: equity quote, profile,
  * estimates, comps, statements, filings, filing_section, ownership, corporate_actions, screen, news, article;
  * quant quote, price_history, technicals, screen, news, ownership; risk quote, price_history, statements,
  * estimates, filings, filing_section, news; macro macro_series, markets, prediction_markets, quote,
  * price_history, news, article. The fork serves, in every setup, quotes, price history, technicals, profiles,
- * corporate actions, institutional holders, macro series and news (Yahoo, the ECB, the agencies' series,
- * Yahoo's and GDELT's news), and Polymarket serves prediction markets; with SEC_USER_AGENT also statements,
- * filings, insider transactions and sector screens (SEC EDGAR). The market views and instrument search are not
- * built yet, so no setup serves markets, which macro names.
+ * corporate actions, institutional holders, macro series, news, the market views and instrument search
+ * (Yahoo, the ECB, the agencies' series, Yahoo's and GDELT's news, the fork's catalogs), and Polymarket serves
+ * prediction markets; with SEC_USER_AGENT also statements, filings, insider transactions and sector screens
+ * (SEC EDGAR). Instrument search gates no agent: no agent names find_instrument.
  */
 // The network guard, also when this file is run from elsewhere than the repository's root.
 import "./net-guard.js";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { builtinCatalog } from "../../src/agents/catalog.js";
 import type { ModelRoute } from "../../src/contracts/index.js";
 import type { Capability } from "../../src/data/capabilities.js";
-import type { Providers } from "../../src/data/router.js";
+import { type Providers, route } from "../../src/data/router.js";
 import { type ProviderName, ROUTES } from "../../src/data/routes.js";
-import { createEngine } from "../../src/engine/factory.js";
+import { createEngine, dataProviders } from "../../src/engine/factory.js";
 import type { PublicDataConfig } from "../../src/fork/data/index.js";
+import { DATA_TOOLS } from "../../src/tools/catalog.js";
 import { fixtureFetch } from "./data/harness.js";
 
 /** What an engine offers: its built-in agents by name, in alphabetical order, and how many skills. */
@@ -36,12 +39,14 @@ type Offered = { agents: string[]; skills: number };
 const BUILT_IN_SKILLS = 16;
 
 /**
- * What an engine offers as built, with the data providers a setup has by default and no keys: none, and
- * no built-in skill. Without SEC_USER_AGENT nothing is read from SEC EDGAR, so equity and risk lack
- * statements and filings and quant (and equity) the sector screen; macro lacks the market views, which no
- * setup serves yet. Every other tool the agents name has its source.
+ * What an engine offers as built, with the data providers a setup has by default and no keys: macro, and
+ * with it the 16 built-in skills. Every tool macro names has a source that needs no key: macro_series (the
+ * Treasury, the New York Fed, the ECB, FRED's keyless download), markets (Yahoo and the same agencies),
+ * prediction_markets (Polymarket), quote and price_history (Yahoo), news and article (Yahoo's and GDELT's).
+ * Without SEC_USER_AGENT nothing is read from SEC EDGAR, so equity and risk lack statements and filings, and
+ * quant (and equity) the sector screen.
  */
-const AS_BUILT: Offered = { agents: [], skills: 0 };
+const AS_BUILT: Offered = { agents: ["macro"], skills: BUILT_IN_SKILLS };
 
 /** Every setting the fork reads, each set (made-up values: building an engine asks no source anything). */
 const EVERY_SETTING: PublicDataConfig = {
@@ -58,46 +63,59 @@ const EVERY_SETTING: PublicDataConfig = {
 };
 
 /**
- * What an engine offers with the fork's providers as each configuration builds them, and why.
- * - No setting: as built (AS_BUILT).
- * - FRED_API_KEY alone: the same. Macro series are served without it (the Treasury, the New York Fed, the
- *   ECB, FRED's keyless download), so it adds no capability: it only adds FRED's vintages and search.
- * - SEC_USER_AGENT: statements, filings, insider transactions and sector screens join, so equity, quant and
- *   risk have every tool they name, and the 16 built-in skills come with them. macro still lacks the market
- *   views.
- * - Every setting the fork reads: the same three. No key serves the market views; macro waits for the
- *   markets provider (src/fork/data/providers/markets.ts), which declares nothing yet.
+ * What an engine offers with the fork's providers as each configuration builds them: in each, exactly the
+ * agents whose every data tool the routed providers serve, and the 16 built-in skills with any of them.
  */
 const CONFIGURED: readonly { name: string; publicData: PublicDataConfig; offered: Offered }[] = [
+  // As built (AS_BUILT): macro alone, every tool it names served without a key.
   { name: "no setting", publicData: {}, offered: AS_BUILT },
+  // The same: macro series and the market views are served without FRED_API_KEY (FRED's keyless download
+  // among their sources), so the key adds no capability, only FRED's vintages and search.
   { name: "FRED_API_KEY alone", publicData: { fredKey: "fred-0123456789" }, offered: AS_BUILT },
+  // Statements, filings, insider transactions and sector screens join (SEC EDGAR), so equity, quant and risk
+  // have every tool they name too: all four agents.
   {
     name: "SEC_USER_AGENT",
     publicData: { secUserAgent: "Jane Doe jane@example.com" },
-    offered: { agents: ["equity", "quant", "risk"], skills: BUILT_IN_SKILLS },
+    offered: { agents: ["equity", "macro", "quant", "risk"], skills: BUILT_IN_SKILLS },
   },
+  // The same four: no other key serves a capability an agent names.
   {
     name: "every setting the fork reads",
     publicData: EVERY_SETTING,
-    offered: { agents: ["equity", "quant", "risk"], skills: BUILT_IN_SKILLS },
+    offered: { agents: ["equity", "macro", "quant", "risk"], skills: BUILT_IN_SKILLS },
   },
 ];
 
-/** What an engine offers when every capability but the one named has a source. */
+/** What an engine offers when every capability but the one named has a source: the agents naming none of its tools. */
 const WITHOUT: { readonly [Name in Capability]: Offered } = {
+  // Every agent names quote: none is offered, so no skill is.
   quotes: { agents: [], skills: 0 },
+  // macro, quant and risk name price_history.
   priceHistory: { agents: ["equity"], skills: BUILT_IN_SKILLS },
+  // equity and risk name statements.
   statements: { agents: ["macro", "quant"], skills: BUILT_IN_SKILLS },
+  // equity and risk name filings and filing_section.
   filings: { agents: ["macro", "quant"], skills: BUILT_IN_SKILLS },
+  // Every agent names news.
   news: { agents: [], skills: 0 },
+  // equity names profile, estimates and comps; risk names estimates.
   profiles: { agents: ["macro", "quant"], skills: BUILT_IN_SKILLS },
+  // equity and quant name ownership.
   ownership: { agents: ["macro", "risk"], skills: BUILT_IN_SKILLS },
+  // equity names corporate_actions.
   corporateActions: { agents: ["macro", "quant", "risk"], skills: BUILT_IN_SKILLS },
+  // quant names technicals.
   technicals: { agents: ["equity", "macro", "risk"], skills: BUILT_IN_SKILLS },
+  // macro names macro_series.
   macroSeries: { agents: ["equity", "quant", "risk"], skills: BUILT_IN_SKILLS },
+  // No agent names find_instrument.
   instruments: { agents: ["equity", "macro", "quant", "risk"], skills: BUILT_IN_SKILLS },
+  // equity and quant name screen.
   crossSections: { agents: ["macro", "risk"], skills: BUILT_IN_SKILLS },
+  // macro names markets.
   markets: { agents: ["equity", "quant", "risk"], skills: BUILT_IN_SKILLS },
+  // macro names prediction_markets.
   predictionMarkets: { agents: ["equity", "quant", "risk"], skills: BUILT_IN_SKILLS },
 };
 
@@ -159,6 +177,24 @@ function offeredFor(publicData: PublicDataConfig): Offered & { requests: number 
 }
 
 /**
+ * The built-in agents, by name, whose every data tool reads a capability the providers a setup builds for
+ * `publicData` serve once routed: what the engine should offer, worked out apart from it.
+ */
+function fullyServed(publicData: PublicDataConfig): string[] {
+  const { available } = route(dataProviders({ fetch: fixtureFetch([]), publicData }));
+  const capabilityOf = new Map<string, Capability>(DATA_TOOLS.map((entry) => [entry.name, entry.capability]));
+  return builtinCatalog()
+    .agents.filter((agent) =>
+      agent.tools.every((tool) => {
+        const capability = capabilityOf.get(tool);
+        return capability !== undefined && available.has(capability);
+      }),
+    )
+    .map((agent) => agent.name)
+    .sort();
+}
+
+/**
  * What an engine offers when one stand-in provider serves the capabilities `served`. Every capability is
  * routed to it, under a name the routing table knows, for this call only: the table is put back before
  * the call returns, so no other test sees the stand-in.
@@ -177,12 +213,16 @@ function offeredWith(served: readonly Capability[]): Offered {
 
 test("as built, the engine offers what the default data providers serve", () => {
   expect(offered()).toEqual(AS_BUILT);
+  // The default providers are the fork's with no setting, and Polymarket.
+  expect(AS_BUILT.agents).toEqual(fullyServed({}));
 });
 
 describe("with the fork's providers as a configuration builds them", () => {
   for (const { name, publicData, offered: expected } of CONFIGURED) {
     test(name, () => {
       expect(offeredFor(publicData)).toEqual({ ...expected, requests: 0 });
+      // Exactly the agents whose every data tool is served: without SEC_USER_AGENT, macro alone.
+      expect(expected.agents).toEqual(fullyServed(publicData));
     });
   }
 });

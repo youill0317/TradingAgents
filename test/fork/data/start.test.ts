@@ -13,8 +13,8 @@ import { NET_GUARD } from "../net-guard.js";
 
 /**
  * One -p question with `env` (and no other environment): what the run printed on stderr. The stub lists its
- * model's context window as vLLM does (`max_model_len`): with SEC_USER_AGENT set the session offers the
- * built-in agents and skills, a prompt the 32,768 tokens assumed for a model of unknown window cannot hold.
+ * model's context window as vLLM does (`max_model_len`): the session offers the built-in agents and skills, and
+ * the app's estimate of its first request is more than the 32,768 tokens assumed for a model of unknown window.
  */
 async function start(env: Record<string, string>): Promise<string> {
   const chunk = (fields: Record<string, unknown>) =>

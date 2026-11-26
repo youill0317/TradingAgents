@@ -1,0 +1,11 @@
+{
+  "source": "instruments",
+  "name": "yahoo-search-10-year-treasury-yield",
+  "url": "https://query2.finance.yahoo.com/v1/finance/search?lang=en-US&region=US&quotesCount=100&newsCount=0&enableFuzzyQuery=false&quotesQueryId=tss_match_phrase_query&multiQuoteQueryId=multi_quote_single_token_query&newsQueryId=news_cie_vespa&enableCb=true&enableNavLinks=true&enableEnhancedTrivialQuery=true&q=10-year+Treasury+yield",
+  "status": 200,
+  "content_type": "application/json;charset=utf-8",
+  "recorded_at": "2026-11-26T00:00:00.000Z",
+  "bytes": 1353,
+  "hand_made": true,
+  "note": "Hand-made, not recorded (Yahoo answers only yahoo-finance2's own User-Agent, and none was recorded here): Yahoo's v1 search answer in the shape yahoo-finance2 4.0.6's search schema validates (SearchResult with SearchQuoteYahoo rows: symbol, exchange, exchDisp, shortname, longname, quoteType, typeDisp, index, score, isYahooFinance), asked as the instrument search asks (quotesCount 100, newsCount 0), for \"10-year Treasury yield\": Cboe's 10-year yield index (^TNX), the 10-year note's front month on CBOT (ZN=F) and a Treasury bond ETF (IEF). The rows carry Yahoo's symbols, exchange codes and quote types for these instruments; the names follow Yahoo's, the scores are invented."
+}

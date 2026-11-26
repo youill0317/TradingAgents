@@ -413,7 +413,7 @@ describe("Anthropic", () => {
     expect(window.outcome.failure).toBeUndefined();
     expect(payloadOf(window.store).results).toHaveLength(2);
     expect(window.outcome.output).toContain(
-      "the search model's context window filled; the findings may be incomplete",
+      "the search model's context window filled; the findings are those it wrote before then",
     );
     const output = await call(
       anthropic,
@@ -423,7 +423,7 @@ describe("Anthropic", () => {
       },
     );
     expect(output.outcome.output).toContain(
-      "the search model reached its output limit; the findings may be incomplete",
+      "the search model reached its output limit; the findings are those it wrote before then",
     );
   });
 
@@ -640,7 +640,7 @@ describe("Google", () => {
     expect(outcome.failure).toBeUndefined();
     expect(payloadOf(store).results).toHaveLength(2);
     expect(outcome.output).toContain(
-      "the search model stopped early (MALFORMED_FUNCTION_CALL); the findings may be incomplete",
+      "the search model stopped early (MALFORMED_FUNCTION_CALL); the findings are those it wrote before then",
     );
   });
 });
@@ -1147,7 +1147,9 @@ describe("which search a session runs", () => {
 describe("a session's start, run from source with no network", () => {
   /**
    * One -p question with `env` (and no other environment), answered by a chat server that records what it
-   * is sent: what the run printed on stderr, and the requests.
+   * is sent: what the run printed on stderr, and the requests. The server lists its model's context window
+   * as vLLM does (`max_model_len`): the session offers the built-in agents and skills, and the app's estimate
+   * of its first request is more than the 32,768 tokens assumed for a model of unknown window.
    */
   async function ask(env: Record<string, string>): Promise<{ stderr: string; requests: string[] }> {
     const requests: string[] = [];
@@ -1158,7 +1160,10 @@ describe("a session's start, run from source with no network", () => {
       port: 0,
       async fetch(request) {
         if (request.method === "GET")
-          return Response.json({ object: "list", data: [{ id: "stub", object: "model" }] });
+          return Response.json({
+            object: "list",
+            data: [{ id: "stub", object: "model", max_model_len: 200_000 }],
+          });
         requests.push(await request.text());
         const usage = { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 };
         return new Response(
