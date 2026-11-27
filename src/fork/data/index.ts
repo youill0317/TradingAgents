@@ -4,8 +4,7 @@
 /**
  * The fork's public-data providers, by routes.ts key: composites, each named for its sources, built on
  * shared deps (deps.ts). Which capability each one serves, and from where, is said at the top of its module
- * in providers/. Polymarket is upstream's and the engine adds it as upstream builds it; FSC (Phase 4) is
- * not built yet, so the router skips it.
+ * in providers/. Polymarket is upstream's and the engine adds it as upstream builds it.
  */
 import type { Providers } from "../../data/router.js";
 import type { PublicDataConfig } from "./config.js";
@@ -13,6 +12,7 @@ import { type ForkOptions, forkDeps } from "./deps.js";
 import { ecbProvider } from "./providers/ecb.js";
 import { filersProvider } from "./providers/filers.js";
 import { framesProvider } from "./providers/frames.js";
+import { fscProvider } from "./providers/fsc.js";
 import { instrumentsProvider } from "./providers/instruments.js";
 import { marketsProvider } from "./providers/markets.js";
 import { newsProvider } from "./providers/news.js";
@@ -27,6 +27,7 @@ export function forkProviders(config: PublicDataConfig, options: ForkOptions = {
   const deps = forkDeps(config, options);
   return {
     yahoo: yahooComposite(deps),
+    fsc: fscProvider(deps),
     filers: filersProvider(deps),
     frames: framesProvider(deps),
     ecb: ecbProvider(deps),

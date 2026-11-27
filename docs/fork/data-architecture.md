@@ -37,10 +37,13 @@ src/fork/data/
   timer.ts          Timer (elapsed time for pacing and waits), REAL_TIMER, abortable()
   catalog/
     instruments.ts  price series (series: keys) and futures roots (future: keys) with their Yahoo symbols
-    lines.ts        statement lines: names as the tools write them, XBRL concepts in order, formulas (statements, screens)
-    series.ts       the economic series macro_series names, under the skills' names, with aliases and FRED codes
+    lines.ts        statement lines: names as the tools write them, XBRL concepts and OpenDART account ids in
+                    order, formulas (statements, screens)
+    series.ts       the economic series macro_series names, under the skills' names, with aliases and FRED,
+                    ECOS and KOSIS codes
     gics.ts         GICS's 2023 tree: each sub-industry's industry, industry group and sector
-    markets.ts      what each market view lists: keys, the Treasury's maturities, rates, FRED series, Yahoo's screens
+    markets.ts      what each market view lists: keys, the Treasury's maturities, rates (the Bank of Korea's
+                    too), FRED series, Yahoo's screens
   compute/
     technicals.ts   the technicals capability's 22 indicators from daily bars
   sources/
@@ -57,6 +60,13 @@ src/fork/data/
     nyfed.ts        the New York Fed's reference rates (EFFR with the FOMC's target range, OBFR, SOFR, TGCR, BGCR)
     ecb.ts          the ECB's euro reference rates (EXR) and key interest rates (FM)
     fred.ts         FRED: its API with FRED_API_KEY (every vintage), its keyless download otherwise
+    dart.ts         dartSource(deps): OpenDART (company list, filings, statement lines, insider reports, outline,
+                    documents), shared by the filers provider and instrument search
+    dart-sections.ts a Korean periodic report's chapters, from its main document's DART XML
+    fsc.ts          the FSC's stock prices on data.go.kr (the key in either spelling, either address)
+    ecos.ts         the Bank of Korea's ECOS: StatisticSearch, its item and table lists
+    kosis.ts        Statistics Korea's KOSIS: parameter data, search, items
+    naver.ts        Naver's news search
   util/
     zip.ts          readZip(): stored and deflated entries, checked (no ZIP64, no encryption)
     xml.ts          parseXml() and helpers: tolerant, never throws, no recursion, linear time
@@ -65,7 +75,10 @@ src/fork/data/
     csv.ts          readCsv(), csvTable(), numberOf(): the agencies' CSV files (RFC 4180, read by header)
   providers/        one module per routes.ts key, each exporting a stable factory:
     yahoo.ts        yahooComposite(deps)       "Yahoo"
-    filers.ts       filersProvider(deps)       "SEC EDGAR"
+    fsc.ts          fscProvider(deps)          "FSC"
+    filers.ts       filersProvider(deps)       "SEC EDGAR" ("SEC EDGAR / OpenDART" with DART_API_KEY)
+    dart-statements.ts, dart-filings.ts        OpenDART's statements, and filings, sections and insider reports,
+                                               which filersProvider serves Korean listings with
     frames.ts       framesProvider(deps)       "SEC EDGAR"
     ecb.ts          ecbProvider(deps)          "ECB"
     statistics.ts   statisticsProvider(deps)   "Public statistics"
@@ -76,6 +89,7 @@ scripts/fork/record-fixtures.ts    the owner's fixture recorder; case modules in
 test/fork/net-guard.ts             the network guard; test/fork/preload.ts loads it for bun test (bunfig.toml)
 test/fork/data/harness.ts          fixtureFetch, fixedClock, fakeTimer, testDeps/testProviders, buildTools/runTool,
                                    readCheck and SPREAD_KEYS
+test/fork/data/korea-routes.test.ts the routes and keys a setup with Korea's keys reads Samsung Electronics from
 test/fork/fixtures/<source>/       fixture bodies and their .meta.json (sec/company-tickers-exchange.json: SEC's
                                    ticker list, hand-made)
 ```
@@ -90,9 +104,23 @@ the 22 market views (Yahoo, the Treasury, the New York Fed, the ECB, FRED); `ins
 search (the catalogs and Yahoo's search, and SEC's ticker list with SEC_USER_AGENT). With SEC_USER_AGENT:
 `filersProvider` statements, filings (list and section) and insider transactions, `framesProvider` sector
 screens; without it `filersProvider` declares only insider transactions, which answer `not_configured`
-naming SEC_USER_AGENT (ownership is offered either way: Yahoo serves its institutional view). So the engine
-offers macro with the 16 built-in skills without SEC_USER_AGENT, and all four built-in agents with it
-(`test/fork/gating.test.ts`).
+naming SEC_USER_AGENT (a Korean listing's naming DART_API_KEY; ownership is offered either way: Yahoo serves its
+institutional view).
+
+Korea's keys add: with DART_API_KEY, `filersProvider` (then "SEC EDGAR / OpenDART") answers a Korean listing's
+statements, filings, sections and insider transactions from OpenDART and every other listing as before, and
+without SEC_USER_AGENT declares statements, filings and insider transactions for the Korean listings (a US
+listing's statements and filings answer `not_configured` naming SEC_USER_AGENT; a listing elsewhere is
+`unsupported`), and `instrumentsProvider` finds Korean companies by name in OpenDART's company list (without
+DART_API_KEY, a Korean listing's statements, filings, sections and insider view answer `not_configured` naming
+it wherever they are declared, and so does a search in Hangul that finds nothing); with
+DATA_GO_KR_API_KEY, `fscProvider` a Korean listing's quote and daily prices after Yahoo; with ECOS_API_KEY and
+KOSIS_API_KEY, `statisticsProvider` their series (and instrument search their catalog entries), and with
+ECOS_API_KEY `marketsProvider` the Bank of Korea's row of central_banks; with NAVER_CLIENT_ID and
+NAVER_CLIENT_SECRET, `newsProvider` Naver's news search beside GDELT for words in Korean. So the engine offers
+macro with the 16 built-in skills without SEC_USER_AGENT and DART_API_KEY, macro and risk with DART_API_KEY and
+no SEC_USER_AGENT (equity and quant also name the sector screen), and all four built-in agents with
+SEC_USER_AGENT (`test/fork/gating.test.ts`).
 
 ### Who changes what
 
@@ -113,13 +141,16 @@ offers macro with the 16 built-in skills without SEC_USER_AGENT, and all four bu
   and breakevens through `sources/treasury.ts`, the rate indicators through `sources/nyfed.ts`, the
   central banks through `sources/nyfed.ts`, `sources/ecb.ts` and `sources/fred.ts`, and FRED's series
   through `sources/fred.ts`; every value-series key a view gives (the Treasury's, the New York Fed's, the
-  ECB's, FRED's) is one `catalog/series.ts` holds, so macro_series reads it as given. Instrument search reads the catalogs (`catalog/instruments.ts`, `catalog/series.ts`)
-  and SEC's ticker list.
+  ECB's, FRED's, the Bank of Korea's) is one `catalog/series.ts` holds, so macro_series reads it as given.
+  Instrument search reads the catalogs (`catalog/instruments.ts`, `catalog/series.ts`), SEC's ticker list
+  and OpenDART's company list (`sources/dart.ts`, which the filers provider's Korean statements and filings
+  read too).
 - Upstream files stay as they are except `src/data/routes.ts` (the routing table), `src/engine/factory.ts`
   (`EngineSettings.publicData` and `dataProviders`), `src/cli/main.tsx` (the config read once, passed to
-  each engine, its notes said at start) and docs. Never edit `src/data/capabilities.ts`,
-  `src/data/router.ts`, `src/tools/*`, `src/data/yahoo/*`, `src/data/polymarket/*`, `package.json` or
-  `package-lock.json`.
+  each engine, its notes said at start), `src/tools/filings.ts` (filing_section's accession pattern takes an
+  OpenDART receipt number, 14 digits, beside an SEC accession) and docs. Never edit
+  `src/data/capabilities.ts`, `src/data/router.ts`, the other files of `src/tools/`, `src/data/yahoo/*`,
+  `src/data/polymarket/*`, `package.json` or `package-lock.json`.
 
 ## What a provider is given: ForkDeps
 
@@ -194,18 +225,23 @@ its environment variable, else from the `"data"` object in `credentials.json` un
 | `beaKey`, `eiaKey`                   | `BEA_API_KEY`, `EIA_API_KEY`                                                                                   |
 | `cacheDir`                           | `<home>/cache/fork-data` with `TRADINGAGENTS_HOME`, else `${XDG_CACHE_HOME:-~/.cache}/tradingagents/fork-data` |
 
-No provider reads `dartKey` through `eiaKey`: they are read for sources this version does not have (Korea's,
-Naver's news search, BEA, EIA), and `docs/configuration.md` says so.
+`dartKey` is read by the filers provider (OpenDART's statements, filings and insider reports) and instrument
+search (OpenDART's company list), `ecosKey` by the statistics and markets providers, `kosisKey` by the
+statistics provider, `dataGoKrKey` by the FSC provider, `naverClientId` and `naverClientSecret` by the news
+provider. `beaKey` and `eiaKey` are read for sources this version does not have (BEA, EIA), and
+`docs/configuration.md` says so.
 
-The notes it returns are said as the session starts, like web_search's: SEC_USER_AGENT unset (nothing is
-read from SEC EDGAR, how to set it, that it is SEC's fair-access rule and not a secret), or set without an
-email; a setting set where it cannot be used, said as such and not used: on more than one line, not text,
-empty in the file, or for SEC_USER_AGENT with characters other than plain ASCII (a User-Agent cannot carry
-them). An environment value that cannot be used gives way to the one under `"data"`, and the note says so;
-when SEC_USER_AGENT has no usable value at all, a note says nothing is read from SEC EDGAR. A `"data"` that is
-not an object, or a name in it the app does not read, is said too. A note names a setting, never its value.
-`secretsOf(config)` lists every value that must never be said (each key, and the SEC User-Agent); the HTTP
-client and the cache are built with it.
+The notes it returns are said as the session starts, like web_search's: SEC_USER_AGENT unset (nothing is read
+from SEC EDGAR, how to set it, that it is SEC's fair-access rule and not a secret), or set without an email; a
+setting set where it cannot be used, said as such and not used: on more than one line, not text, empty in the
+file, for SEC_USER_AGENT with characters other than plain ASCII (a User-Agent cannot carry them), or for
+NAVER_CLIENT_ID and NAVER_CLIENT_SECRET, sent in request headers, with a character a header cannot carry (one
+above U+00FF, which fetch refuses, or a control character other than tab). An environment value that cannot be
+used gives way to the one under `"data"`, and the note says so; when SEC_USER_AGENT has no usable value at
+all, a note says nothing is read from SEC EDGAR. A `"data"` that is not an object, or a name in it the app
+does not read, is said too. A note names a setting, never its value. `secretsOf(config)` lists every value
+that must never be said (each key, data.go.kr's in both the spellings it hands keys out in, and the SEC
+User-Agent); the HTTP client and the cache are built with it.
 
 A capability whose source needs a setting that is not there is not declared when the whole capability rests
 on it: without SEC_USER_AGENT the SEC-backed capabilities (statements, filings, screens) are not declared,
@@ -226,6 +262,7 @@ const answer = await deps.http.get(url, {
   notFoundMessage: "SEC EDGAR has no filer with CIK 0000000001",
   accept: [400], // statuses read by the caller instead of failed (FRED's error JSON)
   maxBytes: ANSWER_BYTES, // the body bound (upstream's 16 MiB unless given)
+  redirect: "same-origin", // redirects followed to the request's own origin only ("follow" unless given)
 });
 answer.status;
 answer.headers;
@@ -243,7 +280,9 @@ What a request does:
   `bulk` (60 s, given by the caller for a large document). `requestTimeout(host, given)` says which applies.
 - A host with a published rate (`HOST_RULES`) waits for its turn: SEC 10 requests a second shared by every
   `*.sec.gov` host, FRED's API (`api.stlouisfed.org`) 120 a minute, FRED's website (`fred.stlouisfed.org`,
-  the keyless download) one a second (its robots.txt's `Crawl-delay: 1`), GDELT's API one every 5 s. Turns are
+  the keyless download) one a second (its robots.txt's `Crawl-delay: 1`), GDELT's API one every 5 s, KOSIS
+  (`kosis.kr`) 200 a minute. OpenDART, ECOS, data.go.kr and Naver publish no such number; their daily quotas
+  are theirs to enforce. Turns are
   given in the order asked; a start is counted when it is actually made, and a request whose timer woke
   late waits until the window holds room, so starts never exceed the published rate in any window. A
   request whose turn would come after its own deadline fails at once as `rate_limited` (with
@@ -263,6 +302,12 @@ What a request does:
   trailing dot, so `data.sec.gov.` is paced and named as data.sec.gov, and `finance.yahoo.com.` is refused.
 - One retry, after `RETRY_PAUSE_MS` (1 s), of a dropped connection or a 5xx. A request that ran past its
   deadline, or was cancelled, is not retried.
+- Redirects are followed as fetch follows them, unless the caller passes `redirect: "same-origin"`, as Korea's
+  sources do with their keys in the address or headers (OpenDART, the FSC, ECOS, KOSIS, Naver), and the
+  recorder for any address holding a key: a redirect to the request's own origin (scheme, host and port) is
+  followed, up to the Fetch standard's 20; one elsewhere is not, and the request is `unavailable`, its address
+  unsaid, so their keys reach nothing but their sources. FRED's API, whose address carries `FRED_API_KEY`,
+  passes no such option and follows redirects as fetch does, as every other source does.
 - User-Agent: SEC's hosts get `SEC_USER_AGENT` (the app's name when it is not set, which happens only in the
   recorder), every other host the app's name and version (`tradingagents/1.0.0`), the fixture recorder
   `TradingAgents-fork-dev/1.0`. A Yahoo address is refused with an Error before any request.
@@ -278,6 +323,7 @@ What a request does:
 | 5xx after the retry, network, deadline | `unavailable`          |                                                                    |
 | body past `maxBytes`                   | `unavailable`          | upstream's "answered more than N bytes"                            |
 | `json()` on a body that is not JSON    | `unavailable`          |                                                                    |
+| a header value fetch cannot send       | `unavailable`          | unsent; the header is named, never its value                       |
 | the caller's cancellation              | the caller's own error | as upstream: the router stops on it                                |
 
 - The default body bound is upstream's `ANSWER_BYTES` (16 MiB); the largest answer measured, SEC
@@ -419,7 +465,7 @@ Fill every field the tools read: `src/tools/*.ts` read more than the zod output 
 left undefined is a value the model never sees. Set fields to `null` when the source has no value, and say why
 in `field_states`. The read check in the tests (below) lists every field a tool read that the answer did not
 supply, and, for an answer a tool spreads or passes on whole (technicals, estimates, institutional
-holders), every key `SPREAD_KEYS` names that the answer leaves out.
+holders, a quote's day), every key `SPREAD_KEYS` names that the answer leaves out.
 
 ## The router: which failures pass a call on
 
@@ -439,14 +485,15 @@ holders), every key `SPREAD_KEYS` names that the answer leaves out.
 | markets                                | markets                                |
 | predictionMarkets                      | polymarket                             |
 
-FSC (Phase 4) is not built yet; the router skips a provider a setup does not have. A call goes to the first
-provider that implements the method. These kinds pass it to the next one, and the answer then says which
-failed before it: `unsupported`, `unavailable`, `rate_limited`, `quota`, `rejected`, `not_configured`.
-`no_data` and `invalid` end the call: they are answers about the request or the market. So:
+The FSC declares its methods only with DATA_GO_KR_API_KEY; the router skips a provider that does not
+implement the method asked. A call goes to the first provider that implements the method. These kinds pass
+it to the next one, and the answer then says which failed before it: `unsupported`, `unavailable`,
+`rate_limited`, `quota`, `rejected`, `not_configured`. `no_data` and `invalid` end the call: they are
+answers about the request or the market. So:
 
 - A listing a provider does not cover is `unsupported`, never `no_data`. A Korean listing the Yahoo composite
-  cannot answer fails as `unsupported` or `unavailable`, so FSC (Phase 4) is asked; test the single-quote
-  path (`quotes.quote`) as well as the batch.
+  cannot answer fails as `unsupported` or `unavailable`, so the FSC is asked; test the single-quote path
+  (`quotes.quote`) as well as the batch.
 - `quotes.many` answers per instrument: an instrument it could not answer goes in `errors` with its `kind`,
   and the router asks the next provider for those with a passing kind.
 - Upstream's Yahoo maps a 404 to `no_data`: hand it only the listings it serves (US tickers and its MIC
@@ -566,7 +613,8 @@ expect(fetch.unmatched).toEqual([]);
   read and whether it held a value (a field asked about with `in` is read, never missing; listing an
   object's keys is noted in `reads.listed`). A spread or a record passed on whole never asks the view for a
   key the answer lacks, so `SPREAD_KEYS` names the keys the tools need of those answers (technicals'
-  22 indicators and the fields its text states, estimates' consensus and calendar, holders' rows) and the
+  22 indicators and the fields its text states, a quote's day, estimates' consensus and calendar, holders'
+  rows) and the
   check logs each, missing when absent; `expectKeys` does the same for keys a test names.
 - `fakeTimer()` makes pacing and Retry-After waits instant: sleeps end one at a time in the order of their
   end times, the time set to each one's end, and are listed in `slept`; `fakeTimer(0, late)` ends each
@@ -583,11 +631,20 @@ expect(fetch.unmatched).toEqual([]);
   fixtures: each call answers, from the source the router names, with no field the tool reads by name left
   out (upstream Yahoo's own optional fields aside) and, of a record it passes on whole, none of the keys
   `SPREAD_KEYS` or a view's `VIEW_KEYS` (`markets-routes.test.ts`) name, so a change that drops one fails
-  there. A data tool added without a call there fails it too.
+  there. A data tool added without a call there fails it too. Then, with Korea's keys too
+  (`korea-routes.test.ts`), Samsung Electronics through every Korean source the same way: statements,
+  filings, sections and insider reports (OpenDART), quote and daily prices (the FSC, Yahoo failing), an ECOS
+  and a KOSIS series, central_banks' Bank of Korea row, news for Korean words (Naver and GDELT) and
+  find_instrument by its Korean name; no key is said in any of them.
 - `test/fork/gating.test.ts` pins the agents and skills an engine offers: as built (`AS_BUILT`: macro with
   the 16 built-in skills), and with the fork's providers as each configuration builds them over a fixture
-  fetch (macro without SEC_USER_AGENT; all four with it, whatever other key is set), each the agents whose
-  every data tool the routed providers serve. Update it when a provider changes what it declares.
+  fetch (macro without SEC_USER_AGENT and DART_API_KEY; macro and risk with DART_API_KEY, or every Korean key,
+  and no SEC_USER_AGENT; all four with SEC_USER_AGENT, whatever other key is set), each the agents whose every
+  data tool the routed providers serve. Update it when a provider changes what it declares.
+- `test/fork/korea-engine.test.ts` asks one question of an engine built with Korea's keys (`publicData`) over
+  a fixture fetch and a scripted model on 127.0.0.1: find_instrument by a Korean name, then the key's
+  statements, filings and a filing's section, each answered; no key is in any request the model receives,
+  and each key reaches only its own source.
 
 Before a change is done, run the checks FORK.md lists under "Taking an upstream release" (step 5), from
 `npm run typecheck` through `sh scripts/fork/check-notices.sh main` (with `export

@@ -1,0 +1,11 @@
+{
+  "source": "kosis",
+  "name": "meta-dt-1da7102s",
+  "url": "https://kosis.kr/openapi/statisticsData.do?method=getMeta&type=ITM&orgId=101&tblId=DT_1DA7102S&apiKey=***&format=json&jsonVD=Y",
+  "status": 200,
+  "content_type": "application/json;charset=UTF-8",
+  "recorded_at": "2026-11-26T09:00:00.000Z",
+  "bytes": 934,
+  "hand_made": true,
+  "note": "Hand-made in the JSON KOSIS's Open API guide (kosis.kr/openapi, statisticsParameterData.do, statisticsSearch.do, statisticsData.do getMeta) as open-source KOSIS clients document it, and the codes the owner verified (DT_1F02011: T10, T11, T12, C1 E) give for statisticsData.do getMeta type=ITM: the table the search fixture names, two items (OBJ_ID ITEM) and two classifications (sex, age group); codes and names illustrative. No KOSIS_API_KEY was used. Listed for a live check."
+}

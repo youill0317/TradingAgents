@@ -16,12 +16,16 @@ or supported by Tauric Research.
   the ECB's reference rates for currency pairs), GDELT (news by words or topic) and Polymarket
   (prediction-market odds); the 22 market views come from Yahoo, the Treasury, the New York Fed, the ECB and
   FRED, and instrument search reads the fork's catalogs, Yahoo's search and SEC's ticker list. SEC EDGAR is
-  read only with `SEC_USER_AGENT` set. A built-in agent is offered when every data tool it names is served:
-  macro in every setup, equity, quant and risk with `SEC_USER_AGENT`; the built-in skills come with them.
-  The settings, SEC's User-Agent and the agencies' keys, are read from the environment or from a `"data"`
-  object in `credentials.json` ([configuration](docs/configuration.md#public-data)); which source serves
-  what is in [docs/fork/data-sources.md](docs/fork/data-sources.md), and how the providers are built in
-  [docs/fork/data-architecture.md](docs/fork/data-architecture.md).
+  read only with `SEC_USER_AGENT` set. Korean sources, each with its own key: OpenDART (a Korean company's
+  statements, filings and their sections, insider reports, and its company list for instrument search), the
+  FSC's official KRX end-of-day prices on data.go.kr, the Bank of Korea's ECOS and Statistics Korea's KOSIS
+  (economic series, and the Bank of Korea's base rate among the central banks), and Naver's news search for
+  news in Korean. A built-in agent is offered when every data tool it names is served: macro in every setup,
+  risk with `SEC_USER_AGENT` or `DART_API_KEY`, equity and quant with `SEC_USER_AGENT`; the built-in skills
+  come with them. The settings, SEC's User-Agent and the agencies' keys, are read from the environment or
+  from a `"data"` object in `credentials.json` ([configuration](docs/configuration.md#public-data)); which
+  source serves what is in [docs/fork/data-sources.md](docs/fork/data-sources.md), and how the providers are
+  built in [docs/fork/data-architecture.md](docs/fork/data-architecture.md).
 - A `web_search` tool searches the web through Anthropic's or OpenAI's own search when a key for one of
   them is set (the chat model's provider first when it is one of them), or through Google Search grounding
   when `TRADINGAGENTS_WEB_SEARCH` names Google.
@@ -126,6 +130,8 @@ this fork.
    - `specs/agents/equity.md` and `src/agents/builtin.generated.ts`: take upstream's, then drop `tauric_view`
      and its sentence again.
    - `src/data/routes.ts`: keep the fork's routes, and route any new capability.
+   - `src/tools/filings.ts`: take upstream's change, and keep filing_section's accession pattern taking an
+     OpenDART receipt number (14 digits) beside an SEC accession, with its message naming both.
    - `README.md`: keep the fork's.
    - `CHANGELOG.md`, `src/cli/changelog.generated.ts`, `package.json`, `package-lock.json`, `biome.json`,
      `src/models/provider-facts.json`: take upstream's; the fork never edits them.

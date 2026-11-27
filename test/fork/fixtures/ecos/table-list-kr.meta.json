@@ -1,0 +1,11 @@
+{
+  "source": "ecos",
+  "name": "table-list-kr",
+  "url": "https://ecos.bok.or.kr/api/StatisticTableList/***/json/kr/1/1000",
+  "status": 200,
+  "content_type": "application/json;charset=UTF-8",
+  "recorded_at": "2026-11-26T09:00:00.000Z",
+  "bytes": 1308,
+  "hand_made": true,
+  "note": "Hand-made in the JSON the Bank of Korea's ECOS Open API guide (ecos.bok.or.kr/api, developer specification: StatisticSearch, StatisticItemList, StatisticTableList, their JSON rows and RESULT codes) as open-source ECOS clients document it, and the series codes the owner verified (722Y001, 901Y009) give for StatisticTableList (Korean names): nine of ECOS's tables and the groups above them, a list of its own total; ECOS lists many more. Codes 722Y001 and 901Y009 are as the owner verified them, 817Y002 and 731Y001 as open-source clients give them; 721Y001, the group codes and the English names are illustrative. No ECOS_API_KEY was used. Listed for a live check."
+}

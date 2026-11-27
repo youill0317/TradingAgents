@@ -1,0 +1,11 @@
+{
+  "source": "naver",
+  "name": "gdelt-artlist-samsung-semiconductor",
+  "url": "https://api.gdeltproject.org/api/v2/doc/doc?query=%EC%82%BC%EC%84%B1%EC%A0%84%EC%9E%90+%EB%B0%98%EB%8F%84%EC%B2%B4&mode=artlist&format=json&maxrecords=250&sort=datedesc",
+  "status": 200,
+  "content_type": "application/json; charset=utf-8",
+  "recorded_at": "2026-11-25T22:00:00.000Z",
+  "bytes": 1008,
+  "hand_made": true,
+  "note": "Hand-made, not recorded (api.gdeltproject.org was not reachable from the development session): GDELT DOC 2.0's ArtList answer in its documented JSON form, kept beside Naver's answer to the same words (삼성전자 반도체) for the search in Korean that reads both: three invented Korean-language articles at reserved example domains, newest first, one of them an address Naver's answer lists too, seen by GDELT after Naver's time for it."
+}

@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Added in this fork of TradingAgents 1.0.0.
 /**
- * The fork's providers as a setup builds them: one per routing-table key (FSC aside until Phase 4), each
- * declaring what it serves in that setup (the SEC-backed ones only with SEC_USER_AGENT); built without a
- * request or a file.
+ * The fork's providers as a setup builds them: one per routing-table key, each declaring what it serves in that
+ * setup (the SEC-backed ones only with SEC_USER_AGENT, the FSC's prices only with DATA_GO_KR_API_KEY, OpenDART's
+ * Korean statements, filings and insider reports only with DART_API_KEY); built without a request or a file.
  */
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
@@ -31,6 +31,7 @@ test("one provider per routing key, each named for its sources", () => {
     Object.fromEntries(Object.entries(providers).map(([key, provider]) => [key, provider?.name])),
   ).toEqual({
     yahoo: "Yahoo",
+    fsc: "FSC",
     filers: "SEC EDGAR",
     frames: "SEC EDGAR",
     ecb: "ECB",
@@ -86,7 +87,7 @@ test("without SEC_USER_AGENT the keyless sources serve, and nothing is read from
   // EDGAR declares only ownership's insider view, which answers what to set (Yahoo serves the institutional).
   for (const config of [{}, { fredKey: "fred-0123456789" }]) {
     const { served, fetch } = declared(config);
-    expect(served).toEqual({ ...KEYLESS, filers: { ownership: ["transactions"] }, frames: {} });
+    expect(served).toEqual({ ...KEYLESS, fsc: {}, filers: { ownership: ["transactions"] }, frames: {} });
     expect(fetch.requests).toEqual([]);
   }
 });
@@ -121,19 +122,46 @@ test("with SEC_USER_AGENT, SEC EDGAR serves statements, filings, insider transac
   });
   expect(served).toEqual({
     ...KEYLESS,
+    fsc: {},
     filers: { statements: ["statement"], filings: ["list", "section"], ownership: ["transactions"] },
     frames: { crossSections: ["financials"] },
   });
   expect(fetch.requests).toEqual([]);
 });
 
-test("every provider the routing table names is built here, by the engine (Polymarket), or later (FSC)", () => {
-  const built = new Set([...Object.keys(dataProviders({ fetch: fixtureFetch([]) })), "fsc"]);
+test("with the Korean keys: the FSC's prices, and OpenDART's statements, filings and insider reports", () => {
+  const korean = {
+    dartKey: "dart-0123456789",
+    ecosKey: "ecos-0123456789",
+    kosisKey: "kosis-0123456789",
+    dataGoKrKey: "datagokr-0123456789",
+    naverClientId: "naver-id",
+    naverClientSecret: "naver-secret",
+  };
+  // ECOS, KOSIS and Naver serve inside capabilities declared in every setup (macro series, market views,
+  // news): they add no method. Without SEC_USER_AGENT, OpenDART alone declares the filers' three for Korean
+  // listings (a US listing's answer says to set SEC_USER_AGENT); screens stay SEC EDGAR's.
+  const alone = declared(korean);
+  expect(alone.served).toEqual({
+    ...KEYLESS,
+    fsc: { quotes: ["many", "quote"], priceHistory: ["daily"] },
+    filers: { statements: ["statement"], filings: ["list", "section"], ownership: ["transactions"] },
+    frames: {},
+  });
+  const both = declared({ ...korean, secUserAgent: "Jane Doe jane@example.com" });
+  expect(both.served).toEqual({ ...alone.served, frames: { crossSections: ["financials"] } });
+  expect(testProviders(korean).providers.filers?.name).toBe("SEC EDGAR / OpenDART");
+  expect([...alone.fetch.requests, ...both.fetch.requests]).toEqual([]);
+});
+
+test("every provider the routing table names is built here, or by the engine (Polymarket)", () => {
+  const built = new Set(Object.keys(dataProviders({ fetch: fixtureFetch([]) })));
   for (const names of Object.values(ROUTES)) for (const name of names) expect(built.has(name)).toBe(true);
   expect(Object.keys(dataProviders({ fetch: fixtureFetch([]) })).sort()).toEqual([
     "ecb",
     "filers",
     "frames",
+    "fsc",
     "instruments",
     "markets",
     "news",

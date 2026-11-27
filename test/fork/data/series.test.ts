@@ -5,7 +5,9 @@
  * The macro series catalog (src/fork/data/catalog/series.ts), offline: every name the skills, agents and tool
  * texts ask macro_series for is a series' own name, found first and exactly; names and other names are unique
  * however they are spelled; keys are what macro_series' key pattern takes and never name a price series; and a
- * search finds the series a category word or a code means.
+ * search finds the series a category word or a code means. Korea's series (ECOS, KOSIS) are found by the names a
+ * Korean analysis uses, in English and in Hangul, only in a setup with their source's key; their keys name the
+ * source's codes, and their units are read from the source's own words.
  */
 import { describe, expect, test } from "bun:test";
 import { PRICE_SERIES, PRICE_SERIES_FAMILIES } from "../../../src/fork/data/catalog/instruments.js";
@@ -13,9 +15,14 @@ import {
   catalogByCode,
   catalogSeries,
   exactName,
+  koreanKey,
+  koreanKeyOf,
+  koreanUnitOf,
   namesOf,
+  normalizeName,
   SERIES,
   searchCatalog,
+  seriesKeysOf,
 } from "../../../src/fork/data/catalog/series.js";
 import { parseListing } from "../../../src/fork/data/listings.js";
 
@@ -128,13 +135,17 @@ describe("the catalog's names and keys", () => {
   test("every key is lower case, `<area>.<publisher>.<code>`, read by macro_series without a search, and unique", () => {
     const keys = SERIES.map((entry) => entry.key);
     expect(new Set(keys).size).toBe(keys.length);
-    for (const key of keys) {
+    for (const entry of SERIES) {
+      const key = entry.key;
       expect(key, key).toMatch(MACRO_KEY);
       expect(`series:${key}`, key).toMatch(MACRO_KEY);
-      expect(key.split("."), key).toHaveLength(3);
-      expect(key.split(".")[1], key).toBe(
-        (SERIES.find((entry) => entry.key === key)?.origin.publisher ?? "") as string,
-      );
+      expect(key.split(".")[1], key).toBe(entry.origin.publisher);
+      // Korea's keys name the source's codes, one a segment; the others one code of the catalog's.
+      if (entry.origin.publisher === "ecos" || entry.origin.publisher === "kosis") {
+        expect(key, key).toBe(koreanKeyOf(entry.origin));
+        expect(key.startsWith("kr."), key).toBe(true);
+        expect(key.split(".").length, key).toBeGreaterThanOrEqual(4);
+      } else expect(key.split("."), key).toHaveLength(3);
     }
   });
 
@@ -232,5 +243,139 @@ describe("a broader search", () => {
       match.entry.key.startsWith("us.treasury.par_"),
     );
     expect(yields).toHaveLength(14);
+  });
+});
+
+/** Korea's series and the names a Korean analysis asks for them by, in English and in Hangul. */
+const KOREAN_ASKED: Readonly<Record<string, string>> = {
+  "Bank of Korea base rate": "kr.ecos.722y001.0101000",
+  "BOK base rate": "kr.ecos.722y001.0101000",
+  "Korea policy rate": "kr.ecos.722y001.0101000",
+  "한국은행 기준금리": "kr.ecos.722y001.0101000",
+  기준금리: "kr.ecos.722y001.0101000",
+  "Korea CPI": "kr.ecos.901y009.0",
+  "Korean CPI": "kr.ecos.901y009.0",
+  소비자물가지수: "kr.ecos.901y009.0",
+  "Korea semiconductor production index": "kr.kosis.dt_1f02011.t10.e",
+  "반도체 출하지수": "kr.kosis.dt_1f02011.t11.e",
+  "Korea semiconductor inventory index": "kr.kosis.dt_1f02011.t12.e",
+};
+
+describe("Korea's series", () => {
+  const BOTH = { ecos: true, kosis: true };
+
+  test("each name a Korean analysis uses names its series exactly, first, in a setup with its key", () => {
+    for (const [name, key] of Object.entries(KOREAN_ASKED)) {
+      for (const spelling of [name, name.toLowerCase(), name.toUpperCase(), ` ${name} `]) {
+        const [first] = searchCatalog(spelling, BOTH);
+        expect(first?.entry.key, spelling).toBe(key);
+        expect(first?.exact, spelling).toBe(true);
+      }
+    }
+    expect(catalogSeries("kr.ecos.722y001.0101000")?.name).toBe("Bank of Korea base rate");
+    expect(catalogSeries("KR.ECOS.901Y009.0")?.name).toBe("Korea CPI");
+  });
+
+  test('without its source\'s key a search never offers one; with every key, "all"', () => {
+    for (const name of Object.keys(KOREAN_ASKED)) {
+      expect(searchCatalog(name), name).toEqual([]);
+      expect(searchCatalog(name, { ecos: true }).length > 0, name).toBe(
+        (KOREAN_ASKED[name] as string).startsWith("kr.ecos."),
+      );
+      expect(searchCatalog(name, "all")[0]?.exact, name).toBe(true);
+    }
+    // Broad words find them with their keys, after the series that need none.
+    const banks = searchCatalog("central banks", BOTH).map((match) => match.entry.key);
+    expect(banks.at(-1)).toBe("kr.ecos.722y001.0101000");
+    expect(searchCatalog("central banks").map((match) => match.entry.key)).toEqual(banks.slice(0, -1));
+    expect(searchCatalog("inflation", BOTH)[0]?.entry.key).toBe("us.fred.cpiaucsl");
+    expect(searchCatalog("Korea semiconductor", BOTH).map((match) => match.entry.key)).toEqual([
+      "kr.kosis.dt_1f02011.t10.e",
+      "kr.kosis.dt_1f02011.t11.e",
+      "kr.kosis.dt_1f02011.t12.e",
+    ]);
+    expect(searchCatalog("금리", BOTH).map((match) => match.entry.key)).toEqual(["kr.ecos.722y001.0101000"]);
+  });
+
+  test("the setting a setup's keys serve", () => {
+    expect(seriesKeysOf({})).toEqual({ ecos: false, kosis: false });
+    expect(seriesKeysOf({ ecosKey: "x", kosisKey: "y" })).toEqual({ ecos: true, kosis: true });
+  });
+
+  test("Hangul is read as letters: a Korean name is its own words, never nothing", () => {
+    expect(normalizeName("한국은행 기준금리!")).toBe("한국은행 기준금리");
+    expect(exactName("  소비자물가지수 ")).toBe("소비자물가지수");
+    // A name in Hangul alone no longer reads as empty, and US names read as before.
+    expect(searchCatalog("코스피")).toEqual([]);
+    expect(searchCatalog("CPI 한국")[0]?.exact).toBeFalsy();
+    expect(searchCatalog("U.S. CPI")[0]).toMatchObject({ exact: true, entry: { key: "us.fred.cpiaucsl" } });
+  });
+
+  test("a Korean key names the source's codes: read in any case, a `.` in a code written `~`", () => {
+    expect(koreanKey("series:kr.ecos.722y001.0101000")).toEqual({
+      publisher: "ecos",
+      codes: ["722Y001", "0101000"],
+    });
+    expect(koreanKey("KR.KOSIS.DT_1F02011.T10.E")).toEqual({
+      publisher: "kosis",
+      codes: ["DT_1F02011", "T10", "E"],
+    });
+    expect(koreanKey("kr.kosis.dt_x.t1.a~0001")?.codes).toEqual(["DT_X", "T1", "A.0001"]);
+    expect(
+      koreanKeyOf({
+        publisher: "kosis",
+        org: "101",
+        table: "DT_X",
+        item: "T1",
+        objects: ["A.0001"],
+        period: "M",
+      }),
+    ).toBe("kr.kosis.dt_x.t1.a~0001");
+    expect(koreanKey("us.fred.cpiaucsl")).toBeUndefined();
+    expect(koreanKey("kr.ecos.")).toBeUndefined();
+  });
+
+  test("units in the sources' own words", () => {
+    const unit = (written: string) => koreanUnitOf(written);
+    expect(unit("연%")).toEqual({ kind: "percent", multiplier: 1, currency: null, per: null });
+    expect(unit("%")).toEqual({ kind: "percent", multiplier: 1, currency: null, per: null });
+    expect(unit("%p")).toEqual({ kind: "percentage_points", multiplier: 1, currency: null, per: null });
+    expect(unit("2020=100")).toEqual({ kind: "index", multiplier: 1, currency: null, per: null });
+    expect(unit("2015.12=100")).toMatchObject({ kind: "index" });
+    expect(unit("지수")).toMatchObject({ kind: "index" });
+    expect(unit("십억원")).toEqual({ kind: "currency", multiplier: 1e9, currency: "KRW", per: null });
+    expect(unit("십억원 ")).toEqual({ kind: "currency", multiplier: 1e9, currency: "KRW", per: null });
+    expect(unit("조원")).toMatchObject({ kind: "currency", multiplier: 1e12, currency: "KRW" });
+    expect(unit("억원")).toMatchObject({ kind: "currency", multiplier: 1e8, currency: "KRW" });
+    expect(unit("원")).toMatchObject({ kind: "currency", multiplier: 1, currency: "KRW" });
+    expect(unit("백만달러")).toMatchObject({ kind: "currency", multiplier: 1e6, currency: "USD" });
+    expect(unit("천달러")).toMatchObject({ kind: "currency", multiplier: 1e3, currency: "USD" });
+    expect(unit("천명")).toEqual({ kind: "count", multiplier: 1e3, currency: null, per: null });
+    expect(unit("명")).toMatchObject({ kind: "count", multiplier: 1 });
+    expect(unit("가구")).toMatchObject({ kind: "count", multiplier: 1 });
+    expect(unit("배")).toMatchObject({ kind: "ratio" });
+    expect(unit("원/달러")).toEqual({ kind: "currency", multiplier: 1, currency: "KRW", per: "달러" });
+    expect(unit("천톤")).toEqual({ kind: "quantity", multiplier: 1e3, currency: null, per: null });
+  });
+
+  test("each Korean series' unit is the one its source writes, and its period the source's", () => {
+    const korean = SERIES.filter((entry) => entry.key.startsWith("kr."));
+    expect(korean.map((entry) => entry.key)).toEqual(
+      Object.values(KOREAN_ASKED).filter((key, index, all) => all.indexOf(key) === index),
+    );
+    for (const entry of korean) {
+      expect(koreanUnitOf(entry.as_published.unit.split(" (")[0] as string).kind, entry.key).toBe(
+        entry.unit.kind,
+      );
+      const period =
+        entry.origin.publisher === "ecos"
+          ? entry.origin.cycle
+          : entry.origin.publisher === "kosis"
+            ? entry.origin.period
+            : "";
+      expect({ D: "calendar_day", M: "month" }[period as "D"], entry.key).toBe(
+        entry.period as "calendar_day",
+      );
+    }
   });
 });

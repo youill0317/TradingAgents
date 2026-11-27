@@ -1,0 +1,11 @@
+{
+  "source": "kosis",
+  "name": "error-11",
+  "url": "https://kosis.kr/openapi/Param/statisticsParameterData.do?method=getList&orgId=101&tblId=DT_1F02011&itmId=T10&objL1=E&prdSe=M&startPrdDe=199001&endPrdDe=199012&apiKey=***&format=json&jsonVD=Y",
+  "status": 200,
+  "content_type": "application/json;charset=UTF-8",
+  "recorded_at": "2026-11-26T09:00:00.000Z",
+  "bytes": 63,
+  "hand_made": true,
+  "note": "Hand-made in the {err, errMsg} form KOSIS's Open API guide (kosis.kr/openapi, statisticsParameterData.do, statisticsSearch.do, statisticsData.do getMeta) as open-source KOSIS clients document it, and the codes the owner verified (DT_1F02011: T10, T11, T12, C1 E) give for err 11, which KOSIS answers with HTTP 200 to a key it does not accept; the message is the one an open-source KOSIS client (pykosis 0.2.2) reports from a live call. No KOSIS_API_KEY was used. Listed for a live check."
+}

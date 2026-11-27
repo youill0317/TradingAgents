@@ -1,0 +1,11 @@
+{
+  "source": "fsc",
+  "name": "stock-price-005935",
+  "url": "https://apis.data.go.kr/1160100/GetStockSecuritiesInfoService_V2/getStockPriceInfo_V2?serviceKey=***&numOfRows=10000&pageNo=1&resultType=json&likeSrtnCd=005935&beginBasDt=20261012&endBasDt=20261125",
+  "status": 200,
+  "content_type": "application/json;charset=UTF-8",
+  "recorded_at": "2026-11-25T22:00:00.000Z",
+  "bytes": 9306,
+  "hand_made": true,
+  "note": "Hand-made, not recorded (no request is sent to apis.data.go.kr from the development session): the FSC's getStockPriceInfo answer in its documented JSON form ({response: {header: {resultCode, resultMsg}, body: {numOfRows, pageNo, totalCount, items: {item: [...]}}}}, every value a string, fltRt without its leading zero), for Samsung Electronics' preferred shares (005935, KOSPI), the 32 sessions from 2026-10-12 to 2026-11-24, newest first, invented prices at about 81% of the common share's, 815,974,664 shares listed, each market capitalization the close times the shares."
+}

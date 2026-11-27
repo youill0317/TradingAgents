@@ -386,9 +386,10 @@ export function readCheck<T>(data: T, log: ReadLog = readLog()): { value: T; log
  * The keys a tool needs of an answer it spreads, or passes on whole, by capability and method ("technicals.latest"),
  * each at a path in the answer ("" the answer itself, "holders[]" each holder): a spread or a whole record
  * never asks the view for a key the answer leaves out, so `checkedProviders` logs each of these as read,
- * and as missing when the answer has none. From what the tools read (src/tools/technicals.ts, company.ts):
- * technicals' indicators and the fields its text states; the estimates preview's consensus, targets and
- * next earnings; the institutional holders the contract requires of every row.
+ * and as missing when the answer has none. From what the tools read (src/tools/technicals.ts, company.ts,
+ * quote.ts): technicals' indicators and the fields its text states; a quote's day (open, high, low, volume);
+ * the estimates preview's consensus, targets and next earnings; the institutional holders the contract
+ * requires of every row.
  */
 export const SPREAD_KEYS: Readonly<Record<string, Readonly<Record<string, readonly string[]>>>> = {
   "technicals.latest": {
@@ -404,6 +405,9 @@ export const SPREAD_KEYS: Readonly<Record<string, Readonly<Record<string, readon
       "sma50_vs_sma200",
     ],
   },
+  // A quote's day is passed on whole (the quote tool writes the record as it is given): its four values.
+  "quotes.quote": { day: ["open", "high", "low", "volume"] },
+  "quotes.many": { "quotes[].quote.day": ["open", "high", "low", "volume"] },
   "profiles.analyst": { "": ["recommendation", "target_low_price", "target_high_price"] },
   "profiles.calendar": { "": ["earnings", "dividend"] },
   "ownership.holders": {
@@ -437,6 +441,15 @@ function objectsAt(data: unknown, path: string): object[] {
     });
   }
   return found.filter((item): item is object => plain(item) && !Array.isArray(item));
+}
+
+/**
+ * Whether `text` holds any run of eight characters of `secret`: a part of a key as well as the whole, for tests
+ * that a key quoted back by a source, cut or whole, is never said.
+ */
+export function holdsPart(text: string, secret: string): boolean {
+  for (let at = 0; at + 8 <= secret.length; at++) if (text.includes(secret.slice(at, at + 8))) return true;
+  return false;
 }
 
 /** Logs, in `log`, each of `keys` (SPREAD_KEYS' form) as read in `data`, and missing when it has none. */

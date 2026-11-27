@@ -1,0 +1,11 @@
+{
+  "source": "dart",
+  "name": "corp-codes",
+  "url": "https://opendart.fss.or.kr/api/corpCode.xml?crtfc_key=***",
+  "status": 200,
+  "content_type": "application/zip",
+  "recorded_at": "2026-11-25T22:00:00.000Z",
+  "bytes": 747,
+  "hand_made": true,
+  "note": "Hand-made, not recorded (no request is sent to opendart.fss.or.kr from the development session): corpCode.xml's answer in OpenDART's documented form, a ZIP holding CORPCODE.xml (<result> with a <list> per company: corp_code, corp_name, corp_eng_name, stock_code, a blank for a company without a listing, and modify_date), cut to the companies the tests read as the recorder's case cuts the whole list (scripts/fork/fixture-cases/dart.ts, CORP_EXCERPT) and zipped again with its zipOf. Samsung Electronics' corp_code 00126380 and Daco's row (the guide's example) follow OpenDART; the other corp codes, the unlisted companies' and every modify_date are not checked against OpenDART's list."
+}

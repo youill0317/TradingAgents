@@ -14,8 +14,11 @@
  *   only: a pair's daily history is the ECB's reference rates), crypto pairs (`crypto:BTC-USD`; BTC-USDT is
  *   read as BTC-USD, which the instrument's name says) and price series (`series:us.equity_index.sp500`,
  *   Yahoo `^GSPC`). A batch is one request for all of these. A Korean listing Yahoo does not answer fails as
- *   unsupported or unavailable, never no_data, so the router asks the next source (FSC); a value series fails
- *   as invalid, pointing to macro_series.
+ *   unsupported or unavailable, never no_data, so the router asks the next source (FSC); so does, with
+ *   DATA_GO_KR_API_KEY (the FSC's daily bars), a Korean listing's daily window whose every session Yahoo's
+ *   chart gives without a close or without an adjusted close, the reason saying which (without the key, and
+ *   in a pair, the window is Yahoo's, those sessions listed missing); a value series fails as invalid,
+ *   pointing to macro_series.
  * - priceHistory.intraday: a listed security's 15-minute or hourly bars, regular hours only.
  * - technicals.latest: the 22 indicators (compute/technicals.ts) from about 400 daily bars (TECHNICALS_DAYS).
  * - profiles.profile/analyst/calendar: quoteSummary's modules, asked per use.
@@ -35,6 +38,7 @@ import {
   koreanCandidates,
   koreanMarketOf,
   koreanTarget,
+  type LeftOut,
   MODULES,
   noQuote,
   type Plan,
@@ -71,6 +75,24 @@ function upstreamKey(plan: Plan): string | undefined {
 /** An upstream answer naming the canonical key (upstream names Yahoo's symbol, such as VOD.L). */
 function named<T extends { instrument?: Instrument | null }>(answer: T, key: string): T {
   return answer.instrument ? { ...answer, instrument: { ...answer.instrument, key } } : answer;
+}
+
+/**
+ * What Yahoo's chart gives none of for `left`, every session of a window it answers no bar of (each without a
+ * close, or without an adjusted close), as the reason the window is passed on says it: "no close for its 5
+ * sessions from 2026-11-19 to 2026-11-25", "no adjusted close for its session of 2026-11-25", "no close for 2
+ * and no adjusted close for 3 of its 5 sessions from 2026-11-19 to 2026-11-25".
+ */
+function lackedIn(left: readonly LeftOut[]): string {
+  const first = left[0]?.date;
+  const last = left.at(-1)?.date;
+  const sessions =
+    left.length === 1 ? `session of ${first}` : `${left.length} sessions from ${first} to ${last}`;
+  const counts = new Map<LeftOut["lacks"], number>();
+  for (const { lacks } of left) counts.set(lacks, (counts.get(lacks) ?? 0) + 1);
+  if (counts.size === 1) return `no ${left[0]?.lacks} for its ${sessions}`;
+  const each = [...counts].map(([lacks, count]) => `no ${lacks} for ${count}`);
+  return `${each.join(" and ")} of its ${sessions}`;
 }
 
 export function yahooComposite(deps: ForkDeps): DataProvider {
@@ -142,7 +164,15 @@ export function yahooComposite(deps: ForkDeps): DataProvider {
     };
   };
 
-  const daily = async (key: string, window: { from: string; to: string }, call?: Call) => {
+  /** Whether the FSC answers a Korean listing's daily bars after Yahoo (it declares them with this key). */
+  const fscAnswers = Boolean(deps.config.dataGoKrKey);
+
+  /**
+   * A listing's daily bars. With `passOn`, a Korean listing whose every session in the window Yahoo gives
+   * without a close or without an adjusted close fails as unsupported, saying which (`lackedIn`), so the FSC
+   * is asked; otherwise those sessions are listed missing.
+   */
+  const daily = async (key: string, window: { from: string; to: string }, call?: Call, passOn = false) => {
     const plan = planOf(key);
     const canonical = upstreamKey(plan);
     if (canonical) return named(await theirs.priceHistory.daily(key, window, call), canonical);
@@ -154,7 +184,14 @@ export function yahooComposite(deps: ForkDeps): DataProvider {
         { source: SOURCE },
       );
     }
-    return (await readDaily(deps, target, window, call)).bars;
+    const { bars, left } = await readDaily(deps, target, window, call);
+    const korean = plan.kind === "korean" || (plan.kind === "target" && plan.listing === "kr");
+    if (passOn && korean && !bars.bars.length && left.length) {
+      throw new DataError("unsupported", `Yahoo's chart of ${target.key} gives ${lackedIn(left)}`, {
+        source: SOURCE,
+      });
+    }
+    return bars;
   };
 
   return {
@@ -162,8 +199,8 @@ export function yahooComposite(deps: ForkDeps): DataProvider {
     capabilities: {
       quotes: { quote, many },
       priceHistory: {
-        daily,
-        // Both listings from Yahoo, or neither.
+        daily: (key, window, call) => daily(key, window, call, fscAnswers),
+        // Both listings from Yahoo, or neither (no later source answers a pair).
         dailyPair: async ([first, second], window, call) => {
           const [a, b] = await Promise.all([daily(first, window, call), daily(second, window, call)]);
           return [a, b];

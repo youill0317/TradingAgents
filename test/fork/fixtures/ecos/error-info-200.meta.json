@@ -1,0 +1,11 @@
+{
+  "source": "ecos",
+  "name": "error-info-200",
+  "url": "https://ecos.bok.or.kr/api/StatisticSearch/***/json/kr/1/1000/722Y001/D/19900101/19900105/0101000",
+  "status": 200,
+  "content_type": "application/json;charset=UTF-8",
+  "recorded_at": "2026-11-26T09:00:00.000Z",
+  "bytes": 82,
+  "hand_made": true,
+  "note": "Hand-made in the RESULT form the Bank of Korea's ECOS Open API guide (ecos.bok.or.kr/api, developer specification: StatisticSearch, StatisticItemList, StatisticTableList, their JSON rows and RESULT codes) as open-source ECOS clients document it, and the series codes the owner verified (722Y001, 901Y009) give for INFO-200, which ECOS answers with HTTP 200; the message is written as the guide's code table and open-source clients quote it. No ECOS_API_KEY was used. Listed for a live check."
+}

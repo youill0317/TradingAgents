@@ -27,6 +27,8 @@
  * - FRED (sources/fred.ts): credit_spreads, macro (headline statistics with their changes from the period
  *   before and from a year earlier) and the Bank of Japan's and the Reserve Bank of India's rates in
  *   central_banks.
+ * - The Bank of Korea's ECOS (sources/ecos.ts), with ECOS_API_KEY: its base rate in central_banks, with the day
+ *   it took effect and the rate before it.
  *
  * A source that fails leaves out only its own rows: each is listed in `missing` and counted in `coverage` by
  * the source's reason (said with each key when the reasons differ, once in the coverage when they are one).
@@ -38,6 +40,7 @@ import type { Call, DataProvider, MarketView, MarketViewName, Quote } from "../.
 import { DataError } from "../../../data/errors.js";
 import {
   BENCHMARK,
+  BOK_BASE_RATE,
   BREAKEVEN_MATURITIES,
   COMMODITY_BENCHMARKS,
   CREDIT_SPREADS,
@@ -63,6 +66,7 @@ import { type CatalogSeries, catalogSeries, type PeriodKind, type UnitKind } fro
 import type { ForkDeps } from "../deps.js";
 import { canonicalKey } from "../listings.js";
 import { ECB_SOURCE, policyRateRuns } from "../sources/ecb.js";
+import { ECOS_SOURCE, ecosPeriod, ecosSeries } from "../sources/ecos.js";
 import { FRED_KEY_PAGE, FRED_SOURCE, fredGraph, fredVintages } from "../sources/fred.js";
 import { latestRates, NYFED_SOURCE } from "../sources/nyfed.js";
 import { type CurveDay, curveYear, TREASURY_SOURCE } from "../sources/treasury.js";
@@ -850,13 +854,15 @@ async function centralBanks(deps: ForkDeps, call: Call | undefined): Promise<Mar
   const today = dayOf(deps.clock());
   // The ECB's runs from the start of the year before last, as macro_series reads them (one cache entry).
   const from = `${Number(today.slice(0, 4)) - 2}-01-01`;
-  const [effr, ecb, fred] = await Promise.all([
+  const [effr, ecb, fred, bok] = await Promise.all([
     latestRates(deps, "effr", 5, call).then(
       (days) => ({ days }),
       (error: unknown) => ({ error }),
     ),
     Promise.allSettled(ECB_RATES.map(({ rate }) => policyRateRuns(deps, rate, { from }, call))),
     Promise.allSettled(FRED_BANK_RATES.map((bank) => fredPoints(deps, bank.id, bank.period, call))),
+    // The Bank of Korea's base rate over the same days, with ECOS_API_KEY.
+    deps.config.ecosKey ? bokDays(deps, from, today, call) : undefined,
   ]);
   // The Federal Reserve: the FOMC's target range, as the New York Fed states it beside EFFR.
   const fedKey = "series:us.nyfed.effr";
@@ -944,7 +950,86 @@ async function centralBanks(deps: ForkDeps, call: Call | undefined): Promise<Mar
     });
     gathered.periodEnds.push(periodEnd(bank.period, facts.latest.date));
   });
-  return viewOf(deps, gathered, { requested: 1 + ECB_RATES.length + FRED_BANK_RATES.length });
+  // The Bank of Korea, with ECOS_API_KEY: its base rate in effect, the day it took effect, and the rate before.
+  if (bok) addBokRate(gathered, bok, from);
+  return viewOf(deps, gathered, {
+    requested: 1 + ECB_RATES.length + FRED_BANK_RATES.length + (bok ? 1 : 0),
+  });
+}
+
+/** The Bank of Korea's base rate on the days ECOS publishes from `from` to `today`, or why it could not be read. */
+async function bokDays(
+  deps: ForkDeps,
+  from: string,
+  today: string,
+  call: Call | undefined,
+): Promise<{ days: { date: string; value: number }[] } | { error: unknown }> {
+  const origin = catalogSeries(BOK_BASE_RATE.key)?.origin;
+  if (origin?.publisher !== "ecos")
+    throw new Error(`catalog/series.ts holds no ECOS series ${BOK_BASE_RATE.key}`);
+  try {
+    const series = await ecosSeries(
+      deps,
+      { stat: origin.stat, cycle: origin.cycle, items: origin.items, start: from, end: today },
+      call,
+    );
+    return {
+      days: (series?.values ?? []).flatMap((one) => {
+        const period = ecosPeriod(origin.cycle, one.time);
+        return period && one.value !== null ? [{ date: period.start, value: one.value }] : [];
+      }),
+    };
+  } catch (error) {
+    return { error };
+  }
+}
+
+/**
+ * The Bank of Korea's row: the rate in effect on the latest day ECOS publishes, since the day it took effect
+ * (the first day of the run of that rate, when an earlier rate was read; else unchanged since at least the
+ * first day read), and the rate before it with its last day.
+ */
+function addBokRate(
+  gathered: Gathered,
+  read: { days: { date: string; value: number }[] } | { error: unknown },
+  from: string,
+): void {
+  const key = `series:${BOK_BASE_RATE.key}`;
+  if ("error" in read) {
+    gathered.gap(key, read.error);
+    return;
+  }
+  const runs: { date: string; through: string; value: number }[] = [];
+  for (const day of read.days) {
+    const last = runs.at(-1);
+    if (last && last.value === day.value) last.through = day.date;
+    else runs.push({ date: day.date, through: day.date, value: day.value });
+  }
+  const now = runs.at(-1);
+  if (!now) {
+    gathered.gap(key, `the Bank of Korea's ECOS published no base rate since ${from}`);
+    return;
+  }
+  const before = runs.at(-2);
+  gathered.add(
+    {
+      bank: BOK_BASE_RATE.bank,
+      rate: BOK_BASE_RATE.rate,
+      key,
+      unit: { kind: "percent" },
+      latest: {
+        value: now.value,
+        date: now.through,
+        ...(before
+          ? { in_effect_since: now.date }
+          : { in_effect_since: null, unchanged_since_at_least: now.date }),
+      },
+      previous: before ? { value: before.value, until: before.through } : null,
+      change: changeOf(now.value, before?.value ?? null, true),
+      source: ECOS_SOURCE,
+    },
+    now.through,
+  );
 }
 
 // FRED's series ---------------------------------------------------------------------------------------

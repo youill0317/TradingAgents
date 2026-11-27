@@ -25,6 +25,13 @@ key or plan, and keeps your sessions on this computer.
   instrument search, which turns a name or code into the keys the tools take. With `SEC_USER_AGENT` set
   (your name and email, [configuration](docs/configuration.md#public-data)), SEC EDGAR adds financial
   statements, filings and their sections, insider transactions, and sector screens over the S&P 1500.
+- **Korean data**, each source with its own free key ([configuration](docs/configuration.md#public-data)):
+  OpenDART (`DART_API_KEY`) for a Korean company's financial statements, filings and their sections, insider
+  reports, and finding Korean companies by their Korean or English names; the FSC's official KRX end-of-day
+  prices on data.go.kr (`DATA_GO_KR_API_KEY`) when Yahoo does not answer for a Korean listing; the Bank of
+  Korea's ECOS (`ECOS_API_KEY`) and Statistics Korea's KOSIS (`KOSIS_API_KEY`) for Korean economic series and
+  the Bank of Korea's base rate among the central banks; Naver's news search (`NAVER_CLIENT_ID` and
+  `NAVER_CLIENT_SECRET`) for news searched in Korean.
 - **Web search**: `web_search`, through Anthropic's or OpenAI's own web search, or Google's when named
   ([below](#web-search)).
 - **Compute**: arithmetic, statistics, returns and risk, correlation and beta, technical indicators,
@@ -35,12 +42,15 @@ key or plan, and keeps your sessions on this computer.
 
 Macro Strategy is offered in every setup, and the sixteen built-in skills, written for the built-in agents,
 come with it. With `SEC_USER_AGENT` set, Equity Research, Quant Research and Risk Analysis are offered too.
-`/agents` and `/skills` show which are offered. An agent of your own is offered when the data tools it names
-have a source ([docs/usage.md](docs/usage.md#your-own-agents-and-skills)).
+With `DART_API_KEY` and no `SEC_USER_AGENT`, Risk Analysis is offered, with statements and filings for Korean
+listings; Equity Research and Quant Research also use the sector screen, which SEC EDGAR serves. `/agents`
+and `/skills` show which are offered. An agent of your own is offered when the data tools it names have a
+source ([docs/usage.md](docs/usage.md#your-own-agents-and-skills)).
 
 ## What is coming
 
-Korean sources: OpenDART, ECOS, KOSIS and data.go.kr.
+Earnings history and EPS trends, and wider catalogs of economic series. `BEA_API_KEY` and `EIA_API_KEY` are
+read already, for the U.S. Bureau of Economic Analysis's and Energy Information Administration's data.
 
 ## Build and install
 

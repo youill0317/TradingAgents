@@ -103,7 +103,7 @@ The main agent answers with its own tools: data tools, compute tools for arithme
 | portfolio-review       | Risk      | how a set of holdings behaves together, and how other weights would compare |
 | thesis-review          | Risk      | a challenge to a view: the case against, a pre-mortem, what would break it  |
 
-An agent is offered when every data tool it names has a source here, and the built-in skills, written as briefs for the built-in agents, when one of those is. Every data tool has a source today; `statements`, `filings`, `filing_section`, `screen` and `ownership`'s insider view read SEC EDGAR, which needs `SEC_USER_AGENT` ([configuration](configuration.md#public-data)). So Macro Strategy is offered in every setup, with the built-in skills, and Equity Research, Quant Research and Risk Analysis with `SEC_USER_AGENT`.
+An agent is offered when every data tool it names has a source here, and the built-in skills, written as briefs for the built-in agents, when one of those is. Every data tool has a source today; `statements`, `filings`, `filing_section`, `screen` and `ownership`'s insider view read SEC EDGAR, which needs `SEC_USER_AGENT` ([configuration](configuration.md#public-data)), and for Korean listings `statements`, `filings`, `filing_section` and the insider view read OpenDART, which needs `DART_API_KEY`. So Macro Strategy is offered in every setup, with the built-in skills; Equity Research, Quant Research and Risk Analysis with `SEC_USER_AGENT`; and Risk Analysis with `DART_API_KEY` alone (`screen`, which Equity Research and Quant Research use, reads SEC EDGAR only).
 
 `/agents` and `/skills` list what a session has, where each comes from, and which are not available in it.
 

@@ -3,7 +3,8 @@
 // Added in this fork of TradingAgents 1.0.0.
 /**
  * "Instrument search", routes.ts key `instruments`: instruments.search, which find_instrument reads. Declared
- * in every setup: the catalogs and Yahoo's search need no key; SEC's ticker list joins with SEC_USER_AGENT.
+ * in every setup: the catalogs and Yahoo's search need no key; SEC's ticker list joins with SEC_USER_AGENT,
+ * OpenDART's company list with DART_API_KEY.
  *
  * A search reads a name, a ticker, a code or a key and answers the keys the tools take (listings.ts), each
  * with what it is and the capabilities that serve it in this setup:
@@ -13,44 +14,91 @@
  *   pairs from the currencies a search names ("euro dollar", "EUR/USD", "yen", "원달러": the pair the way
  *   markets quote it, then the other way round when the search named it so); crypto pairs against the US
  *   dollar by the coin's name; the economic series macro_series reads (catalog/series.ts: "CPI", "10-year
- *   Treasury yield"), found as macro_series finds them;
+ *   Treasury yield"; the Bank of Korea's and Statistics Korea's with ECOS_API_KEY and KOSIS_API_KEY), found as
+ *   macro_series finds them;
  * - SEC's ticker list (sources/sec-tickers.ts), with SEC_USER_AGENT: a US ticker, and every company whose
  *   name holds each word searched;
  * - Yahoo's search, through deps.yahoo: listings on the US venues and on those listings.ts reads (MIC:SYMBOL,
  *   XKRX:, XKOS:), futures' front months, currency and crypto pairs, and the catalog's price series, in
  *   Yahoo's order. Yahoo is asked in the Latin script only (it refuses Hangul), with a Korean code as its
- *   code or its Yahoo symbol; a typed key the catalogs resolve is answered without it.
+ *   code or its Yahoo symbol; a typed key the catalogs resolve is answered without it;
+ * - OpenDART's company list (sources/dart.ts), with DART_API_KEY: the Korean companies whose names, Korean or
+ *   English (spacing, case and legal forms aside), are the name searched, start with it or hold it, listed
+ *   ones only (a company without a stock code has no listing a tool takes), and the company listed under a
+ *   Korean code or key. The list does not say a listing's market: Yahoo's search, when asked, places the
+ *   listings it finds, and the others are placed by one batched quote of their KOSPI and KOSDAQ spellings
+ *   (005930.KS, 005930.KQ), the spelling Yahoo quotes naming the market (XKRX, XKOS), shared with the Yahoo
+ *   composite's resolver of a bare code. A listing Yahoo quotes on neither market (delisted, or on KONEX,
+ *   which no key names) is left out, as is every listing of a search whose quote failed. For the company a
+ *   search names exactly, the same quote asks for its preferred shares, which KRX codes from its common
+ *   share's (its first five characters and 5, 7 or 9, or K, L or M): one Yahoo quotes on the same market
+ *   under the same company name is its preferred stock. Without DART_API_KEY a company's name in Hangul
+ *   finds nothing: no other source here reads Korean names (Yahoo refuses Hangul), so a search in Hangul
+ *   that finds nothing answers not_configured, naming DART_API_KEY; OpenDART's list adds them with the key.
  *
- * Korean names and codes resolve through the Korean listing forms (XKRX:005930, 005930.KS, a bare code)
- * and the catalogs' Korean names (코스피, 원/달러, 비트코인); a company's name in Hangul waits for
- * OpenDART's company list (Phase 4).
+ * Korean codes resolve through the Korean listing forms (XKRX:005930, 005930.KS, a bare code), and the
+ * catalogs hold Korean names of their own (코스피, 원/달러, 비트코인).
  *
  * Best first: a catalog's own name for the instrument; the listing whose key or ticker was searched; a
  * catalog's code for it; the company whose name was searched; the economic series a broader search finds;
- * other catalog entries holding every word; Yahoo's other matches; SEC's other companies holding every word.
- * Nothing found is left out for being found less well. A source that fails leaves its matches out; when
- * nothing is found and a source failed, the search fails with that source's reason, so an outage is never
- * answered as no match. A search nothing matches answers no match, which find_instrument says.
+ * other catalog entries holding every word; Yahoo's other matches; SEC's and OpenDART's other companies whose
+ * names hold the words searched (OpenDART's: those starting with them first). Nothing found is left out for
+ * being found less well. A source that fails leaves its matches out; when nothing is found and a source
+ * failed, the search fails with that source's reason, so an outage is never answered as no match. A search
+ * that finds nothing for want of a key answers not_configured, naming it: a Korean series of the catalog it
+ * names exactly (ECOS_API_KEY or KOSIS_API_KEY, as macro_series says), or a name in Hangul (DART_API_KEY).
+ * Any other search nothing matches answers no match, which find_instrument says.
+ *
+ * Names: a match's from the catalogs first, then OpenDART's (a Korean company's Korean name with its English
+ * one), Yahoo's, SEC's.
  *
  * `serves` names the capabilities this setup serves the key with: a listing on a US venue the Yahoo
  * composite's (quotes, price history, technicals, profiles, institutional holders, corporate actions) and
  * news; with SEC_USER_AGENT, a company in SEC's ticker list statements (not a fund's), filings and insider
  * transactions too; a ticker SEC lists over the counter or on no exchange SEC's and news; another venue's
- * listing or a Korean one the composite's and news; a futures front month, a crypto pair or a price series
- * quotes, daily price history, technicals and news; a currency pair quotes, technicals, news and, where
- * the ECB sets both currencies, price history (its reference rates); an economic series macro series.
+ * listing or a Korean one the composite's and news; with DART_API_KEY, a Korean listing OpenDART's list holds
+ * under its code statements (not a fund's) and filings too, and, when the list could not be read, every Korean
+ * listing (OpenDART is asked when a tool needs it); a futures front month, a crypto pair or a price series
+ * quotes, daily price history, technicals and news; a currency pair quotes, technicals, news and, where the
+ * ECB sets both currencies, price history (its reference rates); an economic series macro series.
  */
 import { message } from "../../../contracts/index.js";
 import type { Call, Capability, DataProvider, InstrumentMatch } from "../../../data/capabilities.js";
 import { DataError } from "../../../data/errors.js";
 import { INSTRUMENT_KINDS } from "../../../data/instrument-key.js";
 import { FUTURE_ROOTS, type FutureRoot, PRICE_SERIES } from "../catalog/instruments.js";
-import { type CatalogSeries, searchCatalog } from "../catalog/series.js";
+import {
+  type CatalogSeries,
+  type SeriesKeys,
+  searchCatalog,
+  seriesKeysOf,
+  servedWith,
+} from "../catalog/series.js";
 import type { ForkDeps } from "../deps.js";
-import { canonicalKey, type Listing, parseListing, US_VENUES } from "../listings.js";
+import {
+  canonicalKey,
+  KOREAN_MARKETS,
+  type KoreanMarket,
+  type Listing,
+  parseListing,
+  US_VENUES,
+} from "../listings.js";
+import { type DartCompany, type DartCorpList, dartKeyNeeded, dartSource } from "../sources/dart.js";
 import { ECB_CURRENCIES } from "../sources/ecb.js";
+import { ecosKeyNeeded } from "../sources/ecos.js";
+import { kosisKeyNeeded } from "../sources/kosis.js";
+import { hasHangul } from "../sources/naver.js";
 import { type SecCompany, secTicker, secTickers } from "../sources/sec-tickers.js";
-import { planOf, type Raw, record, text, US_EXCHANGES } from "../sources/yahoo.js";
+import {
+  koreanCandidates,
+  planOf,
+  type Raw,
+  readQuotes,
+  record,
+  rememberKorean,
+  text,
+  US_EXCHANGES,
+} from "../sources/yahoo.js";
 import { yahooCall } from "../sources/yahoo-call.js";
 
 /** The name answers give this provider. */
@@ -91,13 +139,14 @@ const KINDS: Readonly<Record<(typeof INSTRUMENT_KINDS)[number], readonly Categor
 
 /**
  * How well a match answers the search, lower first (see the top of this file): the catalogs' economic series
- * a broader search finds come in macro_series' own order, before other catalog entries holding every word.
+ * a broader search finds come in macro_series' own order, before other catalog entries holding every word;
+ * `filer` holds SEC's and OpenDART's other companies.
  */
 const TIER = { name: 0, key: 1, code: 2, company: 3, series: 4, words: 5, yahoo: 6, filer: 7 } as const;
 type Tier = (typeof TIER)[keyof typeof TIER];
 
-/** Where a match's name and type come from, the first preferred: the catalogs', Yahoo's, SEC's. */
-const ORIGIN = { catalog: 0, yahoo: 1, sec: 2 } as const;
+/** Where a match's name and type come from, the first preferred: the catalogs', OpenDART's, Yahoo's, SEC's. */
+const ORIGIN = { catalog: 0, dart: 1, yahoo: 2, sec: 3 } as const;
 type Origin = keyof typeof ORIGIN;
 
 /** One source's match, before matches of one key are joined. */
@@ -114,16 +163,19 @@ type Candidate = {
   fund?: boolean;
   /** SEC's row for a US listing. */
   sec?: SecCompany;
+  /** OpenDART's company listed under a Korean listing's code. */
+  dart?: DartCompany;
   /** For a catalog entry holding every word searched: how closely its own name is the search. */
   fit?: number;
 };
 
 /** A key's match, joined from every source that found it. */
-type Found = Required<Omit<Candidate, "sec" | "from">> & {
+type Found = Required<Omit<Candidate, "sec" | "dart" | "from">> & {
   order: number;
   nameFrom: number;
   typeFrom: number;
   sec?: SecCompany;
+  dart?: DartCompany;
 };
 
 /** Matches by key, the best tier each was found at, in the order first found. */
@@ -147,6 +199,7 @@ function collector() {
           fund: candidate.fund ?? false,
           fit: candidate.fit ?? 0,
           ...(candidate.sec ? { sec: candidate.sec } : {}),
+          ...(candidate.dart ? { dart: candidate.dart } : {}),
         });
         return;
       }
@@ -163,6 +216,7 @@ function collector() {
       known.fund ||= candidate.fund ?? false;
       known.fit = Math.max(known.fit, candidate.fit ?? 0);
       if (candidate.sec && !known.sec) known.sec = candidate.sec;
+      if (candidate.dart && !known.dart) known.dart = candidate.dart;
     },
     sorted(): Found[] {
       const fit = (one: Found) => (one.tier === TIER.words ? one.fit : 0);
@@ -730,7 +784,7 @@ function knownPair(listing: Extract<Listing, { kind: "fx" }>): boolean {
 // What the catalogs find ------------------------------------------------------------------------------------
 
 /** The catalogs' matches for a search: see the top of this file. */
-function catalogCandidates(search: string, listing: Listing): Candidate[] {
+function catalogCandidates(search: string, listing: Listing, keys: SeriesKeys): Candidate[] {
   const found: Candidate[] = [];
   // A typed key the catalogs know.
   if (listing.kind === "future" || listing.kind === "price_series" || listing.kind === "crypto") {
@@ -759,8 +813,8 @@ function catalogCandidates(search: string, listing: Listing): Candidate[] {
       if (candidate) found.push(candidate);
     }
   }
-  // The economic series, as macro_series finds them.
-  for (const { entry, exact } of searchCatalog(search)) {
+  // The economic series, as macro_series finds them (Korea's with their keys).
+  for (const { entry, exact } of searchCatalog(search, keys)) {
     found.push(seriesCandidate(entry, exact ? TIER.name : TIER.series));
   }
   // Every word.
@@ -1158,13 +1212,175 @@ function yahooTier(hit: Hit, search: string, listing: Listing): Tier {
   return TIER.yahoo;
 }
 
+// OpenDART's company list ----------------------------------------------------------------------------------
+
+/**
+ * The codes KRX gives a company's preferred shares beside its common share's (a code ending in 0): the
+ * common's first five characters and 5, 7 or 9 (older listings) or K, L or M (newer ones).
+ */
+export function preferredCodes(code: string): string[] {
+  if (!/^[0-9][0-9A-Z]{4}0$/.test(code)) return [];
+  return ["5", "7", "9", "K", "L", "M"].map((last) => `${code.slice(0, 5)}${last}`);
+}
+
+/** A company of OpenDART's list as answers name it: its Korean name, with its English one when given. */
+function dartName(company: DartCompany): string {
+  return company.corp_eng_name ? `${company.corp_name} (${company.corp_eng_name})` : company.corp_name;
+}
+
+/** A Korean listing's code and market, from its key (XKRX:005930). */
+function koreanKeyOf(key: string): { market: KoreanMarket; code: string } | undefined {
+  const listing = parseListing(key);
+  return listing.kind === "kr" && listing.market ? { market: listing.market, code: listing.code } : undefined;
+}
+
+/** A listed company of OpenDART's list a search names, before its market is known. */
+type DartWanted = {
+  company: DartCompany;
+  code: string;
+  tier: Tier;
+  /** The company named exactly: its preferred shares are looked for too. */
+  exact: boolean;
+};
+
+/**
+ * The listed companies of OpenDART's list a search names, each code once (as the list's row for it): the one
+ * listed under a Korean code or key, or those whose names answer the search, best first (sources/dart.ts).
+ */
+function dartWanted(list: DartCorpList, search: string, listing: Listing): DartWanted[] {
+  if (listing.kind === "kr") {
+    const company = list.byStockCode(listing.code);
+    return company ? [{ company, code: listing.code, tier: TIER.key, exact: false }] : [];
+  }
+  const wanted = new Map<string, DartWanted>();
+  for (const { company, tier } of list.search(search)) {
+    const code = company.stock_code;
+    if (!code || wanted.has(code)) continue;
+    wanted.set(code, {
+      company: list.byStockCode(code) ?? company,
+      code,
+      tier: tier === "exact" ? TIER.company : TIER.filer,
+      exact: tier === "exact",
+    });
+  }
+  return [...wanted.values()];
+}
+
+/** Yahoo's quotes of Korean listings' symbols, in one request, by symbol; kept an hour. */
+async function koreanQuotes(
+  deps: ForkDeps,
+  symbols: readonly string[],
+  call: Call | undefined,
+): Promise<ReadonlyMap<string, Raw>> {
+  return deps.cache.remember(
+    `yahoo:korean-listings:${symbols.join(",")}`,
+    YAHOO_KEEP_MS,
+    () => readQuotes(deps, symbols, call),
+    { signal: call?.signal },
+  );
+}
+
+/**
+ * OpenDART's matches, each placed on its market: by Yahoo's search where it found the listing, else by one
+ * batched quote of the candidates' KOSPI and KOSDAQ spellings, which also asks for the preferred shares of the
+ * company named exactly. A listing Yahoo places on no market is left out; so is every one the quote was needed
+ * for when it failed (its failure answered with the matches).
+ */
+async function dartCandidates(
+  deps: ForkDeps,
+  list: DartCorpList,
+  search: string,
+  listing: Listing,
+  hits: readonly Hit[],
+  call: Call | undefined,
+): Promise<{ candidates: Candidate[]; failure?: DataError }> {
+  const wanted = dartWanted(list, search, listing);
+  if (!wanted.length) return { candidates: [] };
+  // The markets Yahoo's search found each code on.
+  const placed = new Map<string, Set<KoreanMarket>>();
+  for (const hit of hits) {
+    const found = hit.category === "kr" ? koreanKeyOf(hit.key) : undefined;
+    if (!found) continue;
+    const markets = placed.get(found.code) ?? new Set<KoreanMarket>();
+    markets.add(found.market);
+    placed.set(found.code, markets);
+  }
+  const symbols = new Set<string>();
+  for (const one of wanted) {
+    if (!placed.has(one.code) || one.exact) {
+      for (const { symbol } of koreanCandidates(one.code)) symbols.add(symbol);
+    }
+    if (!one.exact) continue;
+    for (const code of preferredCodes(one.code)) {
+      for (const { symbol } of koreanCandidates(code)) symbols.add(symbol);
+    }
+  }
+  let quoted: ReadonlyMap<string, Raw> = new Map();
+  let failure: DataError | undefined;
+  if (symbols.size) {
+    try {
+      quoted = await koreanQuotes(deps, [...symbols].sort(), call);
+    } catch (error) {
+      if (!(error instanceof DataError) || call?.signal?.aborted) throw error;
+      failure = error;
+    }
+  }
+  const candidates: Candidate[] = [];
+  for (const one of wanted) {
+    // The market Yahoo places the listing on (a key typed with the other market's prefix finds the listing).
+    const markets = new Set<KoreanMarket>(placed.get(one.code));
+    for (const { market, symbol } of koreanCandidates(one.code)) if (quoted.has(symbol)) markets.add(market);
+    for (const market of markets) {
+      const suffix = KOREAN_MARKETS[market].yahooSuffix;
+      const row = quoted.get(`${one.code}${suffix}`);
+      candidates.push({
+        key: `${market}:${one.code}`,
+        category: "kr",
+        tier: one.tier,
+        from: "dart",
+        name: dartName(one.company),
+        type: "stock",
+        traded: true,
+        fund: FUNDS.has(text(row?.quoteType)?.toUpperCase() ?? ""),
+        dart: one.company,
+      });
+      if (markets.size === 1) await rememberKorean(deps, one.code, market);
+      // The preferred shares Yahoo quotes on the same market under the company's name.
+      const named = text(row?.longName);
+      if (!one.exact || !named) continue;
+      for (const code of preferredCodes(one.code)) {
+        const preferred = quoted.get(`${code}${suffix}`);
+        if (!preferred || text(preferred.longName) !== named) continue;
+        const listed = list.byStockCode(code);
+        candidates.push({
+          key: `${market}:${code}`,
+          category: "kr",
+          tier: one.tier,
+          from: "dart",
+          name: dartName(one.company),
+          type: "preferred stock",
+          traded: true,
+          ...(listed ? { dart: listed } : {}),
+        });
+      }
+    }
+  }
+  return { candidates, ...(failure ? { failure } : {}) };
+}
+
 // The search -----------------------------------------------------------------------------------------------
 
 /** What this setup knows of SEC's ticker list for this search: not set up, read, or not read. */
 type SecState = "off" | "read" | "unread";
 
+/** What this setup knows of OpenDART's company list for this search: not set up, read, or not read. */
+type DartState = "off" | "read" | "unread";
+
+/** How the search was answered, for each match's capabilities. */
+type Known = { sec: SecState; dart: DartState };
+
 /** The capabilities this setup serves a match's key with (see the top of this file). */
-function servesOf(found: Found, sec: SecState): Capability[] {
+function servesOf(found: Found, { sec, dart }: Known): Capability[] {
   const listed: Capability[] = [
     "quotes",
     "priceHistory",
@@ -1189,8 +1405,23 @@ function servesOf(found: Found, sec: SecState): Capability[] {
         "news",
       ];
     }
+    case "kr": {
+      // A code OpenDART's list does not hold is no filer's; when the list could not be read, OpenDART is asked.
+      const filer = dart !== "off" && (found.dart !== undefined || dart === "unread");
+      if (!filer) return listed;
+      return [
+        "quotes",
+        "priceHistory",
+        "technicals",
+        "profiles",
+        ...(found.fund ? [] : (["statements"] as const)),
+        "filings",
+        "ownership",
+        "corporateActions",
+        "news",
+      ];
+    }
     case "venue":
-    case "kr":
       return listed;
     case "fx":
       return ecbPair(found.key) ? priced : priced.filter((capability) => capability !== "priceHistory");
@@ -1203,14 +1434,14 @@ function servesOf(found: Found, sec: SecState): Capability[] {
   }
 }
 
-function matchOf(found: Found, sec: SecState): InstrumentMatch {
+function matchOf(found: Found, known: Known): InstrumentMatch {
   const security = found.category === "us" || found.category === "venue" || found.category === "kr";
   return {
     key: found.key,
     name: found.name,
     type: found.type,
     listing_state: security && found.traded ? "listed" : null,
-    serves: servesOf(found, sec),
+    serves: servesOf(found, known),
   };
 }
 
@@ -1248,7 +1479,7 @@ export async function searchInstruments(
   if (!search) return [];
   const listing = parseListing(search);
   const found = collector();
-  for (const candidate of catalogCandidates(search, listing)) found.add(candidate);
+  for (const candidate of catalogCandidates(search, listing, seriesKeysOf(deps.config))) found.add(candidate);
 
   // SEC's list holds US listings: read for a search in the Latin script, unless a key names another kind.
   const asksSec =
@@ -1259,37 +1490,83 @@ export async function searchInstruments(
     (listing.kind === "us" ||
       (listing.kind === "venue" && US_VENUES.has(listing.mic)) ||
       (listing.kind === "invalid" && !search.includes(":")));
+  // OpenDART's list holds Korean companies: read with DART_API_KEY for a name, or a Korean code or key.
+  const asksDart =
+    Boolean(deps.config.dartKey) &&
+    allows("kr") &&
+    /[\p{L}\p{N}]/u.test(search) &&
+    (listing.kind === "kr" || listing.kind === "us" || (listing.kind === "invalid" && !search.includes(":")));
   // Yahoo lists no economic series, and its price series are the catalog's.
   const seriesOnly = categories?.every(
     (category) => category === "price_series" || category === "value_series",
   );
   const asked = seriesOnly ? undefined : yahooWords(search, listing);
-  const [secRead, yahooRead] = await Promise.allSettled([
+  const [secRead, yahooRead, dartRead] = await Promise.allSettled([
     asksSec ? secCandidates(deps, search, call) : Promise.resolve(undefined),
     asked === undefined ? Promise.resolve(undefined) : yahooHits(deps, asked, call),
+    asksDart ? dartSource(deps).corpList(call) : Promise.resolve(undefined),
   ]);
   if (call?.signal?.aborted) throw call.signal.reason;
   const failed: DataError[] = [];
-  for (const read of [secRead, yahooRead]) {
+  for (const read of [secRead, yahooRead, dartRead]) {
     if (read.status === "rejected") {
       if (!(read.reason instanceof DataError)) throw read.reason;
       failed.push(read.reason);
     }
   }
-  if (yahooRead.status === "fulfilled") {
-    for (const hit of yahooRead.value ?? []) found.add({ ...hit, tier: yahooTier(hit, search, listing) });
+  const list = dartRead.status === "fulfilled" ? dartRead.value : undefined;
+  const hits = yahooRead.status === "fulfilled" ? (yahooRead.value ?? []) : [];
+  for (const hit of hits) {
+    // A Korean listing Yahoo finds is OpenDART's company when the list holds its code.
+    const korean = list && hit.category === "kr" ? koreanKeyOf(hit.key) : undefined;
+    const company = korean ? list?.byStockCode(korean.code) : undefined;
+    found.add({ ...hit, tier: yahooTier(hit, search, listing), ...(company ? { dart: company } : {}) });
   }
   if (secRead.status === "fulfilled") for (const candidate of secRead.value ?? []) found.add(candidate);
+  if (list) {
+    const { candidates, failure } = await dartCandidates(deps, list, search, listing, hits, call);
+    for (const candidate of candidates) found.add(candidate);
+    if (failure) failed.push(failure);
+  }
 
-  const sec: SecState = !deps.config.secUserAgent
-    ? "off"
-    : secRead.status === "fulfilled" && secRead.value
-      ? "read"
-      : "unread";
+  const known: Known = {
+    sec: !deps.config.secUserAgent
+      ? "off"
+      : secRead.status === "fulfilled" && secRead.value
+        ? "read"
+        : "unread",
+    dart: !deps.config.dartKey ? "off" : list ? "read" : "unread",
+  };
   const matches = found
     .sorted()
     .filter((one) => allows(one.category))
-    .map((one) => matchOf(one, sec));
-  if (!matches.length && failed.length) throw failureOf(failed);
+    .map((one) => matchOf(one, known));
+  if (!matches.length) {
+    // A Korean series named exactly: its key is what is missing, whatever else failed.
+    const series = seriesKeyNeeded(deps, search, allows);
+    if (series) throw series;
+    if (failed.length) throw failureOf(failed);
+    // A name in Hangul: only OpenDART's company list reads Korean names here.
+    if (!deps.config.dartKey && allows("kr") && hasHangul(search)) {
+      throw dartKeyNeeded("Finding Korean companies by their Korean names");
+    }
+  }
   return matches;
+}
+
+/**
+ * The failure of a search that found nothing because it names exactly a Korean series of the catalog this
+ * setup lacks the key of: that key, as macro_series says it. Undefined otherwise.
+ */
+function seriesKeyNeeded(
+  deps: ForkDeps,
+  search: string,
+  allows: (category: Category) => boolean,
+): DataError | undefined {
+  if (!allows("value_series")) return undefined;
+  const keys = seriesKeysOf(deps.config);
+  const named = searchCatalog(search, "all").find((match) => match.exact && !servedWith(match.entry, keys));
+  if (!named) return undefined;
+  const what = `${named.entry.name} (series:${named.entry.key})`;
+  return named.entry.origin.publisher === "kosis" ? kosisKeyNeeded(what) : ecosKeyNeeded(what);
 }

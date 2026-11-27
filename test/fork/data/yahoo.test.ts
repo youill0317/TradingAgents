@@ -161,7 +161,7 @@ function asked(fetch: { requests: { url: string }[] }): string[] {
     });
 }
 
-/** A stand-in FSC (Korea's official prices, Phase 4): it answers any listing it is asked for at 1000. */
+/** A stand-in FSC (Korea's official prices): it answers any listing it is asked for at 1000. */
 function standInFsc(): DataProvider & { asked: string[] } {
   const seen: string[] = [];
   const quote = (key: string) => ({

@@ -267,10 +267,16 @@ describe("requests about the market, or to change", () => {
       "SEC EDGAR lists no company that files under the ticker ZZZZ.",
     ]);
     // BAE Systems trades in London as BA: not Boeing, and not a company SEC's list covers.
-    for (const symbol of ["XLON:BA", "XKRX:005930", "005930.KS", "CRYPTO:BTC-USD"]) {
+    for (const symbol of ["XLON:BA", "CRYPTO:BTC-USD"]) {
       expect((await failure(provider.capabilities.filings?.list?.(symbol, { limit: 5 }))).kind).toBe(
         "unsupported",
       );
+    }
+    // A Korean listing's filings are OpenDART's: without DART_API_KEY, the answer is what to set.
+    for (const symbol of ["XKRX:005930", "005930.KS"]) {
+      const korean = await failure(provider.capabilities.filings?.list?.(symbol, { limit: 5 }));
+      expect([korean.kind, korean.details.source]).toEqual(["not_configured", "OpenDART"]);
+      expect(korean.message).toContain("needs DART_API_KEY");
     }
   });
 
@@ -316,10 +322,13 @@ describe("requests about the market, or to change", () => {
 
   test("transaction codes for a listing outside the US are a request to change; without them it passes on", async () => {
     const { runTool } = sec([TICKERS]);
-    const coded = await runTool("ownership", { symbol: "XKRX:005930", codes: ["P"] });
+    const coded = await runTool("ownership", { symbol: "XLON:VOD", codes: ["P"] });
     expect(coded.failure).toBe("data_invalid");
-    const plain = await runTool("ownership", { symbol: "XKRX:005930" });
+    const plain = await runTool("ownership", { symbol: "XLON:VOD" });
     expect(plain.failure).toBe("data_unsupported");
+    // A Korean listing's insider reports are OpenDART's: without DART_API_KEY, the answer is what to set.
+    const korean = await runTool("ownership", { symbol: "XKRX:005930" });
+    expect(korean.failure).toBe("data_not_configured");
   });
 });
 

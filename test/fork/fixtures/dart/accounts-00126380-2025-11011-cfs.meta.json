@@ -1,0 +1,11 @@
+{
+  "source": "dart",
+  "name": "accounts-00126380-2025-11011-cfs",
+  "url": "https://opendart.fss.or.kr/api/fnlttSinglAcntAll.json?crtfc_key=***&corp_code=00126380&bsns_year=2025&reprt_code=11011&fs_div=CFS",
+  "status": 200,
+  "content_type": "application/json;charset=UTF-8",
+  "recorded_at": "2026-11-25T22:00:00.000Z",
+  "bytes": 5808,
+  "hand_made": true,
+  "note": "Hand-made, not recorded (no request is sent to opendart.fss.or.kr from the development session): fnlttSinglAcntAll.json's answer in OpenDART's documented JSON (rcept_no, reprt_code, bsns_year, corp_code, sj_div, sj_nm, account_id, account_nm, account_detail, thstrm_nm and _amount, frmtrm_nm and _amount, bfefrmtrm_nm and _amount, ord, currency) for Samsung Electronics' 2025 annual report, consolidated: thirteen of its lines (balance sheet, income statement, comprehensive income, cash flows, changes in equity), one without a standard account id. The 2024 and 2023 amounts follow Samsung Electronics' reported totals as widely published; the 2025 amounts are invented, and the balance sheet adds up (assets = liabilities + equity)."
+}

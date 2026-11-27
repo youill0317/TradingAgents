@@ -5,7 +5,7 @@
  * The one place that says which providers serve each capability, in order. This fork's public-data
  * providers (src/fork/data: Yahoo, SEC filers and frames, the ECB, public statistics, market views,
  * instrument and news search) serve most; prediction-market odds come from Polymarket; FSC (Korea's
- * official end-of-day prices) follows Yahoo for prices once it is built. A capability with no provider says
+ * official end-of-day prices) follows Yahoo for prices. A capability with no provider says
  * it is not available when asked. A provider that is not configured, or does not implement the method
  * asked, is skipped.
  */

@@ -200,6 +200,8 @@ export async function recordOne(
       source: one.source,
       ...(one.accept ? { accept: one.accept } : {}),
       ...(one.timeoutMs ? { timeoutMs: one.timeoutMs } : {}),
+      // An address carrying a key follows no redirect elsewhere, as the app's requests of it.
+      ...(holdsSecret(url, secrets) ? { redirect: "same-origin" as const } : {}),
     });
     read = {
       body: await answer.bytes(),

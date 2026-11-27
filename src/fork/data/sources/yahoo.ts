@@ -592,8 +592,8 @@ function describedBy(meta: Chart["meta"]): Described {
   };
 }
 
-/** A session a reading left out, and why. */
-export type LeftOut = { date: string; reason: string };
+/** A session a reading left out: the price the source gives none of for it, and why. */
+export type LeftOut = { date: string; lacks: "close" | "adjusted close"; reason: string };
 
 /** Daily bars as answered, and the sessions in the window left out for want of a price. */
 export type Daily = { bars: DailyBars; left: LeftOut[] };
@@ -638,14 +638,14 @@ export function dailyOf(
     if (date < from || date > to) continue;
     const close = row.close;
     if (typeof close !== "number" || !Number.isFinite(close) || close === 0) {
-      left.push({ date, reason: "the source gives no close" });
+      left.push({ date, lacks: "close", reason: "the source gives no close" });
       continue;
     }
     let factor = 1;
     if (adjusted) {
       const adjclose = row.adjclose;
       if (typeof adjclose !== "number" || !Number.isFinite(adjclose)) {
-        left.push({ date, reason: "the source gives no adjusted close" });
+        left.push({ date, lacks: "adjusted close", reason: "the source gives no adjusted close" });
         continue;
       }
       factor = adjclose / close;
