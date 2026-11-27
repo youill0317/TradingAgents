@@ -11,16 +11,21 @@
  *   upstream bounds each Yahoo request): FORK_REQUEST_MS by class of source, or the caller's own;
  * - waits for its turn where a service publishes a rate (HOST_RULES: SEC's 10 a second shared by its
  *   hosts, FRED's API's 120 a minute and its website's one a second, GDELT's one per 5 seconds, whose
- *   identical requests in flight share one answer), counted at the moment each request actually starts, and
+ *   identical requests in flight share one answer, KOSIS's 200 a minute), counted at the moment each request
+ *   actually starts, and
  *   for the end of any pause a source asked for with a 429 or 503 Retry-After (kept for every later request
  *   to that host, or to that rule's hosts);
  *   it fails as rate_limited, without being sent, when its turn would come after its deadline;
  * - honours Retry-After on 429 and 503 when the wait fits its deadline (else rate_limited with
  *   retryAfterMs), and is retried once after a transient failure: a dropped connection or a 5xx;
  * - names its sender: SEC's hosts get the configured SEC_USER_AGENT, the others the app's name;
+ * - follows redirects as fetch does, or, when the caller passes `redirect: "same-origin"` (Korea's sources and
+ *   the recorder, for a key in the request), only those to its own origin: a redirect elsewhere is
+ *   unavailable, so that key reaches nothing but its source;
  * - fails with a DataError whose kind the router acts on: 401 and 403 rejected (SEC's 403 explains its
  *   User-Agent rule), 404 and 410 as the caller says (no_data by default), 429 rate_limited, 5xx, network,
- *   a body past its bound and a body that is not the JSON asked for unavailable. No message names a key:
+ *   a body past its bound, a body that is not the JSON asked for and a header fetch refuses to send (named,
+ *   its value never said; the request is not sent) unavailable. No message names a key:
  *   each is scrubbed of every configured secret, in a query or a path, as written or URL-encoded.
  *
  * Hosts are compared as DNS reads them: in any case, with or without the trailing dot of a fully-qualified
@@ -78,6 +83,48 @@ function isYahoo(host: string): boolean {
 /** The pause before the one retry of a transient failure. */
 export const RETRY_PAUSE_MS = 1_000;
 
+/** Redirect statuses. */
+const REDIRECTS: ReadonlySet<number> = new Set([301, 302, 303, 307, 308]);
+
+/** The most redirects one request follows: the Fetch standard's own limit, which fetch's `follow` applies. */
+const FETCH_REDIRECTS = 20;
+
+/** `location` read against `from`, when it is an address of `from`'s own origin (scheme, host and port). */
+function sameOriginTarget(from: string, location: string | null): string | undefined {
+  if (!location) return undefined;
+  try {
+    const origin = new URL(from);
+    const next = new URL(location, origin);
+    return next.protocol === origin.protocol &&
+      hostName(next.hostname) === hostName(origin.hostname) &&
+      next.port === origin.port
+      ? next.href
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * A request's headers: the caller's, then the User-Agent in place of any the caller gave. When fetch refuses
+ * one (a character above U+00FF or a NUL in its value), that header's name, its value never said.
+ */
+function headersOf(given: Readonly<Record<string, string>> | undefined, userAgent: string): Headers | string {
+  const headers = new Headers();
+  let name = "User-Agent";
+  try {
+    for (const [one, value] of Object.entries(given ?? {})) {
+      name = one;
+      headers.append(one, value);
+    }
+    name = "User-Agent";
+    headers.set(name, userAgent);
+  } catch {
+    return name;
+  }
+  return headers;
+}
+
 /** A service's published rate: at most `requests` starts in any `perMs`. */
 export type Pace = { requests: number; perMs: number };
 
@@ -121,6 +168,12 @@ export const HOST_RULES: readonly HostRule[] = [
     matches: (host) => host === "api.gdeltproject.org",
     pace: { requests: 1, perMs: 5_000 },
     coalesce: true,
+  },
+  {
+    // KOSIS's Open API: at most 200 requests a minute (its service introduction, kosis.kr/openapi).
+    name: "kosis.kr",
+    matches: (host) => host === "kosis.kr",
+    pace: { requests: 200, perMs: 60_000 },
   },
 ];
 
@@ -245,6 +298,13 @@ export type HttpOptions = {
   notFoundMessage?: string;
   /** Statuses the caller reads itself (a source's error body), answered rather than failed. */
   accept?: readonly number[];
+  /**
+   * Which redirects are followed: every one (`follow`, fetch's own way, the default), or only those to the
+   * request's own origin (`same-origin`, which Korea's sources and the recorder pass for a request carrying a
+   * key in its address or headers): a redirect elsewhere is not followed, so the key goes nowhere but its
+   * source, and the request is unavailable.
+   */
+  redirect?: "follow" | "same-origin";
   /**
    * Bytes of the answer read at most, a longer one being unavailable: upstream's ANSWER_BYTES (16 MiB) unless
    * given. The largest answers measured fit it comfortably (SEC's companyfacts for MetLife, 9.3 MB decoded, the
@@ -377,26 +437,60 @@ export function createHttp(deps: HttpDeps): Http {
     const timeoutMs = options.timeoutMs ?? FORK_REQUEST_MS.api;
     await turn(key, rule, source, timeoutMs, signal, booked);
     if (signal?.aborted) throw signal.reason;
+    // The sender is ours to name, whatever the caller's headers say.
+    const headers = headersOf(
+      options.headers,
+      rule?.sender === "sec" ? (deps.secUserAgent ?? generic) : generic,
+    );
+    // A header fetch cannot send fails the same way every time: said at once, the request not sent.
+    if (typeof headers === "string") {
+      throw fail(
+        "unavailable",
+        `${source} was not asked: the ${headers} header of its request holds a character a header cannot carry.`,
+        { source },
+      );
+    }
     const deadline = AbortSignal.timeout(timeoutMs);
+    const sameOrigin = options.redirect === "same-origin";
     let response: Response;
-    try {
-      const headers = new Headers(options.headers);
-      // The sender is ours to name, whatever the caller's headers say.
-      headers.set("User-Agent", rule?.sender === "sec" ? (deps.secUserAgent ?? generic) : generic);
-      response = await deps.fetch(url, {
-        headers,
-        signal: signal ? AbortSignal.any([signal, deadline]) : deadline,
-      });
-    } catch (error) {
-      // A cancelled call is the caller's, as it came.
-      if (signal?.aborted) throw error;
-      if (deadline.aborted)
-        throw fail("unavailable", `${source} did not answer within ${seconds(timeoutMs)}.`, { source });
-      if (!retried) {
-        await timer.sleep(RETRY_PAUSE_MS, signal);
-        return attempt(url, key, rule, options, true);
+    let target = url;
+    for (let hops = 0; ; hops++) {
+      try {
+        response = await deps.fetch(target, {
+          headers,
+          signal: signal ? AbortSignal.any([signal, deadline]) : deadline,
+          ...(sameOrigin ? { redirect: "manual" as const } : {}),
+        });
+      } catch (error) {
+        // A cancelled call is the caller's, as it came.
+        if (signal?.aborted) throw error;
+        if (deadline.aborted)
+          throw fail("unavailable", `${source} did not answer within ${seconds(timeoutMs)}.`, { source });
+        if (!retried) {
+          await timer.sleep(RETRY_PAUSE_MS, signal);
+          return attempt(url, key, rule, options, true);
+        }
+        throw fail("unavailable", `${source} could not be reached (${reasonOf(error)}).`, { source });
       }
-      throw fail("unavailable", `${source} could not be reached (${reasonOf(error)}).`, { source });
+      if (!sameOrigin || !REDIRECTS.has(response.status)) break;
+      // A redirect to the request's own origin is followed, as fetch follows one (at most FETCH_REDIRECTS);
+      // one elsewhere is not, and its address, which may carry the key, is not said.
+      const next = sameOriginTarget(target, response.headers.get("location"));
+      await response.body?.cancel().catch(() => {});
+      if (next === undefined) {
+        throw fail(
+          "unavailable",
+          `${source} sent the request on to another address (HTTP ${response.status}), which is not followed with its key.`,
+          { source, status: response.status },
+        );
+      }
+      if (hops >= FETCH_REDIRECTS) {
+        throw fail("unavailable", `${source} redirected the request more than ${FETCH_REDIRECTS} times.`, {
+          source,
+          status: response.status,
+        });
+      }
+      target = next;
     }
     const { status } = response;
     if (response.ok || options.accept?.includes(status)) return { response, deadline, timeoutMs };

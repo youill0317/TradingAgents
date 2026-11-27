@@ -126,6 +126,9 @@ async function found(
   return run;
 }
 
+/** What a name in Hangul is answered with when DART_API_KEY is not set. */
+const DART_NEEDED = `Finding Korean companies by their Korean names needs DART_API_KEY (a free key from OpenDART, https://opendart.fss.or.kr/), set in the environment or under "data" in credentials.json.`;
+
 /** The keys of a find_instrument payload, best first. */
 function keysOf(run: ToolRun): string[] {
   return (run.payload as { matches: { key: string }[] }).matches.map((match) => match.key);
@@ -229,10 +232,31 @@ describe("Korean listings", () => {
     golden("kospi-hangul", (await found(runTool, { query: "코스피" })).text);
     golden("won-dollar-hangul", (await found(runTool, { query: "원달러" })).text);
     golden("bitcoin-hangul", (await found(runTool, { query: "비트코인" })).text);
-    // A company's name in Hangul: no catalog holds it, and Yahoo is not asked in Hangul.
-    const run = await found(runTool, { query: "삼성전자" });
-    golden("samsung-hangul", run.text);
-    expect(run.summary).toBe("0 instruments");
+    // A company's name in Hangul: no catalog holds it, Yahoo is not asked in Hangul, and only OpenDART's company
+    // list reads Korean names: the answer is what to set.
+    const run = await runTool("find_instrument", { query: "삼성전자" });
+    expect(run.failure).toBe("data_not_configured");
+    expect(run.text).toBe(DART_NEEDED);
+    expect(fetch.requests).toEqual([]);
+  });
+
+  test("a Korean series named exactly without its source's key says which key; other words find no match", async () => {
+    const { runTool, fetch } = setup(SEC);
+    for (const [query, needs, kind] of [
+      ["기준금리", "ECOS_API_KEY", undefined],
+      // Asked for series only, so neither Yahoo nor SEC is asked for the Latin words.
+      ["Korea CPI", "ECOS_API_KEY", "series"],
+      ["반도체 생산지수", "KOSIS_API_KEY", undefined],
+    ] as const) {
+      const run = await runTool("find_instrument", { query, ...(kind ? { kind } : {}) });
+      expect(run.failure, query).toBe("data_not_configured");
+      expect(run.text, query).toContain(`needs ${needs}`);
+    }
+    // Asked for series only, a name in Hangul that names none is no match; asked for securities, what to set.
+    const series = await found(runTool, { query: "삼성전자", kind: "series" });
+    expect(series.summary).toBe("0 instruments");
+    const securities = await runTool("find_instrument", { query: "삼성전자", kind: "security" });
+    expect(securities.text).toBe(DART_NEEDED);
     expect(fetch.requests).toEqual([]);
   });
 });
@@ -415,15 +439,14 @@ describe("the recorder's cases (scripts/fork/fixture-cases/instruments.ts)", () 
     for (const one of cases) {
       const file = `instruments/${one.name}.json`;
       const meta = fixtureMeta(file);
-      const asked = new URL(meta?.url ?? "").searchParams.get("q");
+      // A search by its words, a quote by its symbols (with Yahoo's cookie and crumb, which a quote needs).
+      const address = new URL(meta?.url ?? "");
+      const asked = (url: URL) =>
+        url.pathname === address.pathname &&
+        ["q", "symbols"].every((name) => url.searchParams.get(name) === address.searchParams.get(name));
       // Yahoo's address answered by the fixture itself; nothing is sent anywhere.
       const yahooAnswer = yahooAnswerer(
-        fixtureFetch([
-          {
-            match: (url) => url.pathname === "/v1/finance/search" && url.searchParams.get("q") === asked,
-            file,
-          },
-        ]),
+        fixtureFetch([...YAHOO_AAPL.slice(0, 2), { match: (url) => asked(url), file }]),
       );
       const recorded = await recordOne(one, deps.http, { yahoo: deps.yahoo, yahooAnswer }, []);
       expect(recorded.file).toBe(`${one.name}.json`);
@@ -504,9 +527,6 @@ Instruments for "원달러", best match first:
 source: Instrument search
 Instruments for "비트코인", best match first:
 - crypto:BTC-USD: Bitcoin (BTC) in US dollars (crypto); quote, price_history, technicals`,
-  "samsung-hangul": `[e4] find_instrument 삼성전자 (reference its data as {"ref":"e4","path":"<field>"})
-source: Instrument search
-No instrument matched "삼성전자".`,
   gold: `[e1] find_instrument gold (reference its data as {"ref":"e1","path":"<field>"})
 source: Instrument search
 Instruments for "gold", best match first:

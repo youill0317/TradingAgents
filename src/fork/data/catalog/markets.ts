@@ -257,6 +257,16 @@ export type FredBankRate = {
   units: string;
 };
 
+/**
+ * The Bank of Korea's base rate, which central_banks lists with ECOS_API_KEY: the ECOS series catalog/series.ts
+ * holds under this key (table 722Y001, item 0101000, daily), read as macro_series reads it.
+ */
+export const BOK_BASE_RATE = {
+  bank: "Bank of Korea",
+  rate: "base rate",
+  key: "kr.ecos.722y001.0101000",
+} as const;
+
 /** Other central banks' rates with a keyless source: FRED (its download, or its API with FRED_API_KEY). */
 export const FRED_BANK_RATES: readonly FredBankRate[] = [
   {

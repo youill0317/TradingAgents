@@ -1,0 +1,71 @@
+{
+ "lastBuildDate": "Thu, 26 Nov 2026 07:00:00 +0900",
+ "total": 9,
+ "start": 1,
+ "display": 9,
+ "items": [
+  {
+   "title": "<b>삼성전자</b>, HBM4 양산 앞두고 <b>반도체</b> 설비 투자 확대",
+   "originallink": "https://www.example.com/news/articleView.html?idxno=1001",
+   "link": "https://n.news.naver.com/mnews/article/901/0000001001?sid=101",
+   "description": "<b>삼성전자</b>가 차세대 고대역폭메모리(HBM4) 양산을 앞두고 평택 캠퍼스의 <b>반도체</b> 설비 투자를 늘린다. 업계에 따르면 ...",
+   "pubDate": "Wed, 25 Nov 2026 18:40:00 +0900"
+  },
+  {
+   "title": "&quot;<b>반도체</b> 겨울은 끝났다&quot;…<b>삼성전자</b> 목표주가 줄상향",
+   "originallink": "https://news.example.net/stock/20261125/samsung-targets",
+   "link": "https://n.news.naver.com/mnews/article/902/0000002001?sid=101",
+   "description": "증권가가 <b>삼성전자</b>의 목표주가를 잇달아 올리고 있다. 메모리 <b>반도체</b> 가격 상승과 HBM 공급 확대 &amp; 파운드리 수주가 ...",
+   "pubDate": "Wed, 25 Nov 2026 16:05:00 +0900"
+  },
+  {
+   "title": "<b>삼성전자</b> 파운드리, 2나노 고객사 추가 확보",
+   "originallink": "https://biz.example.net/semiconductor/2026/11/25/samsung-foundry-2nm",
+   "link": "https://n.news.naver.com/mnews/article/903/0000003001?sid=105",
+   "description": "<b>삼성전자</b> 파운드리 사업부가 2나노 공정 고객사를 추가로 확보했다. <b>반도체</b> 업계에 따르면 ...",
+   "pubDate": "Wed, 25 Nov 2026 15:31:00 +0900"
+  },
+  {
+   "title": "코스피, 외국인 매수에 상승…<b>삼성전자</b> 1%대 강세",
+   "originallink": "https://economy.example.org/market/1120-kospi",
+   "link": "https://n.news.naver.com/mnews/article/904/0000004001?sid=101",
+   "description": "코스피가 외국인 매수세에 힘입어 상승하고 있다. 시가총액 1위 <b>삼성전자</b>는 1%대 강세를 보이며 &lt;<b>반도체</b>&gt; 업종 상승을 이끌고 있다.",
+   "pubDate": "Wed, 25 Nov 2026 11:20:00 +0900"
+  },
+  {
+   "title": "[특징주] <b>삼성전자</b>, 장 초반 상승…<b>반도체</b>주 동반 강세",
+   "originallink": "https://news.example.net/stock/20261125/opening-samsung",
+   "link": "https://n.news.naver.com/mnews/article/902/0000002002?sid=101",
+   "description": "<b>삼성전자</b>가 장 초반 상승세를 보이고 있다. SK하이닉스 등 <b>반도체</b>주도 동반 강세다.",
+   "pubDate": "Wed, 25 Nov 2026 09:02:00 +0900"
+  },
+  {
+   "title": "<b>반도체</b> 수출 13개월 연속 증가…<b>삼성전자</b>·SK하이닉스 수혜",
+   "originallink": "https://trade.example.org/export/2026/11/24/chips",
+   "link": "https://trade.example.org/export/2026/11/24/chips",
+   "description": "이달 <b>반도체</b> 수출이 13개월 연속 증가세를 이어갔다. <b>삼성전자</b>와 SK하이닉스의 실적 개선 기대가 ...",
+   "pubDate": "Tue, 24 Nov 2026 20:15:00 +0900"
+  },
+  {
+   "title": "<b>삼성전자</b>, 美 테일러 공장 가동 일정 공개",
+   "originallink": "https://www.example.com/news/articleView.html?idxno=1002",
+   "link": "https://n.news.naver.com/mnews/article/901/0000001002?sid=104",
+   "description": "<b>삼성전자</b>가 미국 텍사스 &#39;테일러 팹&#39;의 가동 일정을 공개했다. 첨단 <b>반도체</b> 생산을 ...",
+   "pubDate": "Tue, 24 Nov 2026 17:45:00 +0900"
+  },
+  {
+   "title": "R&amp;D 늘리는 <b>삼성전자</b>…<b>반도체</b> 인재 확보 경쟁",
+   "originallink": "https://biz.example.net/people/2026/11/24/samsung-rnd",
+   "link": "https://n.news.naver.com/mnews/article/903/0000003002?sid=101",
+   "description": "<b>삼성전자</b>가 연구개발(R&amp;D) 투자를 늘리며 <b>반도체</b> 인재 확보에 나섰다.",
+   "pubDate": "Tue, 24 Nov 2026 10:30:00 +0900"
+  },
+  {
+   "title": "<b>삼성전자</b> 노사, 임금협상 잠정 합의",
+   "originallink": "https://economy.example.org/labor/1123-samsung-wage",
+   "link": "https://n.news.naver.com/mnews/article/904/0000004002?sid=101",
+   "description": "<b>삼성전자</b> 노사가 올해 임금협상에 잠정 합의했다. <b>반도체</b> 부문 성과급 기준도 ...",
+   "pubDate": "Mon, 23 Nov 2026 14:00:00 +0900"
+  }
+ ]
+}

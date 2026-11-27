@@ -1,0 +1,11 @@
+{
+  "source": "naver",
+  "name": "news-samsung-semiconductor",
+  "url": "https://openapi.naver.com/v1/search/news.json?query=%EC%82%BC%EC%84%B1%EC%A0%84%EC%9E%90+%EB%B0%98%EB%8F%84%EC%B2%B4&display=100&start=1&sort=date",
+  "status": 200,
+  "content_type": "application/json;charset=utf-8",
+  "recorded_at": "2026-11-25T22:00:00.000Z",
+  "bytes": 4322,
+  "hand_made": true,
+  "note": "Hand-made, not recorded (no request is sent to openapi.naver.com from the development session): Naver's news search answer in its documented JSON form ({lastBuildDate, total, start, display, items: [{title, originallink, link, description, pubDate}]}, newest first with sort=date, the words searched marked with <b> tags, characters written as HTML entities, pubDate in RFC 822's form at +0900), for the words 삼성전자 반도체: nine invented articles from 2026-11-23 to 2026-11-25 at reserved example domains (one not carried by Naver, so its link is the publisher's), with Naver News addresses of invented article numbers."
+}

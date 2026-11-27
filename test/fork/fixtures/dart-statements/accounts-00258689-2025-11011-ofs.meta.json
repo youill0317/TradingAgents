@@ -1,0 +1,11 @@
+{
+  "source": "dart-statements",
+  "name": "accounts-00258689-2025-11011-ofs",
+  "url": "https://opendart.fss.or.kr/api/fnlttSinglAcntAll.json?crtfc_key=***&corp_code=00258689&bsns_year=2025&reprt_code=11011&fs_div=OFS",
+  "status": 200,
+  "content_type": "application/json;charset=UTF-8",
+  "recorded_at": "2026-11-25T22:00:00.000Z",
+  "bytes": 14720,
+  "hand_made": true,
+  "note": "Hand-made, not recorded (no request is sent to opendart.fss.or.kr from the development session): fnlttSinglAcntAll.json's answer in OpenDART's documented JSON (status, message, and list rows of rcept_no, reprt_code, bsns_year, corp_code, sj_div, sj_nm, account_id, account_nm, account_detail, thstrm_nm and _amount (and _add_amount in a quarterly or half-year report), frmtrm_nm and _amount (frmtrm_q_nm, _q_amount and _add_amount for a quarterly or half-year report's income statement), bfefrmtrm_nm and _amount (an annual report's), ord, currency) for JYP Entertainment's 2025 annual report (사업보고서), separate (OFS): 34 of its lines (balance sheet, income statement, cash flows), none attributing profit or equity to the parent's owners, as separate statements do not, and six with the account ids of DART's own balance-sheet and cash-flow templates (dart_ShortTermTradePayables 매입채무, dart_CurrentPortionOfBonds 유동성사채, dart_AdjustmentsForDepreciationExpense 감가상각비, dart_AdjustmentsForAmortisationExpense 무형자산상각비, dart_AcquisitionOfTreasuryShares 자기주식의 취득) beside ifrs-full_ShorttermBorrowings, as the XBRL of Samsung Electronics' 2021 annual report (20220308000798) lays those templates out. The amounts are invented and add up within each year (gross profit, operating income, profit before tax and profit; assets = liabilities + equity; the financing cash flow's dividends and treasury shares); the receipt number is invented in OpenDART's form."
+}

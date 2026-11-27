@@ -1,5 +1,6 @@
 // Copyright 2026 Tauric Research
 // SPDX-License-Identifier: Apache-2.0
+// Changed in this fork of TradingAgents 1.0.0.
 /** SEC filings of one company, and the text of a filing's sections. */
 
 import { z } from "zod";
@@ -175,7 +176,12 @@ export function filingSectionTool(filings: Filings) {
     input: z
       .object({
         symbol,
-        accession: z.string().regex(/^\d{10}-\d{2}-\d{6}$/, "an accession such as 0000320193-26-000026"),
+        accession: z
+          .string()
+          .regex(
+            /^(?:\d{10}-\d{2}-\d{6}|\d{14})$/,
+            "an SEC accession such as 0000320193-26-000026, or an OpenDART receipt number such as 20260310000812",
+          ),
         section: z.enum(FILING_SECTIONS).describe("A section filings lists for this filing"),
         from: z
           .string()

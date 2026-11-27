@@ -10,7 +10,8 @@
  * Without SEC_USER_AGENT nothing is read from SEC EDGAR, so the SEC-backed data (filings, statements,
  * insider trades, sector screens) is not offered: SEC's fair-access rule asks every program that reads EDGAR
  * to name its sender. A value set where it cannot be used (on more than one line; for SEC_USER_AGENT, with
- * characters a User-Agent cannot carry) is said, and not used: the environment's then gives way to
+ * characters a User-Agent cannot carry; for NAVER_CLIENT_ID and NAVER_CLIENT_SECRET, sent in headers, with a
+ * character a header cannot carry) is said, and not used: the environment's then gives way to
  * credentials.json's.
  */
 import { homedir } from "node:os";
@@ -80,9 +81,16 @@ const NOTE = {
 /** A setting as read: its value, why a value set cannot be used, or nothing set at all. */
 type Read = { value: string } | { why: string } | undefined;
 
+/** The settings sent as a request header's value (Naver's client id and secret). */
+const HEADER_VARS: ReadonlySet<string> = new Set([
+  PUBLIC_DATA_VARS.naverClientId,
+  PUBLIC_DATA_VARS.naverClientSecret,
+]);
+
 /**
  * `value` as `variable` uses it: trimmed, on one line, not empty (an empty one is not set); SEC's User-Agent
- * only in printable ASCII, the most a header carries.
+ * only in printable ASCII, the most a header carries; a setting sent in a header without a character a header
+ * cannot carry: one above U+00FF (fetch refuses it) or a control character other than tab (RFC 9110).
  */
 function readValue(variable: string, value: unknown): Read {
   if (value === undefined) return undefined;
@@ -94,6 +102,9 @@ function readValue(variable: string, value: unknown): Read {
     return {
       why: "holds characters other than plain ASCII letters, digits and punctuation, which a User-Agent cannot carry",
     };
+  }
+  if (HEADER_VARS.has(variable) && /[^\t\x20-\x7e\x80-\xff]/.test(text)) {
+    return { why: "holds a character the request header it is sent in cannot carry" };
   }
   return { value: text };
 }
@@ -180,11 +191,23 @@ export function cacheDirOf(env: NodeJS.ProcessEnv, paths: Pick<Paths, "home">): 
 
 /**
  * Every value in `config` that must never be said: each key, and SEC's User-Agent (it names a person). The
- * cache directory is not one.
+ * cache directory is not one. data.go.kr hands out its key in two spellings, "Encoding" (with percent escapes)
+ * and "Decoding": whichever is configured, both are listed. A value's URL-encoded forms are redact()'s.
  */
 export function secretsOf(config: PublicDataConfig): string[] {
   return (Object.keys(PUBLIC_DATA_VARS) as Field[]).flatMap((field) => {
     const value = config[field];
-    return value === undefined ? [] : [value];
+    if (value === undefined) return [];
+    return field === "dataGoKrKey" ? [...new Set([value, decodedOnce(value)])] : [value];
   });
+}
+
+/** `value` with its percent escapes decoded once; as it is when it holds none, or one that cannot be decoded. */
+function decodedOnce(value: string): string {
+  if (!/%[0-9A-Fa-f]{2}/.test(value)) return value;
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
 }

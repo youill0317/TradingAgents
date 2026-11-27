@@ -1,0 +1,11 @@
+{
+  "source": "dart",
+  "name": "company-00126380",
+  "url": "https://opendart.fss.or.kr/api/company.json?crtfc_key=***&corp_code=00126380",
+  "status": 200,
+  "content_type": "application/json;charset=UTF-8",
+  "recorded_at": "2026-11-25T22:00:00.000Z",
+  "bytes": 472,
+  "hand_made": true,
+  "note": "Hand-made, not recorded (no request is sent to opendart.fss.or.kr from the development session): company.json's answer in OpenDART's documented JSON (status, message and the outline's fields: corp_name, corp_name_eng, stock_name, stock_code, ceo_nm, corp_cls, jurir_no, bizr_no, adres, hm_url, ir_url, phn_no, fax_no, induty_code, est_dt, acc_mt) for Samsung Electronics; the CEO's name (홍길동) is a placeholder, and the empty values are written as OpenDART leaves a field it has nothing for."
+}

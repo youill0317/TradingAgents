@@ -1,0 +1,11 @@
+{
+  "source": "dart",
+  "name": "document-00126380-annual",
+  "url": "https://opendart.fss.or.kr/api/document.xml?crtfc_key=***&rcept_no=20260310000812",
+  "status": 200,
+  "content_type": "application/zip",
+  "recorded_at": "2026-11-25T22:00:00.000Z",
+  "bytes": 2245,
+  "hand_made": true,
+  "note": "Hand-made, not recorded (no request is sent to opendart.fss.or.kr from the development session): document.xml's answer in OpenDART's documented form, a ZIP of the filing's documents in DART's XML (dart4.xsd: DOCUMENT, DOCUMENT-NAME, COMPANY-NAME, BODY, COVER, SECTION-n with TITLE, P, TABLE), each declaring UTF-8: the main document <rcept_no>.xml of Samsung Electronics' 2025 annual report (the receipt number of list-00126380-periodic.json) with its first four parts cut to a paragraph or a table each, and two attachments, the audit report (_00760) and the consolidated audit report (_00761), each a paragraph. Its text and figures are invented."
+}

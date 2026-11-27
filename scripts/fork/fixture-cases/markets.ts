@@ -15,6 +15,10 @@
  * - The ECB's main refinancing and marginal lending rates since 2024, beside test/fork/fixtures/ecb's deposit
  *   facility rate.
  * - FRED's keyless download of the views' series that test/fork/fixtures/fred does not hold.
+ * - The Bank of Korea's base rate on ECOS (722Y001, item 0101000, daily) since 2024, for central_banks with
+ *   ECOS_API_KEY (taken from the settings: it travels in the path and is removed from what is written; without it
+ *   the case has no address and fails, unsent). ECOS answers a failure with HTTP 200 and a RESULT: read what was
+ *   written. The fixture of this name is hand-made in ECOS's documented JSON until the owner records it.
  *
  * The views also read the Treasury's curves, the New York Fed's rates, the ECB's deposit facility rate and
  * FRED's headline series from the fixtures of their own sources (treasury.ts, nyfed.ts, ecb.ts, fred.ts here).
@@ -38,6 +42,7 @@ import {
   SUMMARY_INDICES,
   VIX_TERMS,
 } from "../../../src/fork/data/catalog/markets.js";
+import type { PublicDataConfig } from "../../../src/fork/data/config.js";
 import { parseListing } from "../../../src/fork/data/listings.js";
 import { SCREEN_ROWS } from "../../../src/fork/data/providers/markets.js";
 import type { FixtureCase, ReadTools } from "../record-fixtures.ts";
@@ -155,4 +160,14 @@ export const cases: FixtureCase[] = [
   graph("BAMLC0A0CM", "2026-10-25", "2026-11-25"),
   graph("BAA10Y", "2026-10-25", "2026-11-25"),
   ...FRED_BANK_RATES.map((bank) => graph(bank.id, "2025-05-01", "2026-11-25")),
+  {
+    // The Bank of Korea's base rate since 2024, as central_banks reads it with ECOS_API_KEY.
+    source: "markets",
+    name: "ecos-722y001-d-since2024",
+    url: (config: PublicDataConfig) =>
+      config.ecosKey
+        ? `https://ecos.bok.or.kr/api/StatisticSearch/${encodeURIComponent(config.ecosKey)}/json/kr/1/1000/722Y001/D/20240101/20261125/0101000`
+        : "ECOS_API_KEY is not set",
+    file: "ecos-722y001-d-since2024.json",
+  },
 ];

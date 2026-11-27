@@ -4,9 +4,9 @@
 /**
  * "SEC EDGAR", routes.ts key `filers`: what companies file with the SEC. Served only when SEC_USER_AGENT is set
  * (SEC's fair-access rule asks every program to name its sender); without it statements and filings are not
- * declared, so they show as not available and the start-up note says what to set. Ownership is offered either
- * way (Yahoo serves its institutional view), so without it the insider view answers not_configured, naming
- * SEC_USER_AGENT and the view that is served.
+ * declared (they are, for Korean listings, with DART_API_KEY: see below), so they show as not available and the
+ * start-up note says what to set. Ownership is offered either way (Yahoo serves its institutional view), so
+ * without it the insider view answers not_configured, naming SEC_USER_AGENT and the view that is served.
  *
  * - statements.statement: SEC's XBRL facts (companyfacts), us-gaap or, for 20-F filers, ifrs-full in the
  *   reporting currency (never mixed with the USD convenience translations those filers add), each value the
@@ -27,7 +27,17 @@
  *   reports read cover.
  *
  * SEC links no predecessor filers, so each answer's succession names the company's own CIK and says that history
- * before it is not linked. In Phase 4 the provider adds OpenDART for Korean filers.
+ * before it is not linked.
+ *
+ * With DART_API_KEY, a Korean listing's statements (providers/dart-statements.ts), filings, filing sections
+ * and insider reports (providers/dart-filings.ts) are OpenDART's, and the provider is named "SEC EDGAR /
+ * OpenDART"; every other listing takes the SEC paths above, as without the key. With DART_API_KEY and no
+ * SEC_USER_AGENT, statements, filings and insider transactions are declared for the Korean listings: a US
+ * listing's statements and filings answer not_configured, naming SEC_USER_AGENT (a listing elsewhere is
+ * unsupported), and its insider view answers as it does without either key. Without DART_API_KEY, a Korean
+ * listing's statements, filings, filing sections and insider view, wherever they are declared, answer
+ * not_configured naming DART_API_KEY (SEC EDGAR holds no Korean listing's filings), the insider view saying
+ * that the institutional view is served.
  */
 import { NOTICE } from "../../../contracts/index.js";
 import type {
@@ -53,6 +63,8 @@ import {
   type StatementKind,
 } from "../catalog/lines.js";
 import type { ForkDeps } from "../deps.js";
+import { parseListing } from "../listings.js";
+import { DART_SOURCE, dartKeyNeeded } from "../sources/dart.js";
 import {
   ANNUAL_FORMS,
   archiveUrl,
@@ -69,6 +81,8 @@ import {
 import { readOwnership, TRANSACTION_FORMS } from "../sources/sec-form4.js";
 import { documentText, findSection, sectionsOfForm } from "../sources/sec-sections.js";
 import { secTicker } from "../sources/sec-tickers.js";
+import { dartFilings } from "./dart-filings.js";
+import { dartStatements } from "./dart-statements.js";
 
 type Call = { signal?: AbortSignal };
 type Data<M> = M extends (...args: never[]) => Promise<infer D> ? D : never;
@@ -93,13 +107,105 @@ export function insiderNeedsSec(): DataError {
   );
 }
 
+/** The provider's name when OpenDART serves Korean listings beside SEC EDGAR. */
+export const FILERS_WITH_DART = `${SEC_SOURCE} / ${DART_SOURCE}`;
+
+/**
+ * Statements or filings asked for without SEC_USER_AGENT (OpenDART serving Korean listings): a US listing's
+ * answer is what to set; a listing elsewhere is no filer's here.
+ */
+function secNeeded(symbol: string, what: "statements" | "filings", said: string): DataError {
+  if (secTicker(symbol) === undefined) {
+    return new DataError(
+      "unsupported",
+      `${SEC_SOURCE} holds the ${what} of companies listed in the US, and ${symbol} is not a US listing`,
+      { source: SEC_SOURCE },
+    );
+  }
+  return new DataError(
+    "not_configured",
+    `${said} come from SEC EDGAR, which is read only with SEC_USER_AGENT set (a name and email, in the environment or under "data" in credentials.json): SEC's fair-access rule asks every program that reads EDGAR to name its sender. ${what === "filings" ? "Filings" : "Statements"} of Korean listings are served from OpenDART.`,
+    { source: SEC_SOURCE, code: NOTICE.capabilityUnavailable, retry: "never" },
+  );
+}
+
+/** Filings asked for without SEC_USER_AGENT: see secNeeded. */
+export function filingsNeedSec(symbol: string): DataError {
+  return secNeeded(symbol, "filings", "SEC filings");
+}
+
+/** Statements asked for without SEC_USER_AGENT: see secNeeded. */
+export function statementsNeedSec(symbol: string): DataError {
+  return secNeeded(symbol, "statements", "A US company's financial statements");
+}
+
+/** Whether `symbol` names a Korean listing (XKRX:005930, XKOS:035900, 005930.KS, a bare code): OpenDART's, with its key. */
+export function isKoreanListing(symbol: string): boolean {
+  return parseListing(symbol).kind === "kr";
+}
+
+/**
+ * A Korean listing's statements, filings or insider reports asked for without DART_API_KEY: OpenDART is their
+ * source (SEC EDGAR holds none), so the answer is what to set; the insider view says the institutional view is
+ * served.
+ */
+export function koreanFilerNeedsDart(symbol: string, what: "statements" | "filings" | "insiders"): DataError {
+  const listing = parseListing(symbol);
+  const name = listing.kind === "kr" ? (listing.key ?? listing.code) : symbol;
+  const reading = {
+    statements: `Reading ${name}'s financial statements`,
+    filings: `Reading ${name}'s filings`,
+    insiders: `Reading ${name}'s insider reports`,
+  }[what];
+  const needed = dartKeyNeeded(reading);
+  if (what !== "insiders") return needed;
+  return new DataError(
+    "not_configured",
+    `${needed.message} Institutional holders are served: ownership with view=institutional.`,
+    needed.details,
+  );
+}
+
 export function filersProvider(deps: ForkDeps): DataProvider {
+  // With DART_API_KEY, a Korean listing's statements, filings and insider reports are OpenDART's.
+  const dart = deps.config.dartKey ? { ...dartFilings(deps), statement: dartStatements(deps) } : undefined;
   if (!deps.config.secUserAgent) {
+    if (!dart) {
+      return {
+        name: SEC_SOURCE,
+        capabilities: {
+          ownership: {
+            transactions: async (symbol) => {
+              // A Korean listing's insider reports are OpenDART's: SEC_USER_AGENT would not serve them.
+              if (isKoreanListing(symbol)) throw koreanFilerNeedsDart(symbol, "insiders");
+              throw insiderNeedsSec();
+            },
+          },
+        },
+      };
+    }
     return {
-      name: SEC_SOURCE,
+      name: FILERS_WITH_DART,
       capabilities: {
+        statements: {
+          statement: async (symbol, query, call) => {
+            if (isKoreanListing(symbol)) return dart.statement(symbol, query, call);
+            throw statementsNeedSec(symbol);
+          },
+        },
+        filings: {
+          list: async (symbol, query, call) => {
+            if (isKoreanListing(symbol)) return dart.list(symbol, query, call);
+            throw filingsNeedSec(symbol);
+          },
+          section: async (target, query, call) => {
+            if (isKoreanListing(target.symbol)) return dart.section(target, query, call);
+            throw filingsNeedSec(target.symbol);
+          },
+        },
         ownership: {
-          transactions: async () => {
+          transactions: async (symbol, query, call) => {
+            if (isKoreanListing(symbol)) return dart.transactions(symbol, query, call);
             throw insiderNeedsSec();
           },
         },
@@ -107,16 +213,35 @@ export function filersProvider(deps: ForkDeps): DataProvider {
     };
   }
   const sec = secSource(deps);
+  /** A Korean listing's reading: OpenDART's with DART_API_KEY, else what to set; undefined for any other listing. */
+  const korean = <T>(
+    symbol: string,
+    what: "statements" | "filings" | "insiders",
+    read: (served: NonNullable<typeof dart>) => Promise<T>,
+  ): Promise<T> | undefined => {
+    if (!isKoreanListing(symbol)) return undefined;
+    return dart ? read(dart) : Promise.reject(koreanFilerNeedsDart(symbol, what));
+  };
   return {
-    name: SEC_SOURCE,
+    name: dart ? FILERS_WITH_DART : SEC_SOURCE,
     capabilities: {
-      statements: { statement: (symbol, query, call) => readStatement(sec, symbol, query, call) },
+      statements: {
+        statement: (symbol, query, call) =>
+          korean(symbol, "statements", (served) => served.statement(symbol, query, call)) ??
+          readStatement(sec, symbol, query, call),
+      },
       filings: {
-        list: (symbol, query, call) => listFilings(sec, symbol, query, call),
-        section: (target, query, call) => readSection(deps, sec, target, query, call),
+        list: (symbol, query, call) =>
+          korean(symbol, "filings", (served) => served.list(symbol, query, call)) ??
+          listFilings(sec, symbol, query, call),
+        section: (target, query, call) =>
+          korean(target.symbol, "filings", (served) => served.section(target, query, call)) ??
+          readSection(deps, sec, target, query, call),
       },
       ownership: {
-        transactions: (symbol, query, call) => readTransactions(deps, sec, symbol, query, call),
+        transactions: (symbol, query, call) =>
+          korean(symbol, "insiders", (served) => served.transactions(symbol, query, call)) ??
+          readTransactions(deps, sec, symbol, query, call),
       },
     },
   };

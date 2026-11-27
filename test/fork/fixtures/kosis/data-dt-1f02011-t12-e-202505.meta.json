@@ -1,0 +1,11 @@
+{
+  "source": "kosis",
+  "name": "data-dt-1f02011-t12-e-202505",
+  "url": "https://kosis.kr/openapi/Param/statisticsParameterData.do?method=getList&orgId=101&tblId=DT_1F02011&itmId=T12&objL1=E&prdSe=M&startPrdDe=202505&endPrdDe=202611&apiKey=***&format=json&jsonVD=Y",
+  "status": 200,
+  "content_type": "application/json;charset=UTF-8",
+  "recorded_at": "2026-11-26T09:00:00.000Z",
+  "bytes": 5696,
+  "hand_made": true,
+  "note": "Hand-made in the JSON KOSIS's Open API guide (kosis.kr/openapi, statisticsParameterData.do, statisticsSearch.do, statisticsData.do getMeta) as open-source KOSIS clients document it, and the codes the owner verified (DT_1F02011: T10, T11, T12, C1 E) give for statisticsParameterData.do (jsonVD=Y): table DT_1F02011 (orgId 101), item T12 (생산자제품 재고지수(원지수)), C1 E (반도체 및 부품), monthly, from 2025-05 to 2026-09, the latest month published; the items, the C1 code and the unit are as the owner verified them, the table's name and the values are illustrative, not KOSIS's. No KOSIS_API_KEY was used. Listed for a live check."
+}

@@ -1,0 +1,11 @@
+{
+  "source": "instruments",
+  "name": "yahoo-quote-kr-listings",
+  "url": "https://query2.finance.yahoo.com/v7/finance/quote?symbols=005930.KS%2C005935.KS%2C006400.KS%2C009150.KS%2C028260.KS%2C000660.KS%2C035720.KS%2C035900.KQ&crumb=***",
+  "status": 200,
+  "content_type": "application/json;charset=utf-8",
+  "recorded_at": "2026-11-25T22:00:00.000Z",
+  "bytes": 7844,
+  "hand_made": true,
+  "note": "Hand-made, not recorded (Yahoo answers only yahoo-finance2's own User-Agent, and none was recorded here): Yahoo's v7 quote answer for the Korean listings the instrument search's OpenDART matches are placed by, in the shape yahoo-finance2 4.0.6's quote schema validates (the rows of yahoo/quote-005930-ks.json and yahoo/quote-035900-kq.json, and rows of the same form for 005935.KS, 006400.KS, 009150.KS, 028260.KS, 000660.KS and 035720.KS), with invented prices as of 2026-11-25. A batched request is answered with the rows of the symbols it asks for that this answer holds, as Yahoo leaves out symbols it does not know."
+}

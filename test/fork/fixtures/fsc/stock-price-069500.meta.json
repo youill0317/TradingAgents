@@ -1,0 +1,11 @@
+{
+  "source": "fsc",
+  "name": "stock-price-069500",
+  "url": "https://apis.data.go.kr/1160100/GetStockSecuritiesInfoService_V2/getStockPriceInfo_V2?serviceKey=***&numOfRows=10000&pageNo=1&resultType=json&likeSrtnCd=069500&beginBasDt=20261012&endBasDt=20261125",
+  "status": 200,
+  "content_type": "application/json;charset=UTF-8",
+  "recorded_at": "2026-11-25T22:00:00.000Z",
+  "bytes": 138,
+  "hand_made": true,
+  "note": "Hand-made, not recorded (no request is sent to apis.data.go.kr from the development session): the FSC's getStockPriceInfo answer in its documented JSON form ({response: {header: {resultCode, resultMsg}, body: {numOfRows, pageNo, totalCount, items: {item: [...]}}}}, every value a string, fltRt without its leading zero), for KODEX 200 (069500), an exchange-traded fund: the FSC's stock prices list shares, not funds (its securities-product prices do), so the answer holds no row (totalCount 0, items empty, as the service writes an empty list)."
+}

@@ -3,8 +3,9 @@
 // Added in this fork of TradingAgents 1.0.0.
 /**
  * The data client with scripted answers and fake elapsed time (no network): what each status and failure
- * becomes, when it waits and retries, the published per-host rates, the User-Agent each host gets, and that
- * no key reaches a message.
+ * becomes, when it waits and retries, the published per-host rates, the User-Agent each host gets, that no
+ * key reaches a message, and which redirects a request passing `redirect: "same-origin"` (Korea's sources, for
+ * their keys) follows (two stub servers on 127.0.0.1).
  */
 import { describe, expect, test } from "bun:test";
 import { DataError } from "../../../src/data/errors.js";
@@ -348,11 +349,20 @@ describe("the rates services publish", () => {
     // FRED's website: robots.txt's Crawl-delay of one second.
     expect(ruleFor("fred.stlouisfed.org")?.pace).toEqual({ requests: 1, perMs: 1_000 });
     expect(ruleFor("api.gdeltproject.org")?.pace).toEqual({ requests: 1, perMs: 5_000 });
+    // KOSIS's Open API: 200 requests a minute.
+    expect(ruleFor("kosis.kr")?.pace).toEqual({ requests: 200, perMs: 60_000 });
     expect(["notsec.gov", "stlouisfed.org", "data-api.ecb.europa.eu"].map((host) => ruleFor(host))).toEqual([
       undefined,
       undefined,
       undefined,
     ]);
+    // None for OpenDART, ECOS, data.go.kr or Naver: their documents give no number of requests a second or a
+    // minute, and their daily quotas are theirs to enforce.
+    expect(
+      ["opendart.fss.or.kr", "ecos.bok.or.kr", "apis.data.go.kr", "openapi.naver.com"].map((host) =>
+        ruleFor(host),
+      ),
+    ).toEqual([undefined, undefined, undefined, undefined]);
   });
 
   test("SEC: ten requests in any second, across its hosts", async () => {
@@ -478,6 +488,41 @@ describe("who is named, and what is never said", () => {
     expect(client(scripted(ok("")).fetch).http.redact(`api_key=${KEY}`)).toBe("api_key=***");
   });
 
+  test("a header fetch refuses to send: unavailable, unsent and not retried, the header named, its value never", async () => {
+    const value = `Hd8sK2mQ5w${String.fromCharCode(0x200b)}`;
+    for (const redirect of ["follow", "same-origin"] as const) {
+      const { fetch, requests } = scripted(ok("{}"));
+      const { http, timer } = client(fetch);
+      const error = await failure(
+        http.get("https://openapi.naver.com/v1/search/news.json?query=x", {
+          source: "Naver",
+          headers: { "X-Naver-Client-Id": "Xq3LkZ9pWm2RtY7vBn4C", "X-Naver-Client-Secret": value },
+          redirect,
+        }),
+      );
+      expect(error.kind).toBe("unavailable");
+      expect(error.message).toBe(
+        "Naver was not asked: the X-Naver-Client-Secret header of its request holds a character a header cannot carry.",
+      );
+      expect(error.message).not.toContain("Hd8sK2mQ5w");
+      expect(requests).toEqual([]);
+      expect(timer.slept).toEqual([]);
+    }
+    // A User-Agent fetch cannot send is said the same way.
+    const { fetch, requests } = scripted(ok("{}"));
+    const error = await failure(
+      client(fetch, { secUserAgent: `Jane Doe ${String.fromCharCode(0x2028)} jane@example.com` }).http.get(
+        "https://data.sec.gov/x",
+        { source: "SEC EDGAR" },
+      ),
+    );
+    expect([error.kind, error.message]).toEqual([
+      "unavailable",
+      "SEC EDGAR was not asked: the User-Agent header of its request holds a character a header cannot carry.",
+    ]);
+    expect(requests).toEqual([]);
+  });
+
   test("Yahoo is never asked through this client: its address is refused before any request", async () => {
     const { fetch, requests } = scripted(ok("{}"));
     for (const url of [
@@ -493,6 +538,65 @@ describe("who is named, and what is never said", () => {
     await expect(
       client(scripted(ok("")).fetch).http.get(`not a url ${KEY}`, { source: "X" }),
     ).rejects.toThrow("the data client was given something that is not a URL");
+  });
+
+  test("same-origin (a key in the request) follows a redirect to its own origin only; others follow as fetch does", async () => {
+    // Two stub servers on 127.0.0.1: two origins. The first redirects within itself and to the second.
+    const reached: string[] = [];
+    const other = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch(request) {
+        const url = new URL(request.url);
+        reached.push(`${url.pathname}${url.search} ${request.headers.get("x-naver-client-secret") ?? "-"}`);
+        return new Response("elsewhere");
+      },
+    });
+    const home = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch(request) {
+        const url = new URL(request.url);
+        if (url.pathname === "/same") {
+          return new Response(null, { status: 302, headers: { location: `/landed${url.search}` } });
+        }
+        if (url.pathname === "/away") {
+          return new Response(null, {
+            status: 307,
+            headers: { location: `http://localhost:${other.port}/elsewhere${url.search}` },
+          });
+        }
+        return new Response(`landed at ${url.pathname}`);
+      },
+    });
+    try {
+      const http = createHttp({
+        fetch: globalThis.fetch,
+        timer: fakeTimer(),
+        pacer: new Pacer(),
+        secrets: [KEY],
+      });
+      const base = `http://127.0.0.1:${home.port}`;
+      const keyed = {
+        source: "OpenDART",
+        redirect: "same-origin" as const,
+        headers: { "X-Naver-Client-Secret": KEY },
+      };
+      expect(await http.text(`${base}/same?crtfc_key=${KEY}`, keyed)).toBe("landed at /landed");
+      const refused = await failure(http.get(`${base}/away?crtfc_key=${KEY}`, keyed));
+      expect([refused.kind, refused.details.status]).toEqual(["unavailable", 307]);
+      expect(refused.message).toBe(
+        "OpenDART sent the request on to another address (HTTP 307), which is not followed with its key.",
+      );
+      // Nothing reached the other origin: neither the key in the address nor the one in the headers.
+      expect(reached).toEqual([]);
+      // Without the option, a redirect is followed as fetch follows it, as before.
+      expect(await http.text(`${base}/away?x=1`, { source: "Somewhere" })).toBe("elsewhere");
+      expect(reached).toEqual(["/elsewhere?x=1 -"]);
+    } finally {
+      home.stop(true);
+      other.stop(true);
+    }
   });
 });
 

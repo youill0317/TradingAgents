@@ -12,8 +12,14 @@
  * keys (VIEW_KEYS); the other fields of such records (a quote's day and 52-week range, the analyst record's
  * other targets) are the providers' own tests' business. A tool reading more than one method runs once per
  * method; dcf reads a statement from SEC EDGAR and a profile from Yahoo together; statements runs annual and
- * quarterly, news by symbol (Yahoo) and by topic (GDELT); markets runs each of its 22 views. The providers'
- * own tests hold the golden texts. No request reaches the network.
+ * quarterly, news by symbol (Yahoo) and by topic (GDELT); markets runs each of its 22 views. Then, in a setup
+ * with Korea's keys too (DART_API_KEY, ECOS_API_KEY, KOSIS_API_KEY, DATA_GO_KR_API_KEY, NAVER_CLIENT_ID and
+ * NAVER_CLIENT_SECRET), Samsung Electronics (XKRX:005930) through every Korean source the same way: its
+ * statements, filings, a filing's section and its insider reports from OpenDART, its quote and daily prices
+ * from the FSC when Yahoo fails, an ECOS and a KOSIS series, the Bank of Korea's row of the central banks'
+ * view, news for Korean words from Naver's news search and GDELT, and the instrument search finding it by its
+ * Korean name (korea-routes.test.ts). The providers' own tests hold the golden texts. No request reaches the
+ * network.
  */
 import { describe, expect, test } from "bun:test";
 import { MARKET_VIEWS } from "../../../src/data/capabilities.js";
@@ -36,6 +42,15 @@ import {
   testProviders,
   YAHOO_AAPL,
 } from "./harness.js";
+import {
+  ANNUAL,
+  KOREA_KEYS,
+  KOREA_ROUTES,
+  KOREA_SECRETS,
+  KOREAN_WORDS,
+  QUARTERLY,
+  withKorea,
+} from "./korea-routes.test.js";
 import { ROUTES as MARKET_ROUTES, POOL, VIEW_KEYS, yahooPath } from "./markets-routes.test.js";
 
 // Fixture routes, by source ------------------------------------------------------------------------------
@@ -202,21 +217,25 @@ const POLYMARKET: FixtureRoute = {
 };
 
 /**
- * A fixture fetch over every route whose Yahoo news search answers as Yahoo does: at most `newsCount` of the
- * fixture's articles, the newest first; and whose pooled quote route answers the rows of the symbols asked
- * that the pool holds, as Yahoo leaves out the symbols it does not know.
+ * A fixture fetch over every route (`first` before them) whose Yahoo news search answers as Yahoo does: at
+ * most `newsCount` of the fixture's articles, the newest first; whose pooled quote route answers the rows of
+ * the symbols asked that the pool holds, as Yahoo leaves out the symbols it does not know; and whose Korean
+ * sources page as they do (withKorea).
  */
-function allFetch(): FixtureFetch {
-  const base = fixtureFetch([
-    ...YAHOO,
-    ...SEC,
-    ...SCREENS,
-    ...AGENCIES,
-    GDELT,
-    POLYMARKET,
-    ...YAHOO_AAPL,
-    ...MARKETS,
-  ]);
+function allFetch(first: readonly FixtureRoute[] = []): FixtureFetch {
+  const base = withKorea(
+    fixtureFetch([
+      ...first,
+      ...YAHOO,
+      ...SEC,
+      ...SCREENS,
+      ...AGENCIES,
+      GDELT,
+      POLYMARKET,
+      ...YAHOO_AAPL,
+      ...MARKETS,
+    ]),
+  );
   const answer = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
     const response = await base(input, init);
     const url = new URL(input instanceof Request ? input.url : String(input));
@@ -268,24 +287,37 @@ const UPSTREAM_DAILY_LEFT_OUT = [
   "instrument.price_scale",
 ];
 
+/** A setup's way of running a tool, as buildTools gives it. */
+type Runner = (tool: string, input: Record<string, unknown>) => Promise<ToolRun>;
+
 /**
- * Runs `tool` with `input` and checks it as the model reads it: it answers, from `source`, and every field the
- * tool read of the answer was there (but those `leftOut` names). The read check must have seen fields read.
+ * Runs `tool` with `input` in a setup (`runner`) and checks it as the model reads it: it answers, from `source`,
+ * and every field the tool read of the answer was there (but those `leftOut` names). The read check must have
+ * seen fields read.
  */
-async function check(
+async function checkIn(
+  runner: Runner,
   tool: string,
   input: Record<string, unknown>,
   source: string,
   leftOut: readonly string[] = [],
 ): Promise<ToolRun> {
   ran.add(tool);
-  const run = await runTool(tool, input);
+  const run = await runner(tool, input);
   expect(run.failure, run.text).toBeUndefined();
   expect(run.source).toBe(source);
   expect(run.reads.paths().length).toBeGreaterThan(0);
   expect(run.reads.missing()).toEqual([...leftOut].sort());
   return run;
 }
+
+/** checkIn in the setup with SEC_USER_AGENT. */
+const check = (
+  tool: string,
+  input: Record<string, unknown>,
+  source: string,
+  leftOut: readonly string[] = [],
+) => checkIn(runTool, tool, input, source, leftOut);
 
 // The calls ---------------------------------------------------------------------------------------------------
 
@@ -434,5 +466,117 @@ describe("every data tool, through every provider together, every field it reads
   test("every data tool ran, and every request was answered by a fixture", () => {
     expect([...ran].sort()).toEqual(DATA_TOOLS.map((entry) => entry.name).sort());
     expect(fetch.unmatched).toEqual([]);
+  });
+});
+
+// The same setup with Korea's keys too -------------------------------------------------------------------------
+
+const koreaFetch = allFetch(KOREA_ROUTES);
+const korea = testProviders({ secUserAgent: "Test Agent test@example.com", ...KOREA_KEYS }, koreaFetch);
+const koreaTools = buildTools(
+  { ...korea.providers, polymarket: polymarketProvider(new PolymarketClient(koreaFetch)) },
+  { clock: korea.clock, check: true },
+);
+
+/** The runs of the Korean calls, for the keys check after them. */
+const koreaRuns: ToolRun[] = [];
+
+/** checkIn in the setup with Korea's keys, its run kept. */
+async function checkKorea(
+  tool: string,
+  input: Record<string, unknown>,
+  source: string,
+  leftOut: readonly string[] = [],
+): Promise<ToolRun> {
+  const run = await checkIn(koreaTools.runTool, tool, input, source, leftOut);
+  koreaRuns.push(run);
+  return run;
+}
+
+/** The filers provider's name with OpenDART beside SEC EDGAR. */
+const FILERS = "SEC EDGAR / OpenDART";
+
+describe("with Korea's keys too, Samsung Electronics through every Korean source, every field read supplied", () => {
+  test("statements, annual and quarterly (OpenDART)", async () => {
+    for (const [statement, period_type] of [
+      ["income_statement", "annual"],
+      ["cash_flow", "quarterly"],
+      ["balance_sheet", "quarterly"],
+    ] as const) {
+      await checkKorea("statements", { symbol: "XKRX:005930", statement, period_type, periods: 2 }, FILERS);
+    }
+  });
+
+  test("filings, and a section of the annual and the quarterly report they list (OpenDART)", async () => {
+    const run = await checkKorea(
+      "filings",
+      { symbol: "XKRX:005930", forms: ["10-K", "10-Q"], limit: 4 },
+      FILERS,
+    );
+    const listed = (run.payload as { filings: { accession: string }[] }).filings.map((one) => one.accession);
+    expect(listed).toContain(QUARTERLY);
+    await checkKorea(
+      "filing_section",
+      { symbol: "XKRX:005930", accession: ANNUAL, section: "business" },
+      FILERS,
+    );
+    await checkKorea(
+      "filing_section",
+      { symbol: "XKRX:005930", accession: QUARTERLY, section: "financial_statements" },
+      FILERS,
+    );
+  });
+
+  test("ownership: the insider reports (OpenDART)", async () => {
+    await checkKorea("ownership", { symbol: "XKRX:005930", limit: 5 }, FILERS);
+  });
+
+  test("quote and daily prices from the FSC when Yahoo fails", async () => {
+    const quote = await checkKorea("quote", { symbols: ["XKRX:005930"] }, "FSC, after Yahoo failed");
+    expect(quote.provenance).toMatchObject({ source: "FSC", after: ["Yahoo"] });
+    const daily = await checkKorea(
+      "price_history",
+      { symbol: "XKRX:005930", period: "1mo" },
+      "FSC, after Yahoo failed",
+    );
+    expect(daily.provenance).toMatchObject({ source: "FSC", after: ["Yahoo"] });
+  });
+
+  test("macro_series: an ECOS series and a KOSIS series, by key", async () => {
+    for (const series of ["kr.ecos.722y001.0101000", "kr.kosis.dt_1f02011.t10.e"]) {
+      const run = await checkKorea("macro_series", { series }, "Public statistics");
+      expect((run.payload as { key: string }).key).toBe(series);
+    }
+  });
+
+  test("markets: the central banks' view with the Bank of Korea's base rate", async () => {
+    const run = await checkKorea("markets", { view: "central_banks" }, "Market overview");
+    const log = readLog();
+    expectKeys(JSON.parse(JSON.stringify(run.payload)), VIEW_KEYS.central_banks, log);
+    expect(log.missing()).toEqual([]);
+    const rows = (run.payload as { rows: { bank: string; key: string }[] }).rows;
+    expect(rows.at(-1)).toMatchObject({ bank: "Bank of Korea", key: "series:kr.ecos.722y001.0101000" });
+  });
+
+  test("news for Korean words, from Naver's news search and GDELT, and article on a Naver article", async () => {
+    const run = await checkKorea("news", { query: KOREAN_WORDS }, "News search");
+    const ids = (run.payload as { articles: { id: string }[] }).articles.map((article) => article.id);
+    expect(ids.some((id) => id.startsWith("gd:"))).toBe(true);
+    const naver = ids.find((id) => id.startsWith("nv:"));
+    expect(naver).toBeDefined();
+    await checkKorea("article", { id: naver }, "News search");
+  });
+
+  test("find_instrument: the company's Korean name, from OpenDART's company list", async () => {
+    const run = await checkKorea("find_instrument", { query: "삼성전자" }, "Instrument search");
+    const [first] = (run.payload as { matches: { key: string; tools: string[] }[] }).matches;
+    expect(first?.key).toBe("XKRX:005930");
+    expect(first?.tools).toEqual(expect.arrayContaining(["statements", "filings", "ownership"]));
+  });
+
+  test("every request was answered by a fixture, and no key was said", () => {
+    expect(koreaFetch.unmatched).toEqual([]);
+    const said = JSON.stringify(koreaRuns.map((run) => [run.text, run.summary, run.payload, run.provenance]));
+    for (const secret of KOREA_SECRETS) expect(said).not.toContain(secret);
   });
 });

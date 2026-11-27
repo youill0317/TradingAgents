@@ -18,6 +18,13 @@
  * Statistics', the Bureau of Economic Analysis', the Fed's, and the OECD's central bank rates of Japan and
  * India); each FRED entry carries what FRED says of the series (title words aside), so it can be described
  * without asking FRED.
+ *
+ * Korea's, read with a key: the Bank of Korea's ECOS (ECOS_API_KEY) and Statistics Korea's KOSIS
+ * (KOSIS_API_KEY). Their keys name the source's own codes, lower case, each code a segment: ECOS
+ * `kr.ecos.<stat_code>.<item_code>...` (one item code per item group), KOSIS
+ * `kr.kosis.<tbl_id>.<itm_id>.<obj_code>...` (one code per classification, objL1 onward); a `.` inside a
+ * code is written `~`. A search offers these series only in a setup with their key (searchCatalog's `keys`),
+ * so a setup without it never lists one macro_series cannot read.
  */
 
 /** How a value's changes read: percents and points give differences, the others percent changes. */
@@ -47,6 +54,12 @@ export type SeriesUnit = {
 /** A point of one of the Treasury's curves: the par (nominal) or real curve, at a maturity ("10y", "1.5m"). */
 export type CurveLeg = { curve: "par" | "real"; maturity: string };
 
+/** ECOS's cycles: day, half month, month, quarter, half year, year. */
+export type EcosCycle = "D" | "SM" | "M" | "Q" | "S" | "A";
+
+/** KOSIS's periods (its prdSe): day, month, quarter, half year, year. */
+export type KosisPeriod = "D" | "M" | "Q" | "H" | "Y";
+
 /** Where a series' values come from. */
 export type SeriesOrigin =
   | {
@@ -65,7 +78,24 @@ export type SeriesOrigin =
       since: number;
     }
   | { publisher: "nyfed"; rate: "effr" | "obfr" | "sofr" | "tgcr" | "bgcr" }
-  | { publisher: "ecb"; rate: "DFR" | "MRR_FR" | "MLFR" };
+  | { publisher: "ecb"; rate: "DFR" | "MRR_FR" | "MLFR" }
+  | {
+      publisher: "ecos";
+      /** ECOS's statistic table ("722Y001") and its item codes, one per item group, as ECOS writes them. */
+      stat: string;
+      items: readonly string[];
+      cycle: EcosCycle;
+    }
+  | {
+      publisher: "kosis";
+      /** The publishing organization (orgId: "101" is Statistics Korea), the table (tblId) and the item (itmId). */
+      org: string;
+      table: string;
+      item: string;
+      /** The classification codes, objL1 onward. */
+      objects: readonly string[];
+      period: KosisPeriod;
+    };
 
 export type CatalogSeries = {
   /** `<area>.<publisher>.<code>`, lower case, without `series:`. */
@@ -333,6 +363,172 @@ function fred(facts: FredFacts): CatalogSeries {
     as_published: { unit: facts.units, frequency: facts.frequency, seasonal_adjustment: facts.adjustment },
   };
 }
+
+/** An ECOS or a KOSIS series' origin: what a Korean key names. */
+export type KoreanOrigin = Extract<SeriesOrigin, { publisher: "ecos" | "kosis" }>;
+
+/** A source's code as a key's segment: lower case, a `.` written `~` (keys separate segments with dots). */
+const segmentOf = (code: string) => code.toLowerCase().replaceAll(".", "~");
+
+/** A key's segment as the source writes the code: upper case, `~` read as `.`. */
+const codeOf = (segment: string) => segment.toUpperCase().replaceAll("~", ".");
+
+/** The key of the series `publisher`'s `codes` name (ECOS: table, items; KOSIS: table, item, classifications). */
+export function koreanSeriesKey(publisher: "ecos" | "kosis", codes: readonly string[]): string {
+  return ["kr", publisher, ...codes.map(segmentOf)].join(".");
+}
+
+/** The key of an ECOS or KOSIS series, without `series:`. */
+export function koreanKeyOf(origin: KoreanOrigin): string {
+  return koreanSeriesKey(
+    origin.publisher,
+    origin.publisher === "ecos"
+      ? [origin.stat, ...origin.items]
+      : [origin.table, origin.item, ...origin.objects],
+  );
+}
+
+/**
+ * The publisher and the source's codes a Korean key names (`kr.ecos.722y001.0101000`: ECOS, ["722Y001",
+ * "0101000"]), read in any case, with or without `series:`; undefined for any other key. A code may be
+ * empty when the key is malformed: the caller says so.
+ */
+export function koreanKey(text: string): { publisher: "ecos" | "kosis"; codes: string[] } | undefined {
+  const match = /^(?:series:)?kr\.(ecos|kosis)\.(\S+)$/i.exec(text.trim());
+  if (!match) return undefined;
+  return {
+    publisher: (match[1] as string).toLowerCase() as "ecos" | "kosis",
+    codes: (match[2] as string).split(".").map(codeOf),
+  };
+}
+
+/** The settings Korea's publishers need: a series of theirs is served only with its key. */
+export const PUBLISHER_KEYS = { ecos: "ECOS_API_KEY", kosis: "KOSIS_API_KEY" } as const;
+
+/** Which keyed publishers a setup serves (a search offers their series only then). */
+export type SeriesKeys = { ecos?: boolean; kosis?: boolean };
+
+/** The keyed publishers `config` serves. */
+export function seriesKeysOf(config: {
+  ecosKey?: string | undefined;
+  kosisKey?: string | undefined;
+}): SeriesKeys {
+  return { ecos: Boolean(config.ecosKey), kosis: Boolean(config.kosisKey) };
+}
+
+/** Whether a setup with `keys` serves `entry`: every series but ECOS's and KOSIS's needs no key. */
+export function servedWith(entry: CatalogSeries, keys: SeriesKeys | "all"): boolean {
+  if (keys === "all") return true;
+  const publisher = entry.origin.publisher;
+  return publisher === "ecos" || publisher === "kosis" ? keys[publisher] === true : true;
+}
+
+/** Korean multipliers written before a unit, longest first. */
+const KOREAN_SCALES: readonly (readonly [string, number])[] = [
+  ["십억", 1e9],
+  ["백억", 1e10],
+  ["천억", 1e11],
+  ["백만", 1e6],
+  ["천만", 1e7],
+  ["조", 1e12],
+  ["억", 1e8],
+  ["만", 1e4],
+  ["천", 1e3],
+  ["백", 1e2],
+];
+
+/** Currencies Korean units name, by their Korean words. */
+const KOREAN_CURRENCIES: readonly (readonly [RegExp, string])[] = [
+  [/^(미국)?\s*달러$|^us\$$|^\$$|^usd$/i, "USD"],
+  [/^원$|^krw$/i, "KRW"],
+  [/^엔$|^jpy$/i, "JPY"],
+  [/^유로$|^eur$/i, "EUR"],
+  [/^위안$|^cny$/i, "CNY"],
+];
+
+/** Counted things in Korean units: persons, households, items, cases, units, vehicles. */
+const KOREAN_COUNTS = /^(명|인|가구|세대|개|건|호|대|척|개소|곳|업체|회)$/;
+
+/**
+ * The unit of an ECOS or KOSIS series from its unit as the source writes it (ECOS's UNIT_NAME, KOSIS's
+ * UNIT_NM): "%" and "연%" percent, "%p" percentage points, "2020=100" an index, "십억원" an amount of won in
+ * billions, "천명" persons in thousands, "배" a ratio, "백만달러" dollars in millions; a unit "A/B" is A per B.
+ */
+export function koreanUnitOf(written: string): SeriesUnit {
+  const text = written.replace(/\s+/g, " ").trim();
+  const [own = "", per = null] = text.split("/").map((part) => part.trim());
+  const compact = own.replace(/\s+/g, "");
+  if (/^(연|年)?%(p|포인트)$/i.test(compact) || /^%p$/i.test(compact))
+    return { kind: "percentage_points", multiplier: 1, currency: null, per: null };
+  if (/^(연|年)?%$|^퍼센트$|^percent$/i.test(compact))
+    return { kind: "percent", multiplier: 1, currency: null, per: null };
+  if (/^\d{4}(\.\d{1,2})?=100$/.test(compact) || /지수|^index$/i.test(compact))
+    return { kind: "index", multiplier: 1, currency: null, per: null };
+  if (/^배$|^times$/i.test(compact)) return { kind: "ratio", multiplier: 1, currency: null, per: null };
+  const scale = KOREAN_SCALES.find(
+    ([prefix]) => compact.startsWith(prefix) && compact.length > prefix.length,
+  );
+  const base = scale ? compact.slice(scale[0].length) : compact;
+  const multiplier = scale ? scale[1] : 1;
+  const currency = KOREAN_CURRENCIES.find(([pattern]) => pattern.test(base))?.[1];
+  if (currency) return { kind: "currency", multiplier, currency, per };
+  if (KOREAN_COUNTS.test(base)) return { kind: "count", multiplier, currency: null, per };
+  return { kind: "quantity", multiplier, currency: null, per };
+}
+
+/** What a Korean series is: its names, words, period and unit; its key is its origin's. */
+type KoreanFacts = {
+  name: string;
+  aliases: string[];
+  keywords: string[];
+  period: PeriodKind;
+  unit: SeriesUnit;
+  seasonal_adjustment?: string;
+  /** The unit, frequency and seasonal adjustment in the publisher's words. */
+  as_published: { unit: string; frequency: string; seasonal_adjustment: string | null };
+};
+
+/** Words every Korean series is found by. */
+const KOREA = ["korea", "korean", "south korea", "한국"];
+
+/** A series of the Bank of Korea's ECOS or Statistics Korea's KOSIS. */
+function korean(facts: KoreanFacts, origin: KoreanOrigin): CatalogSeries {
+  return {
+    key: koreanKeyOf(origin),
+    name: facts.name,
+    aliases: facts.aliases,
+    codes: [],
+    keywords: [...KOREA, ...facts.keywords],
+    origin,
+    frequency: FREQUENCIES[facts.period],
+    period: facts.period,
+    seasonal_adjustment: facts.seasonal_adjustment ?? null,
+    unit: facts.unit,
+    as_published: facts.as_published,
+  };
+}
+
+/** Statistics Korea's monthly survey of mining and manufacturing, table DT_1F02011 (see its entries). */
+const MINING_MANUFACTURING = {
+  publisher: "kosis",
+  org: "101",
+  table: "DT_1F02011",
+  // C1 "E": 반도체 및 부품 (C261+C262=C26A), semiconductors and electronic components.
+  objects: ["E"],
+  period: "M",
+} as const;
+
+const SEMICONDUCTORS = [
+  "semiconductors",
+  "chips",
+  "memory",
+  "electronic components",
+  "manufacturing",
+  "industry",
+  "반도체",
+  "광공업",
+  "제조업",
+];
 
 const SA = "Seasonally Adjusted";
 const NSA = "Not Seasonally Adjusted";
@@ -793,6 +989,135 @@ export const SERIES: readonly CatalogSeries[] = [
     frequency: "Monthly",
     adjustment: NSA,
   }),
+
+  // Korea's, served with ECOS_API_KEY (the Bank of Korea's ECOS) and KOSIS_API_KEY (Statistics Korea's KOSIS).
+  korean(
+    {
+      name: "Bank of Korea base rate",
+      aliases: [
+        "BOK base rate",
+        "Bank of Korea policy rate",
+        "BOK policy rate",
+        "Bank of Korea rate",
+        "Korea base rate",
+        "Korea policy rate",
+        "Korean base rate",
+        "한국은행 기준금리",
+        "기준금리",
+        "한은 기준금리",
+      ],
+      keywords: [
+        ...RATES,
+        "bank of korea",
+        "bok",
+        "central banks",
+        "central bank",
+        "policy rates",
+        "monetary policy",
+        "한국은행",
+        "금리",
+      ],
+      period: "calendar_day",
+      unit: PERCENT,
+      as_published: {
+        unit: "연% (percent a year)",
+        frequency: "daily (ECOS cycle D)",
+        seasonal_adjustment: null,
+      },
+    },
+    // ECOS table 722Y001 (한국은행 기준금리 및 여수신금리), item 0101000 (한국은행 기준금리), cycle D, unit 연%:
+    // a series the owner verified.
+    { publisher: "ecos", stat: "722Y001", items: ["0101000"], cycle: "D" },
+  ),
+  korean(
+    {
+      name: "Korea CPI",
+      aliases: [
+        "Korea consumer price index",
+        "Korean CPI",
+        "South Korea CPI",
+        "Korea consumer prices",
+        "Korea CPI index",
+        "소비자물가지수",
+        "소비자물가",
+        "한국 소비자물가지수",
+        "한국 CPI",
+      ],
+      keywords: [...INFLATION, "consumer", "consumer prices", "물가", "인플레이션"],
+      period: "month",
+      unit: INDEX,
+      as_published: { unit: "2020=100", frequency: "monthly (ECOS cycle M)", seasonal_adjustment: null },
+    },
+    // ECOS table 901Y009 (소비자물가지수), item 0 (총지수, all items), cycle M, unit 2020=100: a series the
+    // owner verified.
+    { publisher: "ecos", stat: "901Y009", items: ["0"], cycle: "M" },
+  ),
+  // Statistics Korea's mining and manufacturing survey, table DT_1F02011 (orgId 101), monthly: items T10, T11
+  // and T12, and C1 "E" among the classification codes, as the owner verified them from the table's metadata
+  // on KOSIS (read 2026-09-16), each item an original index (원지수), 2020=100.
+  korean(
+    {
+      name: "Korea semiconductor production index",
+      aliases: [
+        "Korea semiconductors and components production index",
+        "Korea chip production index",
+        "반도체 생산지수",
+        "반도체 및 부품 생산지수",
+      ],
+      keywords: [...SEMICONDUCTORS, "production", "industrial production", "output", "생산"],
+      period: "month",
+      unit: INDEX,
+      seasonal_adjustment: "not seasonally adjusted",
+      as_published: {
+        unit: "2020=100",
+        frequency: "monthly (KOSIS period M)",
+        seasonal_adjustment: "원지수 (original index)",
+      },
+    },
+    { ...MINING_MANUFACTURING, item: "T10" },
+  ),
+  korean(
+    {
+      name: "Korea semiconductor shipment index",
+      aliases: [
+        "Korea semiconductors and components shipment index",
+        "Korea chip shipment index",
+        "반도체 출하지수",
+        "반도체 및 부품 출하지수",
+      ],
+      keywords: [...SEMICONDUCTORS, "shipments", "출하"],
+      period: "month",
+      unit: INDEX,
+      seasonal_adjustment: "not seasonally adjusted",
+      as_published: {
+        unit: "2020=100",
+        frequency: "monthly (KOSIS period M)",
+        seasonal_adjustment: "원지수 (original index)",
+      },
+    },
+    { ...MINING_MANUFACTURING, item: "T11" },
+  ),
+  korean(
+    {
+      name: "Korea semiconductor inventory index",
+      aliases: [
+        "Korea semiconductors and components inventory index",
+        "Korea chip inventory index",
+        "반도체 재고지수",
+        "반도체 및 부품 재고지수",
+      ],
+      keywords: [...SEMICONDUCTORS, "inventories", "inventory", "stocks", "재고"],
+      period: "month",
+      unit: INDEX,
+      seasonal_adjustment: "not seasonally adjusted",
+      as_published: {
+        unit: "2020=100",
+        frequency: "monthly (KOSIS period M)",
+        seasonal_adjustment: "원지수 (original index)",
+      },
+    },
+    { ...MINING_MANUFACTURING, item: "T12" },
+  ),
 ];
 
 /** Words a query leaves out when matched against names: they add nothing to these (mostly U.S.) series. */
@@ -811,11 +1136,14 @@ const STOP_WORDS = new Set([
   "states",
 ]);
 
-/** `text` as names are compared: lower case, punctuation as spaces, runs of spaces as one. */
+/**
+ * `text` as names are compared: lower case, punctuation as spaces, runs of spaces as one. Hangul syllables
+ * are letters too (한국은행 기준금리).
+ */
 export function normalizeName(text: string): string {
   return text
     .toLowerCase()
-    .replace(/[^a-z0-9.]+/g, " ")
+    .replace(/[^a-z0-9.가-힣]+/g, " ")
     .replace(/(^|\s)\.+|\.+(\s|$)/g, " ")
     .trim()
     .replace(/\s+/g, " ");
@@ -898,19 +1226,21 @@ export type CatalogMatch = { entry: CatalogSeries; exact: boolean };
  * The catalog's series `query` finds, best first: the one it names exactly (a name, an alias, a code or a
  * key, compared without case or punctuation), then every series whose names and keywords hold each word
  * of it: headline series first, then those whose own name holds every word, then the rest, each group in
- * the catalog's order. Nothing is left out for being found less well.
+ * the catalog's order. Nothing is left out for being found less well. Only the series a setup with `keys`
+ * serves are found (ECOS's and KOSIS's with their keys; none of theirs unless given), or every one with "all".
  */
-export function searchCatalog(query: string): CatalogMatch[] {
+export function searchCatalog(query: string, keys: SeriesKeys | "all" = {}): CatalogMatch[] {
   const asKey = query
     .trim()
     .replace(/^series:/i, "")
     .toLowerCase();
-  const exact = BY_KEY.get(asKey) ?? EXACT.get(exactName(query));
+  const named = BY_KEY.get(asKey) ?? EXACT.get(exactName(query));
+  const exact = named && servedWith(named, keys) ? named : undefined;
   const words = [...new Set(searchWords(query))];
   const found: { entry: CatalogSeries; rank: number }[] = [];
   if (words.length) {
     for (const entry of SERIES) {
-      if (entry === exact) continue;
+      if (entry === named || !servedWith(entry, keys)) continue;
       const known = WORDS.get(entry);
       if (!known || !words.every((word) => known.all.has(word))) continue;
       const inName = words.every((word) => known.name.has(word));

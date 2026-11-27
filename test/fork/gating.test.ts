@@ -17,7 +17,10 @@
  * corporate actions, institutional holders, macro series, news, the market views and instrument search
  * (Yahoo, the ECB, the agencies' series, Yahoo's and GDELT's news, the fork's catalogs), and Polymarket serves
  * prediction markets; with SEC_USER_AGENT also statements, filings, insider transactions and sector screens
- * (SEC EDGAR). Instrument search gates no agent: no agent names find_instrument.
+ * (SEC EDGAR); with DART_API_KEY statements, filings and insider transactions for Korean listings (OpenDART),
+ * and no sector screen. The other Korean keys add sources to capabilities served in every setup (the FSC's
+ * prices after Yahoo's, ECOS's and KOSIS's series, the Bank of Korea in the market views, Naver's news), so
+ * they gate nothing. Instrument search gates no agent: no agent names find_instrument.
  */
 // The network guard, also when this file is run from elsewhere than the repository's root.
 import "./net-guard.js";
@@ -47,6 +50,16 @@ const BUILT_IN_SKILLS = 16;
  * quant (and equity) the sector screen.
  */
 const AS_BUILT: Offered = { agents: ["macro"], skills: BUILT_IN_SKILLS };
+
+/** Korea's keys, each set (made-up values). */
+const KOREAN_KEYS: PublicDataConfig = {
+  dartKey: "dart-0123456789",
+  ecosKey: "ecos-0123456789",
+  kosisKey: "kosis-0123456789",
+  dataGoKrKey: "datagokr-0123456789",
+  naverClientId: "naver-id",
+  naverClientSecret: "naver-secret",
+};
 
 /** Every setting the fork reads, each set (made-up values: building an engine asks no source anything). */
 const EVERY_SETTING: PublicDataConfig = {
@@ -79,7 +92,31 @@ const CONFIGURED: readonly { name: string; publicData: PublicDataConfig; offered
     publicData: { secUserAgent: "Jane Doe jane@example.com" },
     offered: { agents: ["equity", "macro", "quant", "risk"], skills: BUILT_IN_SKILLS },
   },
-  // The same four: no other key serves a capability an agent names.
+  // DART_API_KEY alone now offers an agent: Risk Analysis. OpenDART serves statements, filings (and their
+  // sections) and insider transactions for Korean listings, so those capabilities are declared without
+  // SEC_USER_AGENT (a US listing's statements and filings answer that SEC_USER_AGENT is to be set), and risk
+  // names nothing more. Equity and quant also name screen, the sector screen over the S&P 1500, which only
+  // SEC EDGAR's frames serve: not offered.
+  {
+    name: "DART_API_KEY alone",
+    publicData: { dartKey: "dart-0123456789" },
+    offered: { agents: ["macro", "risk"], skills: BUILT_IN_SKILLS },
+  },
+  // The same two with every Korean key: the FSC's prices, ECOS's and KOSIS's series, the Bank of Korea's rate
+  // and Naver's news join capabilities already served in every setup, and none of them serves screen.
+  {
+    name: "every Korean key, without SEC_USER_AGENT",
+    publicData: KOREAN_KEYS,
+    offered: { agents: ["macro", "risk"], skills: BUILT_IN_SKILLS },
+  },
+  // All four, as with SEC_USER_AGENT alone: SEC EDGAR serves every capability the agents name, OpenDART adds
+  // Korean listings to capabilities already declared.
+  {
+    name: "SEC_USER_AGENT with DART_API_KEY",
+    publicData: { secUserAgent: "Jane Doe jane@example.com", dartKey: "dart-0123456789" },
+    offered: { agents: ["equity", "macro", "quant", "risk"], skills: BUILT_IN_SKILLS },
+  },
+  // Every key set: the same four; no other key serves a capability an agent names that SEC EDGAR does not.
   {
     name: "every setting the fork reads",
     publicData: EVERY_SETTING,
@@ -221,7 +258,8 @@ describe("with the fork's providers as a configuration builds them", () => {
   for (const { name, publicData, offered: expected } of CONFIGURED) {
     test(name, () => {
       expect(offeredFor(publicData)).toEqual({ ...expected, requests: 0 });
-      // Exactly the agents whose every data tool is served: without SEC_USER_AGENT, macro alone.
+      // Exactly the agents whose every data tool is served: without SEC_USER_AGENT and DART_API_KEY, macro
+      // alone; with DART_API_KEY and no SEC_USER_AGENT, macro and risk.
       expect(expected.agents).toEqual(fullyServed(publicData));
     });
   }

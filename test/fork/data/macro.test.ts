@@ -199,10 +199,20 @@ describe("what macro_series does not read here", () => {
 
   test("a key of a publisher not served here is unsupported, unasked", async () => {
     const { runTool, fetch } = macro();
-    const run = await runTool("macro_series", { series: "kr.ecos.722y001.0101000" });
+    const run = await runTool("macro_series", { series: "jp.boj.call_rate" });
     expect(run.failure).toBe("data_unsupported");
     expect(run.text).toBe(
-      "Public statistics does not cover this request (series:kr.ecos.722y001.0101000: this source serves the U.S. Treasury's, the New York Fed's, the ECB's and FRED's series (keys us.treasury.*, us.nyfed.*, ea.ecb.*, us.fred.*)); this is not a fact about the market.",
+      "Public statistics does not cover this request (series:jp.boj.call_rate: this source serves the U.S. Treasury's, the New York Fed's, the ECB's and FRED's series (keys us.treasury.*, us.nyfed.*, ea.ecb.*, us.fred.*)); this is not a fact about the market.",
+    );
+    expect(fetch.requests).toEqual([]);
+  });
+
+  test("a key of Korea's ECOS without ECOS_API_KEY names the variable, unasked", async () => {
+    const { runTool, fetch } = macro();
+    const run = await runTool("macro_series", { series: "kr.ecos.722y001.0101000" });
+    expect(run.failure).toBe("data_not_configured");
+    expect(run.text).toStartWith(
+      "Bank of Korea base rate (series:kr.ecos.722y001.0101000) needs ECOS_API_KEY",
     );
     expect(fetch.requests).toEqual([]);
   });
