@@ -1,0 +1,34 @@
+{
+ "articles": [
+  {
+   "url": "https://biz.example.net/semiconductor/2026/11/25/samsung-foundry-2nm",
+   "url_mobile": "",
+   "title": "삼성전자 파운드리, 2나노 고객사 추가 확보",
+   "seendate": "20261125T071500Z",
+   "socialimage": "",
+   "domain": "biz.example.net",
+   "language": "Korean",
+   "sourcecountry": "South Korea"
+  },
+  {
+   "url": "https://koreanews.example.org/biz/20261125/samsung-chips",
+   "url_mobile": "",
+   "title": "삼성전자 반도체 설비투자 확대 발표",
+   "seendate": "20261125T040000Z",
+   "socialimage": "",
+   "domain": "koreanews.example.org",
+   "language": "Korean",
+   "sourcecountry": "South Korea"
+  },
+  {
+   "url": "https://wire.example.com/tech/2026/11/24/samsung-memory-prices",
+   "url_mobile": "",
+   "title": "메모리 가격 반등에 삼성전자 반도체 실적 기대",
+   "seendate": "20261124T013000Z",
+   "socialimage": "",
+   "domain": "wire.example.com",
+   "language": "Korean",
+   "sourcecountry": "South Korea"
+  }
+ ]
+}

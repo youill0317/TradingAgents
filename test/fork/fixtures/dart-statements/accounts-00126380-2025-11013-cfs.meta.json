@@ -1,0 +1,11 @@
+{
+  "source": "dart-statements",
+  "name": "accounts-00126380-2025-11013-cfs",
+  "url": "https://opendart.fss.or.kr/api/fnlttSinglAcntAll.json?crtfc_key=***&corp_code=00126380&bsns_year=2025&reprt_code=11013&fs_div=CFS",
+  "status": 200,
+  "content_type": "application/json;charset=UTF-8",
+  "recorded_at": "2026-11-25T22:00:00.000Z",
+  "bytes": 22073,
+  "hand_made": true,
+  "note": "Hand-made, not recorded (no request is sent to opendart.fss.or.kr from the development session): fnlttSinglAcntAll.json's answer in OpenDART's documented JSON (status, message, and list rows of rcept_no, reprt_code, bsns_year, corp_code, sj_div, sj_nm, account_id, account_nm, account_detail, thstrm_nm and _amount (and _add_amount in a quarterly or half-year report), frmtrm_nm and _amount (frmtrm_q_nm, _q_amount and _add_amount for a quarterly or half-year report's income statement), bfefrmtrm_nm and _amount (an annual report's), ord, currency) for Samsung Electronics' 2025 first-quarter report (분기보고서), consolidated (CFS): 52 of its lines (balance sheet, income statement, comprehensive income, cash flows), one without a standard account id. The yearly revenue, operating income, profit, total assets, liabilities and equity of 2021 to 2024 are Samsung Electronics' published figures (2023 and 2024 as dart/accounts-00126380-2025-11011-cfs.json gives them, with that fixture's invented 2025 lines), not checked against OpenDART; the quarters, 2025, 2026 and every other line are invented, and they add up across the reports: a quarterly report's three months and year to date, the cash flow from the year's start, the year as its four quarters, each balance sheet (assets = liabilities + equity), and the cash flow's closing cash as the balance sheet's cash. The receipt numbers are those of list-00126380-periodic-2015.json. Its 장기차입금 is filed as dart_LongTermBorrowingsGross, and its 매입채무 and 유동성장기부채 without a standard account id (-표준계정코드 미사용-), as Samsung Electronics' 2021 annual report (20220308000798) files them in its XBRL (dart:LongTermBorrowingsGross, and elements of its own)."
+}

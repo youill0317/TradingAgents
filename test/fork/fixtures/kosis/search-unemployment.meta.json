@@ -1,0 +1,11 @@
+{
+  "source": "kosis",
+  "name": "search-unemployment",
+  "url": "https://kosis.kr/openapi/statisticsSearch.do?method=getList&searchNm=%EC%8B%A4%EC%97%85%EB%A5%A0&sort=RANK&startCount=1&resultCount=5&apiKey=***&format=json&jsonVD=Y",
+  "status": 200,
+  "content_type": "application/json;charset=UTF-8",
+  "recorded_at": "2026-11-26T09:00:00.000Z",
+  "bytes": 522,
+  "hand_made": true,
+  "note": "Hand-made in the JSON KOSIS's Open API guide (kosis.kr/openapi, statisticsParameterData.do, statisticsSearch.do, statisticsData.do getMeta) as open-source KOSIS clients document it, and the codes the owner verified (DT_1F02011: T10, T11, T12, C1 E) give for statisticsSearch.do: one table found for 실업률 (the unemployment rate); its id, survey and fields are illustrative. No KOSIS_API_KEY was used. Listed for a live check."
+}

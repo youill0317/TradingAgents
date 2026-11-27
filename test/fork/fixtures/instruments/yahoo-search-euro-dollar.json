@@ -1,0 +1,57 @@
+{
+ "explains": [],
+ "count": 3,
+ "quotes": [
+  {
+   "exchange": "CCY",
+   "shortname": "EUR/USD",
+   "quoteType": "CURRENCY",
+   "symbol": "EURUSD=X",
+   "index": "quotes",
+   "score": 20500,
+   "typeDisp": "Currency",
+   "longname": "EUR/USD",
+   "exchDisp": "CCY",
+   "isYahooFinance": true
+  },
+  {
+   "exchange": "CME",
+   "shortname": "Euro FX Dec 26",
+   "quoteType": "FUTURE",
+   "symbol": "6E=F",
+   "index": "quotes",
+   "score": 20210,
+   "typeDisp": "Futures",
+   "exchDisp": "Chicago Mercantile Exchange",
+   "isYahooFinance": true
+  },
+  {
+   "exchange": "NYB",
+   "shortname": "US Dollar Index",
+   "quoteType": "INDEX",
+   "symbol": "DX-Y.NYB",
+   "index": "quotes",
+   "score": 20100,
+   "typeDisp": "Index",
+   "exchDisp": "ICE Futures",
+   "isYahooFinance": true
+  }
+ ],
+ "news": [],
+ "nav": [],
+ "lists": [],
+ "researchReports": [],
+ "screenerFieldResults": [],
+ "culturalAssets": [],
+ "totalTime": 31,
+ "timeTakenForQuotes": 412,
+ "timeTakenForNews": 0,
+ "timeTakenForAlgowatchlist": 400,
+ "timeTakenForPredefinedScreener": 400,
+ "timeTakenForCrunchbase": 0,
+ "timeTakenForNav": 400,
+ "timeTakenForResearchReports": 0,
+ "timeTakenForScreenerField": 0,
+ "timeTakenForCulturalAssets": 0,
+ "timeTakenForSearchLists": 0
+}

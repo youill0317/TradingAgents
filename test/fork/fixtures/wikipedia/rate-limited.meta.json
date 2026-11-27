@@ -1,0 +1,11 @@
+{
+  "source": "wikipedia",
+  "name": "rate-limited",
+  "url": "https://en.wikipedia.org/w/api.php?action=parse&page=List_of_S%26P_500_companies&prop=wikitext&format=json&formatversion=2",
+  "status": 429,
+  "content_type": "text/plain",
+  "recorded_at": "2026-11-25T15:01:52.000Z",
+  "bytes": 274,
+  "hand_made": false,
+  "note": "Wikipedia's 429 answer saved with the planning samples (macro/raw/wiki-429-first-attempt.txt), byte for byte; it came with retry-after: 8 (13 and 45 were seen later), which the tests send with it."
+}

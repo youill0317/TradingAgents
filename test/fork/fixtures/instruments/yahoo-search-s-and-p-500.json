@@ -1,0 +1,70 @@
+{
+ "explains": [],
+ "count": 4,
+ "quotes": [
+  {
+   "exchange": "SNP",
+   "shortname": "S&P 500",
+   "quoteType": "INDEX",
+   "symbol": "^GSPC",
+   "index": "quotes",
+   "score": 20700,
+   "typeDisp": "Index",
+   "longname": "S&P 500",
+   "exchDisp": "SNP",
+   "isYahooFinance": true
+  },
+  {
+   "exchange": "PCX",
+   "shortname": "SPDR S&P 500",
+   "quoteType": "ETF",
+   "symbol": "SPY",
+   "index": "quotes",
+   "score": 20520,
+   "typeDisp": "ETF",
+   "longname": "SPDR S&P 500 ETF Trust",
+   "exchDisp": "NYSEArca",
+   "isYahooFinance": true
+  },
+  {
+   "exchange": "PCX",
+   "shortname": "Vanguard S&P 500 ETF",
+   "quoteType": "ETF",
+   "symbol": "VOO",
+   "index": "quotes",
+   "score": 20400,
+   "typeDisp": "ETF",
+   "longname": "Vanguard S&P 500 ETF",
+   "exchDisp": "NYSEArca",
+   "isYahooFinance": true
+  },
+  {
+   "exchange": "CME",
+   "shortname": "E-Mini S&P 500 Dec 26",
+   "quoteType": "FUTURE",
+   "symbol": "ES=F",
+   "index": "quotes",
+   "score": 20260,
+   "typeDisp": "Futures",
+   "exchDisp": "Chicago Mercantile Exchange",
+   "isYahooFinance": true
+  }
+ ],
+ "news": [],
+ "nav": [],
+ "lists": [],
+ "researchReports": [],
+ "screenerFieldResults": [],
+ "culturalAssets": [],
+ "totalTime": 31,
+ "timeTakenForQuotes": 412,
+ "timeTakenForNews": 0,
+ "timeTakenForAlgowatchlist": 400,
+ "timeTakenForPredefinedScreener": 400,
+ "timeTakenForCrunchbase": 0,
+ "timeTakenForNav": 400,
+ "timeTakenForResearchReports": 0,
+ "timeTakenForScreenerField": 0,
+ "timeTakenForCulturalAssets": 0,
+ "timeTakenForSearchLists": 0
+}

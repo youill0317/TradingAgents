@@ -1,10 +1,13 @@
 #!/bin/sh
 # Copyright 2026 Tauric Research
 # SPDX-License-Identifier: Apache-2.0
+# Changed in this fork of TradingAgents 1.0.0.
 # Install tradingagents for this machine.
 #
-#   curl -fsSL https://tauric.ai/tradingagents/install.sh | sh              the latest release
-#   curl -fsSL https://tauric.ai/tradingagents/install.sh | sh -s -- 1.2.3  a given release
+#   curl -fsSL https://github.com/youill0317/TradingAgents/releases/latest/download/install.sh | sh              the latest release
+#   curl -fsSL https://github.com/youill0317/TradingAgents/releases/latest/download/install.sh | sh -s -- 1.2.3  a given release
+#
+# This fork publishes no release yet, so there is nothing for it to install: build from source (docs/install.md).
 #
 # The latest release is the one GitHub marks latest. The download is checked against the release's
 # SHA256SUMS and installed into TRADINGAGENTS_INSTALL_DIR (default ~/.local/bin). It runs as your own user and
@@ -20,7 +23,7 @@ fail() {
 	exit 1
 }
 
-releases=https://github.com/TauricResearch/TradingAgents/releases
+releases=https://github.com/youill0317/TradingAgents/releases
 [ "$#" -le 1 ] || fail "give at most one version"
 pin=${1:-}
 pin=${pin#v}

@@ -1,0 +1,11 @@
+{
+  "source": "frames",
+  "name": "no-such-frame",
+  "url": "https://data.sec.gov/api/xbrl/frames/us-gaap/NoSuchTagHere/USD/CY2024.json",
+  "status": 404,
+  "content_type": "application/xml",
+  "recorded_at": "2026-11-25T14:44:10.000Z",
+  "bytes": 324,
+  "hand_made": false,
+  "note": "SEC's answer for a frame it does not have, saved from data.sec.gov on 2026-11-25 with the SEC area's samples (err-frames-unknown-tag.txt), byte for byte; the tests answer it for each frame they hold no fixture of, as SEC answers a concept nobody filed for a period."
+}

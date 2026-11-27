@@ -1,0 +1,44 @@
+{
+ "articles": [
+  {
+   "url": "https://economy.example.net/trade/chipmakers-weigh-export-controls",
+   "url_mobile": "",
+   "title": "Chipmakers weigh impact of new export controls",
+   "seendate": "20261125T193000Z",
+   "socialimage": "https://economy.example.net/images/trade/chipmakers-weigh-export-controls.jpg",
+   "domain": "economy.example.net",
+   "language": "English",
+   "sourcecountry": "United States"
+  },
+  {
+   "url": "https://nachrichten.example.net/wirtschaft/exportkontrollen-chips",
+   "url_mobile": "",
+   "title": "Exportkontrollen für Chips: Hersteller prüfen die Folgen",
+   "seendate": "20261125T130000Z",
+   "socialimage": "https://nachrichten.example.net/images/wirtschaft/exportkontrollen-chips.jpg",
+   "domain": "nachrichten.example.net",
+   "language": "German",
+   "sourcecountry": "Germany"
+  },
+  {
+   "url": "https://wire.example.com/tech/2026/11/24/equipment-makers-chip-export-rules",
+   "url_mobile": "",
+   "title": "Equipment makers seek clarity on chip export rules",
+   "seendate": "20261124T171500Z",
+   "socialimage": "https://wire.example.com/images/tech/2026/11/24/equipment-makers-chip-export-rules.jpg",
+   "domain": "wire.example.com",
+   "language": "English",
+   "sourcecountry": "United States"
+  },
+  {
+   "url": "https://global.example.net/asia/asia-chip-stocks-export-control-update",
+   "url_mobile": "",
+   "title": "Asia chip stocks fall after export control update",
+   "seendate": "20261123T091500Z",
+   "socialimage": "https://global.example.net/images/asia/asia-chip-stocks-export-control-update.jpg",
+   "domain": "global.example.net",
+   "language": "English",
+   "sourcecountry": "Singapore"
+  }
+ ]
+}

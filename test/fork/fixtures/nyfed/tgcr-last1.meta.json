@@ -1,0 +1,11 @@
+{
+  "source": "nyfed",
+  "name": "tgcr-last1",
+  "url": "https://markets.newyorkfed.org/api/rates/secured/tgcr/last/1.json",
+  "status": 200,
+  "content_type": "application/json;charset=utf-8",
+  "recorded_at": "2026-11-25T14:58:08.000Z",
+  "bytes": 256,
+  "hand_made": true,
+  "note": "Hand-made in the shape of the New York Fed's last/N answers (as the saved EFFR, SOFR and OBFR ones), holding the TGCR row of its real all/latest.json answer saved with the planning samples (macro/raw/nyfed-all-latest.json), unchanged; the tgcr/last/1 address itself was not read. Listed for a live check."
+}

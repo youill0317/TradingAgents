@@ -1,6 +1,6 @@
 # Models
 
-TradingAgents runs on the model you choose: Tauric's, a ChatGPT plan, a hosted API with your key, or any server with an OpenAI-style API.
+TradingAgents runs on the model you choose: a ChatGPT plan, a hosted API with your key, or any server with an OpenAI-style API.
 
 The first session in a terminal with no model set walks through the choice. Later, `/login` connects another provider (a ChatGPT plan signs in from the terminal with `tradingagents login chatgpt`) and `/model` chooses the model and how hard it reasons, from the next question in this session and in new ones. A resumed session runs on the model it ran on, when that can still be used.
 
@@ -8,7 +8,6 @@ The first session in a terminal with no model set walks through the choice. Late
 
 | Provider                 | How to connect                                              | Key in the environment                                               |
 | ------------------------ | ----------------------------------------------------------- | -------------------------------------------------------------------- |
-| Tauric                   | a Tauric API key, the same key that serves the data         | `TAURIC_API_KEY`                                                     |
 | ChatGPT plan             | `tradingagents login chatgpt`, or the first session's setup |                                                                      |
 | OpenAI                   | an API key                                                  | `OPENAI_API_KEY`                                                     |
 | Anthropic                | an API key                                                  | `ANTHROPIC_API_KEY`                                                  |
@@ -17,11 +16,13 @@ The first session in a terminal with no model set walks through the choice. Late
 | OpenRouter               | an API key                                                  | `OPENROUTER_API_KEY`                                                 |
 | OpenAI-compatible server | its address and model, and a key if it needs one            | `TRADINGAGENTS_MODEL_API_KEY`                                        |
 
-A key in the environment is used over a stored one. `tradingagents key <provider>` stores a provider's key, `tradingagents key tauric` the Tauric API key, and `tradingagents key model` an OpenAI-compatible server's: type it at the hidden prompt, or pipe it in. Keys are stored in `credentials.json`, readable only by you, and are never sent anywhere but their own provider. Nothing is checked when a key is stored; a key that does not work says so on first use, with where to fix it.
+A key in the environment is used over a stored one. TradingAgents reads no `.env` file: put a key in the environment by exporting it in your shell's profile. `tradingagents key <provider>` stores a provider's key, and `tradingagents key model` an OpenAI-compatible server's: type it at the hidden prompt, or pipe it in. Keys are stored in `credentials.json`, readable only by you, and are never sent anywhere but their own provider. Nothing is checked when a key is stored; a key that does not work says so on first use, with where to fix it.
+
+An Anthropic or OpenAI key also serves `web_search`, and a Google key does when `TRADINGAGENTS_WEB_SEARCH` names Google: see [web search](configuration.md#web-search).
 
 A ChatGPT sign-in prints an address to open in a browser, and is kept in `chatgpt-auth.json` in the [configuration directory](configuration.md); `tradingagents logout chatgpt` signs out. Questions count toward the plan's usage limits.
 
-DeepSeek needs the model's earlier reasoning sent back with every request, so sessions on a DeepSeek model keep that reasoning, in synced copies too.
+DeepSeek needs the model's earlier reasoning sent back with every request, so sessions on a DeepSeek model keep that reasoning.
 
 ## Choosing for one run
 
@@ -32,6 +33,8 @@ tradingagents --model anthropic/claude-opus-5-5 --reasoning high
 A model is named `provider/id`. `--reasoning` takes `none`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max`; a level the model does not offer becomes the nearest one above it. Without a setting, each provider's default applies. `TRADINGAGENTS_MODEL` names the model in the environment, between the flag and the config file.
 
 With no model named and exactly one provider connected, its default model is used.
+
+A model whose context window TradingAgents does not know says so as the session starts. Set its window in the provider's block of `config.json`, as that note says (`"providers": { "openrouter": { "contextWindow": 131072 } }`): the 32,768 tokens assumed without it are too few for a session's first request.
 
 ## An OpenAI-compatible server
 
@@ -48,7 +51,7 @@ vLLM, Ollama, LM Studio and similar servers work through their OpenAI-style API.
 
 or with `TRADINGAGENTS_BASE_URL` and `TRADINGAGENTS_MODEL` (the model as the server names it). A server key stored with `tradingagents key model` is kept for the address it was stored for, and is not sent to another one.
 
-The context window is read from the server when it reports one; to set it, add `"contextWindow": 131072` to the provider's block.
+The context window is read from the server when it reports one, as vLLM does (`max_model_len`). For a server that reports none, add `"contextWindow": 131072` (the window the server runs the model with) to the provider's block: without it 32,768 tokens is assumed, which a session's first request does not fit, since it offers the built-in agents and skills, and every question ends with "This question needs more context than the model has".
 
 ### Thinking models on a server
 

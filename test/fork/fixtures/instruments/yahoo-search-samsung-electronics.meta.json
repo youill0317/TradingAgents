@@ -1,0 +1,11 @@
+{
+  "source": "instruments",
+  "name": "yahoo-search-samsung-electronics",
+  "url": "https://query2.finance.yahoo.com/v1/finance/search?lang=en-US&region=US&quotesCount=100&newsCount=0&enableFuzzyQuery=false&quotesQueryId=tss_match_phrase_query&multiQuoteQueryId=multi_quote_single_token_query&newsQueryId=news_cie_vespa&enableCb=true&enableNavLinks=true&enableEnhancedTrivialQuery=true&q=Samsung+Electronics",
+  "status": 200,
+  "content_type": "application/json;charset=utf-8",
+  "recorded_at": "2026-11-26T00:00:00.000Z",
+  "bytes": 1626,
+  "hand_made": true,
+  "note": "Hand-made, not recorded (Yahoo answers only yahoo-finance2's own User-Agent, and none was recorded here): Yahoo's v1 search answer in the shape yahoo-finance2 4.0.6's search schema validates (SearchResult with SearchQuoteYahoo rows: symbol, exchange, exchDisp, shortname, longname, quoteType, typeDisp, index, score, isYahooFinance), asked as the instrument search asks (quotesCount 100, newsCount 0), for \"Samsung Electronics\": Samsung Electronics' common (005930.KS) and preferred (005935.KS) shares on KOSPI, and its GDR in London's International Order Book (SMSN.IL). The rows carry Yahoo's symbols, exchange codes and quote types for these instruments; the names follow Yahoo's, the scores are invented."
+}

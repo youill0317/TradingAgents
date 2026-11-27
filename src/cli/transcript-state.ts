@@ -1,5 +1,6 @@
 // Copyright 2026 Tauric Research
 // SPDX-License-Identifier: Apache-2.0
+// Changed in this fork of TradingAgents 1.0.0.
 /**
  * The terminal transcript as state: a pure fold over engine events, so what the screen shows can be
  * tested without a terminal.
@@ -30,7 +31,7 @@ export type Block = BlockBody & { gap: number };
 
 type BlockBody =
   /** The welcome block, written once before anything else; `news`: its one line of news, if any. */
-  | { id: string; kind: "header"; version: string; model: string; keyed: boolean; news?: string }
+  | { id: string; kind: "header"; version: string; model: string; news?: string }
   | { id: string; kind: "question"; text: string }
   /** Lines a command wrote (its output), shown as one quiet block; `links` on a row of their own after them. */
   | { id: string; kind: "lines"; lines: string[]; links?: Link[] }
@@ -325,7 +326,6 @@ type LocalHeader = {
   type: "local.header";
   version: string;
   model: string;
-  keyed: boolean;
   news?: string | undefined;
 };
 export type LocalAction = StreamFailure | LocalNotice | LocalQuestion | LocalLines | LocalList | LocalHeader;
@@ -677,7 +677,6 @@ export function reduceTranscript(
           kind: "header",
           version: action.version,
           model: action.model,
-          keyed: action.keyed,
           ...(action.news ? { news: action.news } : {}),
         });
       case "local.question":

@@ -1,5 +1,6 @@
 // Copyright 2026 Tauric Research
 // SPDX-License-Identifier: Apache-2.0
+// Changed in this fork of TradingAgents 1.0.0.
 /**
  * The command line's words: its flags, the commands and the arguments each takes, the usage text, and
  * what is wrong with a command line before anything runs.
@@ -38,7 +39,6 @@ export function parse(argv: string[]) {
 const ARGUMENTS: Record<string, number> = {
   key: 1,
   sessions: 2,
-  sync: 1,
   login: 2,
   logout: 1,
   update: 0,

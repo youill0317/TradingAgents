@@ -1,0 +1,11 @@
+{
+  "source": "frames",
+  "name": "rfcceat-cy2025",
+  "url": "https://data.sec.gov/api/xbrl/frames/us-gaap/RevenueFromContractWithCustomerExcludingAssessedTax/USD/CY2025.json",
+  "status": 200,
+  "content_type": "application/json",
+  "recorded_at": "2026-11-25T14:42:38.000Z",
+  "bytes": 6052,
+  "hand_made": false,
+  "note": "SEC's answer saved from data.sec.gov on 2026-11-25 with the SEC area's live samples (frames-RFCCEAT-CY2025.trimmed.json), byte for byte: cut there from the complete 416,563-byte answer (2,722 rows, the header's pts) to 36 rows in SEC's order (every sample company, the first 20 rows, rows at the end-of-June edge); every row kept is as SEC answered it."
+}

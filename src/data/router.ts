@@ -1,5 +1,6 @@
 // Copyright 2026 Tauric Research
 // SPDX-License-Identifier: Apache-2.0
+// Changed in this fork of TradingAgents 1.0.0.
 /**
  * Builds each capability from the routing table and the providers that implement it. A call goes to
  * the first provider in the chain; the next is asked only when one could not answer for reasons that
@@ -45,7 +46,6 @@ export const CAPABILITY_LABELS: { readonly [Name in Capability]: string } = {
   profiles: "Company profiles",
   ownership: "Insider and institutional ownership",
   corporateActions: "Corporate actions",
-  syntheses: "Tauric AI's research",
   crossSections: "Sector screens",
   technicals: "Technical indicators",
   macroSeries: "Macro series",
@@ -66,13 +66,7 @@ type Link = { source: string; implementation: Partial<Record<string, Method>>; s
 /** The providers a setup has, by name. */
 export type Providers = { readonly [Name in ProviderName]?: DataProvider };
 
-/**
- * What adds a capability no source here serves: a Tauric key, for the capabilities named, run as
- * `app key tauric`. Without it (or for another capability) the answer only says it is not available.
- */
-export type KeyFix = { app: string; capabilities: ReadonlySet<Capability> };
-
-export function route(providers: Providers, { keyFix }: { keyFix?: KeyFix } = {}): Routed {
+export function route(providers: Providers): Routed {
   const available = new Set<Capability>();
   const capabilities: Partial<Record<Capability, unknown>> = {};
   for (const capability of Object.keys(ROUTES) as Capability[]) {
@@ -90,17 +84,17 @@ export function route(providers: Providers, { keyFix }: { keyFix?: KeyFix } = {}
         : [];
     });
     if (chain.length) available.add(capability);
-    capabilities[capability] = chained(capability, chain, keyFix);
+    capabilities[capability] = chained(capability, chain);
   }
   return { capabilities: capabilities as Capabilities, available };
 }
 
 /** The capability's methods, each tried along the chain. */
-function chained(capability: Capability, chain: readonly Link[], keyFix: KeyFix | undefined): unknown {
+function chained(capability: Capability, chain: readonly Link[]): unknown {
   return Object.fromEntries(
     (METHODS[capability] as readonly string[]).map((method) => [
       method,
-      (...args: unknown[]) => call(capability, chain, method, args, keyFix),
+      (...args: unknown[]) => call(capability, chain, method, args),
     ]),
   );
 }
@@ -110,16 +104,13 @@ async function call(
   chain: readonly Link[],
   method: string,
   args: unknown[],
-  keyFix: KeyFix | undefined,
 ): Promise<Sourced<unknown>> {
   // The providers that serve this method: one may serve a capability's other methods only.
   const serving = chain.filter((link) => link.implementation[method]);
   if (!serving.length) {
     throw new DataError(
       "not_configured",
-      keyFix?.capabilities.has(capability)
-        ? message("data.needsKey", { capability: CAPABILITY_LABELS[capability], app: keyFix.app })
-        : message("data.notAvailable", { capability: CAPABILITY_LABELS[capability] }),
+      message("data.notAvailable", { capability: CAPABILITY_LABELS[capability] }),
       {
         source: CAPABILITY_LABELS[capability],
         code: NOTICE.capabilityUnavailable,
@@ -151,7 +142,7 @@ async function call(
     return BATCHES.has(`${capability}.${method}`)
       ? await completed(
           answer as Sourced<QuoteBatch>,
-          (rest) => call(capability, serving.slice(index + 1), method, [rest, ...args.slice(1)], keyFix),
+          (rest) => call(capability, serving.slice(index + 1), method, [rest, ...args.slice(1)]),
           signal,
         )
       : answer;

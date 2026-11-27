@@ -1,0 +1,11 @@
+{
+  "source": "fsc",
+  "name": "error-key-not-registered",
+  "url": "https://apis.data.go.kr/1160100/GetStockSecuritiesInfoService_V2/getStockPriceInfo_V2?serviceKey=***&numOfRows=10000&pageNo=1&resultType=json&likeSrtnCd=005930&beginBasDt=20261026",
+  "status": 403,
+  "content_type": "text/xml;charset=UTF-8",
+  "recorded_at": "2026-11-25T22:00:00.000Z",
+  "bytes": 229,
+  "hand_made": true,
+  "note": "Hand-made, not recorded (no request is sent to apis.data.go.kr from the development session): data.go.kr's gateway failure in its documented XML form (<OpenAPI_ServiceResponse><cmmMsgHeader> with errMsg, returnAuthMsg and returnReasonCode), which it answers even when JSON is asked: a key data.go.kr has not registered for the service at the address asked (returnReasonCode 30), answered with HTTP 403 as reported for its gateway."
+}

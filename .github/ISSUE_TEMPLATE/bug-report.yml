@@ -1,5 +1,6 @@
 # Copyright 2026 Tauric Research
 # SPDX-License-Identifier: Apache-2.0
+# Changed in this fork of TradingAgents 1.0.0.
 name: Bug report
 description: TradingAgents fails, crashes or does something other than it should.
 labels: [bug]
@@ -38,7 +39,6 @@ body:
     attributes:
       label: Provider
       options:
-        - Tauric
         - ChatGPT plan
         - OpenAI
         - Anthropic

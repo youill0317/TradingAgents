@@ -1,5 +1,6 @@
 // Copyright 2026 Tauric Research
 // SPDX-License-Identifier: Apache-2.0
+// Changed in this fork of TradingAgents 1.0.0.
 /**
  * The engine: one session of questions and answers. It runs the main agent for each question and
  * turns everything the run emits into enveloped events, in order, with exactly one terminal event
@@ -13,7 +14,6 @@ import { requestChars } from "../agents/budget.js";
 import { type AgentOutcome, type AgentSpec, cacheKeyOf, runAgent } from "../agents/index.js";
 import { ASKING, modeGuidance, NO_ONE_TO_ASK } from "../agents/prompts.js";
 import {
-  APP_NAME,
   addUsage,
   EVENT_SCHEMA_VERSION,
   type Event,
@@ -42,8 +42,6 @@ export type EngineOptions = {
   client: ModelClient;
   /** The model's route as a session remembers it. */
   route?: RouteName;
-  /** Whether a call for data no source here serves brings the one-time sign-up nudge (true unless set). */
-  signUpNudge?: boolean;
   registry: ToolRegistry;
   main: AgentSpec;
   /** The client's version, reported when the session starts. */
@@ -77,8 +75,6 @@ export type RestoredState = {
   turns: number;
   /** The history's size in tokens as the model last counted it, when known. */
   historyTokens?: number;
-  /** Whether the session has already shown the sign-up nudge. */
-  nudged?: boolean;
   /**
    * Whether the session has already started in this run, as when its engine is replaced between turns:
    * it is not said again to have started or resumed.
@@ -127,8 +123,6 @@ export class Engine {
   private seq = 0;
   private turns = 0;
   private started = false;
-  /** The sign-up nudge shows at most once a session. */
-  private nudged = false;
   private busy = false;
   private history: Message[] = [];
   /** The history's own size as the model last counted it (see historySize); unknown after it was cut or replaced. */
@@ -153,7 +147,6 @@ export class Engine {
       this.historyTokens = restore.historyTokens;
       this.seq = restore.seq;
       this.turns = restore.turns;
-      this.nudged = restore.nudged ?? false;
       this.started = restore.started ?? false;
     }
   }
@@ -166,7 +159,6 @@ export class Engine {
       seq: this.seq,
       turns: this.turns,
       ...(this.historyTokens !== undefined ? { historyTokens: this.historyTokens } : {}),
-      nudged: this.nudged,
       started: this.started,
     };
   }
@@ -222,23 +214,6 @@ export class Engine {
     // Every run of the turn, the main agent's and its sub-agents', emits here; usage is the turn's total.
     const emitFor = (run: string, parent: string | undefined, event: Event) => {
       queue.push(envelope(event, run, parent));
-      // The first call in the session for data no source here offers brings the sign-up nudge, once.
-      if (
-        event.type === "tool.failed" &&
-        event.error.code === NOTICE.capabilityUnavailable &&
-        this.options.signUpNudge !== false &&
-        !this.nudged
-      ) {
-        this.nudged = true;
-        queue.push(
-          envelope({
-            type: "notice",
-            level: "info",
-            code: NOTICE.capabilityUnavailable,
-            text: message("data.signUp", { app: APP_NAME }),
-          }),
-        );
-      }
       if (event.type === "model.step.completed") {
         count(event.usage);
         if (event.setAside) count(event.setAside);

@@ -1,0 +1,11 @@
+{
+  "source": "dart-filings",
+  "name": "document-00126380-quarterly",
+  "url": "https://opendart.fss.or.kr/api/document.xml?crtfc_key=***&rcept_no=20261113001877",
+  "status": 200,
+  "content_type": "application/zip",
+  "recorded_at": "2026-11-25T22:00:00.000Z",
+  "bytes": 1224,
+  "hand_made": true,
+  "note": "Hand-made, not recorded (no request is sent to opendart.fss.or.kr from the development session): document.xml's answer in OpenDART's documented form, a ZIP holding the main document 20261113001877.xml of Samsung Electronics' quarterly report for the third quarter of 2026 (분기보고서 (2026.09), the receipt number of list-00126380.json) in DART's XML (dart4.xsd), declared and written in EUC-KR: chapters I to IV cut to a paragraph or a table each, its section II 5 (위험관리 및 파생거래) pointing to the notes, and chapter IV saying that quarterly reports leave it out, as quarterly reports do. Its text and figures are invented (the balance sheet adds up: assets = liabilities + equity)."
+}

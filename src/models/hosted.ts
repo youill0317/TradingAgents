@@ -1,5 +1,6 @@
 // Copyright 2026 Tauric Research
 // SPDX-License-Identifier: Apache-2.0
+// Changed in this fork of TradingAgents 1.0.0.
 /**
  * Models at a hosted API, reached with the user's own key: each through its AI SDK package, wrapped by
  * the shared client. Nothing is sampled (vendors fix sampling for their reasoning models); how much a
@@ -10,7 +11,6 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { createDeepSeek } from "@ai-sdk/deepseek";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
-import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import type { LanguageModel } from "ai";
 import {
@@ -26,9 +26,6 @@ import { fitReasoning, leastReasoning, modelInfo } from "./catalog.js";
 
 /** OpenAI's API: the only address an OpenAI key or a ChatGPT plan's tokens are sent to. */
 export const OPENAI_API_BASE = "https://api.openai.com/v1";
-
-/** Tauric's model API, OpenAI-compatible: reached with the same key as its data. */
-const TAURIC_MODELS_BASE = "https://api.tauric.ai/v1";
 
 type HostedRoute = {
   provider: HostedProvider;
@@ -104,31 +101,6 @@ const openrouterFailure: ProviderClassifier = ({ status, body, message: said }) 
   return undefined;
 };
 
-/** Tauric's own failures: a refused key, the day's AI credits spent (not worth retrying before they reset). */
-const tauricFailure: ProviderClassifier = ({ status, code, body, message: said }) => {
-  if (status === 401) return keyRefused("Tauric", "https://tauric.ai/settings/api-keys", said);
-  if (code === "quota_exhausted") {
-    const resets = resetTime(body);
-    return {
-      kind: "rate_limited",
-      message: message("model.creditsSpent", resets ? { resets } : {}),
-      retryable: false,
-    };
-  }
-  return undefined;
-};
-
-/** When a spent pool resets, from the error's `resets_at`, as "2026-11-24 00:00 UTC". */
-function resetTime(body: string | undefined): string | undefined {
-  try {
-    const at = (JSON.parse(body ?? "") as { error?: { resets_at?: unknown } }).error?.resets_at;
-    const ms = typeof at === "string" ? Date.parse(at) : Number.NaN;
-    return Number.isNaN(ms) ? undefined : `${new Date(ms).toISOString().slice(0, 16).replace("T", " ")} UTC`;
-  } catch {
-    return undefined;
-  }
-}
-
 /** DeepSeek's own failures: a refused key, a balance that ran out (402, not worth retrying). */
 const deepseekFailure: ProviderClassifier = ({ status, message: said }) => {
   if (status === 401) return keyRefused("DeepSeek", "https://platform.deepseek.com/api_keys", said);
@@ -160,19 +132,6 @@ type Hosted = {
 const fetching = (fetch: typeof globalThis.fetch | undefined) => (fetch ? { fetch } : {});
 
 const HOSTED: Record<HostedProvider, Hosted> = {
-  tauric: {
-    model: (route, fetch) =>
-      createOpenAICompatible({
-        name: "tauric",
-        apiKey: route.apiKey,
-        baseURL: TAURIC_MODELS_BASE,
-        includeUsage: true,
-        ...fetching(fetch),
-      }).chatModel(route.model),
-    // It takes no reasoning level (thinking is not exposed) and samples as it chooses.
-    step: () => () => ({ sampling: {} }),
-    classify: tauricFailure,
-  },
   openai: {
     model: (route, fetch) =>
       createOpenAI({ apiKey: route.apiKey, baseURL: OPENAI_API_BASE, ...fetching(fetch) }).responses(

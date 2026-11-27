@@ -1,0 +1,11 @@
+{
+  "source": "dart",
+  "name": "elestock-00126380",
+  "url": "https://opendart.fss.or.kr/api/elestock.json?crtfc_key=***&corp_code=00126380",
+  "status": 200,
+  "content_type": "application/json;charset=UTF-8",
+  "recorded_at": "2026-11-25T22:00:00.000Z",
+  "bytes": 1048,
+  "hand_made": true,
+  "note": "Hand-made, not recorded (no request is sent to opendart.fss.or.kr from the development session): elestock.json's answer in OpenDART's documented JSON (rcept_no, rcept_dt, corp_code, corp_name, repror, isu_exctv_rgist_at, isu_exctv_ofcps, isu_main_shrholdr, sp_stock_lmp_cnt, sp_stock_lmp_irds_cnt, sp_stock_lmp_rate, sp_stock_lmp_irds_rate) for Samsung Electronics: three reports. The reporters' names (홍길동, 김철수, 이영희) are placeholders and every number is invented; dates are written YYYY-MM-DD and counts with thousands separators, which the client also reads written otherwise."
+}

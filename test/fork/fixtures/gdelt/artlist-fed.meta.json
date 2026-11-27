@@ -1,0 +1,11 @@
+{
+  "source": "gdelt",
+  "name": "artlist-fed",
+  "url": "https://api.gdeltproject.org/api/v2/doc/doc?query=%28%22Federal+Reserve%22+OR+FOMC+OR+%22Fed+chair%22+OR+%22Fed+officials%22%29+sourcelang%3Aenglish&mode=artlist&format=json&maxrecords=250&sort=datedesc",
+  "status": 200,
+  "content_type": "application/json; charset=utf-8",
+  "recorded_at": "2026-11-25T22:00:00.000Z",
+  "bytes": 4114,
+  "hand_made": true,
+  "note": "Hand-made, not recorded (api.gdeltproject.org was not reachable from the development session): GDELT DOC 2.0's ArtList answer in its documented JSON form ({articles: [{url, url_mobile, title, seendate, socialimage, domain, language, sourcecountry}]}, newest first), with invented articles at reserved example domains: ten articles on the Federal Reserve seen 2026-11-24 and 2026-11-25, two of them at the same time (2026-11-24T15:00:00Z)."
+}

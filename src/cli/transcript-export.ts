@@ -1,5 +1,6 @@
 // Copyright 2026 Tauric Research
 // SPDX-License-Identifier: Apache-2.0
+// Changed in this fork of TradingAgents 1.0.0.
 /**
  * The whole transcript as Markdown: every question, what the main agent thought (while this terminal still holds
  * it), every call with its result or failure, each sub-agent's gist, and the answers as written. `/export`
@@ -42,7 +43,7 @@ function previewed(preview: Preview | undefined, indent = ""): string[] {
 function section(block: Block): string | undefined {
   switch (block.kind) {
     case "header":
-      return `# ${APP_TITLE} ${flat(block.version)}\n\n${flat(block.model)} | ${message(block.keyed ? "app.dataTauric" : "app.dataYahoo")}`;
+      return `# ${APP_TITLE} ${flat(block.version)}\n\n${flat(block.model)} | ${message("app.dataYahoo")}`;
     case "question":
       return `## › ${literal(printable(block.text)).split("\n").join("\n   ")}`;
     case "lines":

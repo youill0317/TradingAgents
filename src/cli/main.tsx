@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Copyright 2026 Tauric Research
 // SPDX-License-Identifier: Apache-2.0
+// Changed in this fork of TradingAgents 1.0.0.
 /**
  * The command line. Commands that need no model (help, version, key) run without settings;
  * a question needs a configured model. Only the interactive session mounts the terminal UI.
@@ -28,20 +29,17 @@ import {
   chatgptAuth,
   createEngine,
   dataToolNames,
-  download,
   type EngineBuilder,
-  isHere,
   listSessions,
   loadCatalog,
   modelReplayKey,
   resolveContextWindow,
   Session,
   SessionError,
-  type SyncSetup,
   savedRoute,
-  sendPendingDeletions,
-  tauricSessions,
 } from "../engine/index.js";
+import { publicDataConfig } from "../fork/data/config.js";
+import { webSearchFor } from "../fork/web-search/setup.js";
 import { EXIT, runHeadless } from "../headless/run.js";
 import { type Args, EXIT_USAGE, misuseOf, parse, USAGE } from "./args.js";
 import type { ChatControls } from "./ChatApp.js";
@@ -54,15 +52,7 @@ import { stepsUI } from "./setup/SetupSteps.js";
 import { setupActions, setupFacts } from "./setup/setup-actions.js";
 import { firstRun } from "./setup/setup-flows.js";
 import { resolveStartup, type Startup, type StartupDeps, setupHelp } from "./startup.js";
-import {
-  deleteCommand,
-  loginChatGPT,
-  logoutChatGPT,
-  sessions,
-  storeKey,
-  sync,
-  update,
-} from "./subcommands.js";
+import { deleteCommand, loginChatGPT, logoutChatGPT, sessions, storeKey, update } from "./subcommands.js";
 import { themeFrom } from "./theme.js";
 import { offerUpdate, runOnTerminal } from "./update-prompt.js";
 import { checkForUpdate, releaseLookup, skipVersion, updateSource } from "./updates.js";
@@ -96,7 +86,6 @@ async function main(argv: string[]): Promise<number> {
     return rest[0] === "delete"
       ? deleteCommand(rest[1], Boolean(values.yes), paths)
       : sessions(rest[0], paths);
-  if (command === "sync") return sync(rest[0], paths);
   if (command === "update") return update(paths);
   if (command === "login") return loginChatGPT(rest[1], paths);
   if (command === "logout") return logoutChatGPT(paths);
@@ -133,23 +122,6 @@ async function main(argv: string[]): Promise<number> {
   // A resumed session runs on the model it ran on, unless one is given now; its key is the one found now.
   const resuming =
     values.resume ?? (values.continue ? (await listSessions(paths.home, { limit: 1 }))[0]?.id : undefined);
-  // A session named that is only in the Tauric account is copied here first (sync on, with a key), so it
-  // opens on its own route as any session here does.
-  let copied = false;
-  if (values.resume !== undefined && !(await isHere(paths.home, values.resume))) {
-    const saved = await loadSettings(process.env, { paths });
-    if (saved.sync && saved.tauricKey) {
-      try {
-        copied =
-          (await download(paths.home, values.resume, tauricSessions(saved.tauricKey))) === "downloaded";
-      } catch (error) {
-        toErr(
-          `${error instanceof SessionError ? error.message : message("sync.copyFailed", { reason: errorText(error) })}\n`,
-        );
-        return 1;
-      }
-    }
-  }
   const startupDeps: StartupDeps = {
     load: (given) => loadSettings(process.env, { limits: flags.layer, flags: given, paths }),
     signedIn: () =>
@@ -242,21 +214,17 @@ async function main(argv: string[]): Promise<number> {
 
   // Every key found; one stored during the session (/login) joins it, so a model error never shows it either.
   const liveKeys = [...settings.keys];
-  /** How a session on `model` is copied to the Tauric account of `key`, while sync stays on. */
-  const syncTo = (key: string, model: ModelRoute): SyncSetup => ({
-    remote: tauricSessions(key),
-    metadata: { client: APP_NAME, version: VERSION, model: model.model },
-    stillOn: async () => (await loadSettings(process.env, { paths })).sync,
-  });
-  /** What a session on `chosen`'s model runs with: its engine, its window, and where it is copied. */
-  const runOn = async (chosen: Settings & { model: ModelRoute }): Promise<RunsOn> => {
+  // The public-data sources' settings, read once (this fork); what they lack is said as the session starts.
+  const publicData = await publicDataConfig(process.env, paths);
+  /** What a session on `chosen`'s model runs with: its engine and its window; `notes` are said as it starts. */
+  const runOn = async (chosen: Settings & { model: ModelRoute }): Promise<RunsOn & { notes: string[] }> => {
     const { model } = chosen;
     const context = await resolveContextWindow(model, { chatgptAuthPath: paths.chatgptAuth });
+    const { setup: webSearch, notes } = await webSearchFor(chosen, process.env, paths);
     const build: EngineBuilder = (init) =>
       createEngine({
         model,
         limits: chosen.limits,
-        ...(chosen.tauricKey ? { tauricKey: chosen.tauricKey } : {}),
         version: VERSION,
         contextWindow: context.window,
         modelLimits: {
@@ -266,17 +234,17 @@ async function main(argv: string[]): Promise<number> {
         dataDir: paths.home,
         chatgptAuthPath: paths.chatgptAuth,
         secrets: liveKeys,
+        ...(webSearch ? { webSearch } : {}),
+        publicData: publicData.config,
         // A question the agent asks needs a person to answer it: none is there in a headless run.
         asks: !headless,
         ...(catalog ? { catalog } : {}),
         ...init,
       });
-    // Sessions are copied to Tauric only when sync is on, and never without a Tauric key.
-    const sync = chosen.sync && chosen.tauricKey ? syncTo(chosen.tauricKey, model) : undefined;
-    return { model, context, build, sync };
+    return { model, context, build, notes };
   };
   const first = await runOn({ ...settings, model: settings.model });
-  const { model, context, build, sync: syncSetup } = first;
+  const { model, context, build } = first;
   // A session is told once that its context window is assumed: when it starts, not each time it resumes.
   const resumed = values.resume !== undefined || Boolean(values.continue);
   const notices = context.notice && !resumed ? [context.notice] : [];
@@ -289,12 +257,7 @@ async function main(argv: string[]): Promise<number> {
       : controls.notice
         ? controls.notice(problem)
         : early.push(problem);
-  if (settings.sync && !settings.tauricKey) report(message("sync.onWithoutKey"));
-  // Said as what happened, not as a problem.
-  if (copied) {
-    if (headless) toErr(`${message("app.copiedFromAccount")}\n`);
-    else early.push(message("app.copiedFromAccount"));
-  }
+  for (const note of [...first.notes, ...publicData.notes]) report(note);
   /**
    * What a session started or resumed in the chat runs on: chosen as at startup (this run's --model, else
    * the resumed session's own route, else the model saved for new sessions), with its problems said.
@@ -304,7 +267,9 @@ async function main(argv: string[]): Promise<number> {
     if (chosen.kind !== "ready" || !chosen.settings.model) {
       throw new SessionError(chosen.kind === "stop" ? chosen.reason.trim() : message("app.noModelNow"));
     }
-    return runOn({ ...chosen.settings, model: chosen.settings.model });
+    const next = await runOn({ ...chosen.settings, model: chosen.settings.model });
+    for (const note of next.notes) report(note);
+    return next;
   };
   const chooseFor = async (resumeId?: string) =>
     runsOnChosen(
@@ -329,19 +294,9 @@ async function main(argv: string[]): Promise<number> {
         { interactive: false },
       ),
     );
-  // Account deletions that could not be sent before go now, while the session runs.
-  if (syncSetup) void sendPendingDeletions(paths.home, syncSetup.remote).catch(() => {});
   let session: Session;
   try {
-    session = await openSession(
-      paths.home,
-      values,
-      resuming,
-      modelReplayKey(model),
-      build,
-      report,
-      syncSetup,
-    );
+    session = await openSession(paths.home, values, resuming, modelReplayKey(model), build, report);
     // The route was read before the session was taken: a turn another run added since may have moved it.
     if (ran && resuming !== undefined && !sameRoute(await savedRoute(paths.home, resuming), ran)) {
       await session.close();
@@ -380,11 +335,9 @@ async function main(argv: string[]): Promise<number> {
       }
     }
     host = new SessionHost(session);
-    const unasked = settings.syncAsked ? undefined : settings.tauricKey;
     const chat = await openChat({
       host,
       paths,
-      settings,
       runsOn: first,
       catalog,
       limits: flags.layer,
@@ -398,8 +351,6 @@ async function main(argv: string[]): Promise<number> {
       early,
       resumed,
       updateNotice: updateNotice,
-      // Sync has no default: with a Tauric key, the app asks once (a headless run has no one to ask).
-      syncOffer: unasked ? { setupFor: (model: ModelRoute) => syncTo(unasked, model) } : undefined,
     });
     // Ctrl+C at the keyboard reaches the app as input; a SIGINT sent from outside takes the same path.
     const onSignal = () => controls.interrupt?.();
@@ -463,11 +414,10 @@ async function openSession(
   replayKey: string,
   build: EngineBuilder,
   report: (problem: string) => void,
-  sync: SyncSetup | undefined,
 ): Promise<Session> {
-  if (resuming !== undefined) return Session.resume(dir, resuming, replayKey, build, report, sync);
+  if (resuming !== undefined) return Session.resume(dir, resuming, replayKey, build, report);
   if (values.continue) throw new SessionError(message("cli.noSessionToContinue"));
-  return Session.start(dir, build, report, sync);
+  return Session.start(dir, build, report);
 }
 
 // A failure no command answers itself (a file that cannot be written, say) is said in one line.

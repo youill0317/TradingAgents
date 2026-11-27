@@ -1,0 +1,11 @@
+{
+  "source": "yahoo",
+  "name": "quotesummary-aapl-profile",
+  "url": "https://query2.finance.yahoo.com/v10/finance/quoteSummary/AAPL?formatted=false&modules=price,assetProfile,summaryDetail,defaultKeyStatistics,financialData",
+  "status": 200,
+  "content_type": "application/json;charset=utf-8",
+  "recorded_at": "2026-11-25T22:00:00.000Z",
+  "bytes": 3166,
+  "hand_made": true,
+  "note": "Hand-made, not recorded: Yahoo's v10 quoteSummary answer (formatted=false: raw numbers, dates in epoch seconds) for AAPL with the modules price, assetProfile, summaryDetail, defaultKeyStatistics and financialData, in the shape yahoo-finance2 4.0.6's quoteSummary schema validates (each module's required fields), with invented values for late 2026; debtToEquity is a percent and margins and ownership are fractions, as Yahoo gives them."
+}

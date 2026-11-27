@@ -1,16 +1,17 @@
 // Copyright 2026 Tauric Research
 // SPDX-License-Identifier: Apache-2.0
+// Changed in this fork of TradingAgents 1.0.0.
 /**
  * A report set as a PDF with PDFKit: a letterhead, the title, when and by what it was written, the question,
  * the answer (headings, paragraphs, lists, tables, code, quotes), then the numbered sources; each page's foot
- * names the product and its site in plain text (each a link), to read on paper too, with the page number.
+ * names the product in plain text (a link), to read on paper too, with the page number.
  * The type is the figures' (Encode Sans Expanded, with JetBrains Mono for code and for any character the
  * text face lacks), embedded so the file reads the same everywhere. Calm on purpose: dark grey text on
  * white, the brand green only on the rules and the product's name.
  */
 import PDFDocument from "pdfkit";
-import { APP_TITLE, MAKER, message } from "../../contracts/index.js";
-import { REPO, SITE } from "../links.js";
+import { APP_TITLE, message } from "../../contracts/index.js";
+import { REPO } from "../links.js";
 import fonts from "./fonts.generated.json" with { type: "json" };
 import type { Part, Run } from "./layout.js";
 import type { Report } from "./report.js";
@@ -36,18 +37,12 @@ const HEADING = { 1: 15, 2: 12.5, 3: 11 } as Record<number, number>;
 
 type Face = "regular" | "bold" | "mono";
 
-/** Each page's foot, beside its number: the product and its site, each linking to its address. */
-const FOOT_LINKS: { text: string; link?: string }[] = [
-  { text: APP_TITLE, link: REPO.url },
-  { text: " | " },
-  { text: SITE.text, link: SITE.url },
-];
+/** Each page's foot, beside its number: the product, linking to its address. */
+const FOOT_LINKS: { text: string; link?: string }[] = [{ text: APP_TITLE, link: REPO.url }];
 
-/** The letterhead: the product and its maker, each linking to its address. */
+/** The letterhead: the product, linking to its address. */
 const LETTERHEAD: { text: string; face: Face; color: string; link?: string }[] = [
   { text: APP_TITLE, face: "bold", color: BRAND_TEXT, link: REPO.url },
-  { text: " by ", face: "regular", color: MUTED },
-  { text: MAKER, face: "regular", color: MUTED, link: SITE.url },
 ];
 
 /**

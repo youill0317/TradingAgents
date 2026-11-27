@@ -1,5 +1,6 @@
 // Copyright 2026 Tauric Research
 // SPDX-License-Identifier: Apache-2.0
+// Changed in this fork of TradingAgents 1.0.0.
 /**
  * The engineering bounds the modules share, in one place. User-facing limits (what a question or an agent
  * may use) are resolved from settings (config/limits.ts) and passed to their consumers; the bounds below
@@ -11,7 +12,6 @@
  */
 /** Requests to services: how long one may take. */
 export const REQUEST_MS = {
-  tauric: 30_000,
   polymarket: 10_000,
   /** Yahoo, every request including its cookie set-up and the answer's body. */
   yahoo: 30_000,
@@ -28,7 +28,7 @@ export const REQUEST_MS = {
   runtimeDownload: 300_000,
 } as const;
 
-/** Bytes of one answer read from Tauric or Polymarket; a longer answer is the source being unavailable. */
+/** Bytes of one answer read from Polymarket; a longer answer is the source being unavailable. */
 export const ANSWER_BYTES = 16_777_216;
 
 /** Model steps and their output. */
@@ -133,26 +133,14 @@ export const MEMORY = {
   appendPollMs: 50,
 } as const;
 
-/** Copying sessions to Tauric. */
-export const SYNC = {
-  /** Bytes sent in one append; a single line larger than this stops sync for the session. */
-  chunkBytes: 1_000_000,
-  retryMs: [2_000, 10_000, 60_000],
-  drainMs: 10_000,
-  /** After cancelling, how long a close waits for the work to stop before it lets go. */
-  stopWaitMs: 5_000,
-  /** Pages of 100 read to list the account's sessions; the newest of those are shown. */
-  listedPages: 5,
-} as const;
-
 /** Recorded tool results (evidence) and how a session keeps them. */
 export const EVIDENCE = {
-  /** A record's payload above this many bytes of JSON stays on this computer: its record and preview sync. */
+  /** A record's payload above this many bytes of JSON is kept beside the session file, not in it. */
   recordBytes: 1_048_576,
-  /** Payload bytes a session syncs; records past it stay on this computer too. */
+  /** Payload bytes a session file holds; records past it are kept beside it too. */
   sessionBytes: 16 * 1_048_576,
   /** The longest line a record is written as: a payload that does not fit is split across lines. */
-  lineBytes: SYNC.chunkBytes - 4_096,
+  lineBytes: 1_000_000 - 4_096,
   /** The preview kept with a record, from its rendered text. */
   previewChars: 600,
 } as const;

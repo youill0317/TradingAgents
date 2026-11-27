@@ -1,0 +1,69 @@
+# Copyright 2026 TradingAgents fork contributors
+# SPDX-License-Identifier: Apache-2.0
+# Added in this fork of TradingAgents 1.0.0.
+# Where this fork's tracked files may still name Tauric, read by scripts/fork/check-no-tauric.sh: any other
+# line that says "tauric", in any case, fails the check. Each entry is kept on purpose, for the reason
+# above it.
+#
+# An entry is a path alone, which allows the whole file, or a path, a tab and a text, which allows that
+# text in the file's lines: a line passes when, with each text listed for its path (or for *, any file)
+# taken out, no "tauric" is left in it. Texts match by content, not by line number, so upstream's edits
+# around them merge.
+
+# Upstream's copyright line, at the top of its files.
+*	Copyright 2026 Tauric Research
+
+# The check and this list.
+scripts/fork/check-no-tauric.sh
+scripts/fork/tauric-allowlist.txt
+
+# What this fork removed, and how it takes upstream's releases.
+FORK.md
+
+# Upstream's release notes, as upstream wrote them so its releases merge cleanly. The fork shows them without
+# their Tauric items (src/fork/changelog.ts, tested in test/fork/changelog.test.ts); the README says the file
+# is upstream's.
+CHANGELOG.md
+src/cli/changelog.generated.ts
+test/fork/changelog.test.ts
+
+# How src/fork/changelog.ts leaves those items out: its comments and its code, never the notes it shows.
+src/fork/changelog.ts	with every item about Tauric's services left out
+src/fork/changelog.ts	/** Items that name Tauric's services, products or sites. */
+src/fork/changelog.ts	const TAURIC = /tauric/i;
+src/fork/changelog.ts	function withoutTauric(
+src/fork/changelog.ts	!TAURIC.test(item)
+src/fork/changelog.ts	...withoutTauric(entry.sections)
+
+# Upstream's npm packaging and package names: this fork publishes no npm package, so nothing runs or
+# shows them.
+scripts/npm-packages.ts
+scripts/npm/launcher.js
+src/config/release.ts	export const NPM_PACKAGE = `@tauric/${APP_NAME}`;
+
+# The README's attribution: the original work, its authors and their repository, and nothing else.
+README.md	This repository is a fork of [TradingAgents](https://github.com/TauricResearch/TradingAgents) 1.0.0 by
+README.md	Tauric Research, used under the Apache License 2.0. It is not made, endorsed or supported by Tauric Research.
+
+# biome.json's ignores for the removed Tauric files: they match nothing now, and upstream's merge cleanly.
+biome.json	"!src/data/tauric/schema.generated.ts"
+biome.json	"!src/data/tauric/applications.schema.generated.ts"
+biome.json	"!src/data/tauric/openapi.json"
+biome.json	"!src/data/tauric/applications.openapi.json"
+
+# Upstream's facts for its Tauric model: no provider here looks them up.
+src/models/provider-facts.json	"tauric/tauric": { "name": "Tauric", "context": 262144, "output": 32768, "reasoning": [] }
+
+# The workflow step that runs this check.
+.github/workflows/fork.yml	- name: No Tauric service is left
+.github/workflows/fork.yml	run: sh scripts/fork/check-no-tauric.sh dist-bin/tradingagents "$RUNNER_TEMP/no-tauric"
+
+# Comments on upstream's data and session sync, as upstream wrote them: comments reach no user and no model.
+src/cli/report/report.ts	/** Each cited source as one line: "[1] price_history AAPL, 1y (Tauric, as of 2026-11-19)". */
+src/contracts/citations.ts	/** Who answered ("Tauric"), or "computed" for a figure derived from other results. */
+src/contracts/citations.ts	* A source as one line of plain text: "[1] price_history AAPL, 1y (Tauric, as of 2026-11-19)"; an agent's
+src/tools/company.ts	/** The profile's fields Tauric serves as fractions (0.2762 for 27.62%), stated as percents. */
+src/tools/evidence-store.ts	* only when its data may be copied with a synced session (Tauric's own, or computed from such alone)
+src/tools/tool.ts	/** The data may be copied with a synced session (Tauric's own, or computed from such); else it stays here. */
+src/tools/valuation.ts	/** Cash flow statement lines a DCF reads, by the names Tauric gives them. */
+src/cli/transcript-state.ts	* nothing, and a source named after others failed ("Yahoo, after Tauric failed") counts as itself.

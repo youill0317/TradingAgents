@@ -1,0 +1,11 @@
+{
+  "source": "markets",
+  "name": "fred-graph-icsa",
+  "url": "https://fred.stlouisfed.org/graph/fredgraph.csv?id=ICSA&cosd=2025-10-04&coed=2026-11-25",
+  "status": 200,
+  "content_type": "text/csv",
+  "recorded_at": "2026-11-25T15:00:00.000Z",
+  "bytes": 1102,
+  "hand_made": true,
+  "note": "Hand-made in the format of FRED's keyless download (fredgraph.csv: an observation_date column, then one column named by the series code, '.' for a missing value), as FRED documents its CSV downloads; fred.stlouisfed.org did not answer this session, so none was recorded. Weekly values for the weeks ending on Saturday 2025-10-04 to 2026-11-21. The values are illustrative, not FRED's. Listed for a live check."
+}

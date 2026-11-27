@@ -1,0 +1,11 @@
+{
+  "source": "ecos",
+  "name": "item-list-817y002",
+  "url": "https://ecos.bok.or.kr/api/StatisticItemList/***/json/kr/1/1000/817Y002",
+  "status": 200,
+  "content_type": "application/json;charset=UTF-8",
+  "recorded_at": "2026-11-26T09:00:00.000Z",
+  "bytes": 1951,
+  "hand_made": true,
+  "note": "Hand-made in the JSON the Bank of Korea's ECOS Open API guide (ecos.bok.or.kr/api, developer specification: StatisticSearch, StatisticItemList, StatisticTableList, their JSON rows and RESULT codes) as open-source ECOS clients document it, and the series codes the owner verified (722Y001, 901Y009) give for StatisticItemList: the daily market rates table 817Y002, its items in one item group, cycle D. Items 010200000 (3-year Treasury bonds) and 010210000 (10-year) are the codes open-source ECOS clients document; the other items, the periods and counts are illustrative. No ECOS_API_KEY was used. Listed for a live check."
+}

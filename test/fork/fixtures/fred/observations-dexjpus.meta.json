@@ -1,0 +1,11 @@
+{
+  "source": "fred",
+  "name": "observations-dexjpus",
+  "url": "https://api.stlouisfed.org/fred/series/observations?series_id=DEXJPUS&realtime_start=1776-07-04&realtime_end=9999-12-31&observation_start=2026-10-28&observation_end=2026-11-25&file_type=json",
+  "status": 200,
+  "content_type": "application/json; charset=UTF-8",
+  "recorded_at": "2026-11-25T15:00:00.000Z",
+  "bytes": 2016,
+  "hand_made": true,
+  "note": "Hand-made in the JSON FRED's API documents for /fred/series/observations (https://fred.stlouisfed.org/docs/api/fred/), with file_type=json; no FRED_API_KEY was used in this session, so none was recorded, and the key is not in the URL. The values are illustrative, not FRED's. Listed for a live check."
+}

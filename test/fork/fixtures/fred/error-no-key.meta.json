@@ -1,0 +1,11 @@
+{
+  "source": "fred",
+  "name": "error-no-key",
+  "url": "https://api.stlouisfed.org/fred/series?series_id=CPIAUCSL&file_type=json",
+  "status": 400,
+  "content_type": "application/json; charset=UTF-8",
+  "recorded_at": "2026-11-25T14:56:12.000Z",
+  "bytes": 162,
+  "hand_made": false,
+  "note": "A real answer, kept whole: saved with the planning samples (macro/raw/fredapi-nokey.json, byte for byte), not recorded again; recorded_at is that answer's HTTP Date."
+}

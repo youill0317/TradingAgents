@@ -1,0 +1,11 @@
+{
+  "source": "yahoo",
+  "name": "chart-005930-ks-1d",
+  "url": "https://query2.finance.yahoo.com/v8/finance/chart/005930.KS?interval=1d",
+  "status": 200,
+  "content_type": "application/json;charset=utf-8",
+  "recorded_at": "2026-11-25T22:00:00.000Z",
+  "bytes": 1248,
+  "hand_made": true,
+  "note": "Hand-made, not recorded: Yahoo's v8 chart answer (1d bars with adjclose) for 005930.KS in the shape yahoo-finance2 4.0.6's chart schema validates, with invented values for the KRX sessions of 2026-11-18 to 2026-11-25 (each stamped 09:00 KST); the first session's adjusted close is below its close, as before a dividend; currentTradingPeriod is the next session's (2026-11-26 KST)."
+}

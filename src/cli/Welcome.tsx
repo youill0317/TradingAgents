@@ -1,22 +1,15 @@
 // Copyright 2026 Tauric Research
 // SPDX-License-Identifier: Apache-2.0
+// Changed in this fork of TradingAgents 1.0.0.
 /**
  * The welcome block, the scrollback's first: the mark beside two lines (the name and version, the model
- * and data); then an announcement, if any (news, or where to get a key), a line of examples and a line of keys. Left-aligned at the gutter, and
+ * and data); then an announcement, if any (news), a line of examples and a line of keys. Left-aligned at the gutter, and
  * written once like any finished block. A narrow window keeps the text and drops the mark.
  */
 import { Box, Text } from "ink";
-import stringWidth from "string-width";
 import { APP_TITLE, message, printable } from "../contracts/index.js";
-import { hyperlink, SIGN_UP, SITE } from "./links.js";
 import { SEPARATOR } from "./rows.js";
 import { useRoles, useTheme } from "./theme-context.js";
-
-/** Where to get a Tauric API key, its address a hyperlink. */
-function keyAsk(unicode: boolean): string {
-  const [before = "", after = ""] = message("app.getKey").split(SIGN_UP.text);
-  return `${before}${hyperlink(SIGN_UP.text, SIGN_UP.url, unicode)}${after}`;
-}
 
 /** Below this many columns the mark is left out. */
 const WELCOME_MARK_COLUMNS = 60;
@@ -55,14 +48,11 @@ function Announcement({ lines }: { lines: readonly string[] }) {
 export function Welcome({
   version,
   model,
-  keyed,
   news,
   columns,
 }: {
   version: string;
   model: string;
-  /** Whether a Tauric API key is set; without one, the news line says where to get one. */
-  keyed: boolean;
   news?: string | undefined;
   columns: number;
 }) {
@@ -71,10 +61,8 @@ export function Welcome({
   // The brand's touches: in the accent, or secondary without colour.
   const brand = roles.accent.color ? roles.accent : roles.detail;
   const showMark = unicode && columns >= WELCOME_MARK_COLUMNS;
-  // The model and data, then the site when the whole of it fits; else the site is left out, not cut.
-  const modelLine = `${printable(model)}${SEPARATOR}${message(keyed ? "app.dataTauric" : "app.dataYahoo")}`;
-  const room = columns - (showMark ? MARK_WIDTH + 3 : 0);
-  const site = keyed && stringWidth(`${modelLine}${SEPARATOR}${SITE.text}`) <= room;
+  // The model and data.
+  const modelLine = `${printable(model)}${SEPARATOR}${message("app.dataYahoo")}`;
   const lines = [
     <Text key="name" wrap="truncate">
       <Text {...roles.title}>{APP_TITLE}</Text>
@@ -85,20 +73,10 @@ export function Welcome({
     </Text>,
     <Text key="model" {...roles.detail} wrap="truncate">
       {modelLine}
-      {site ? (
-        <>
-          {SEPARATOR}
-          {hyperlink(SITE.text, SITE.url, unicode)}
-        </>
-      ) : null}
     </Text>,
   ];
-  // With a key, the news (what is new, or a newer release); without one, where to get a key.
-  const announcement = keyed
-    ? news
-      ? [printable(news)]
-      : undefined
-    : [keyAsk(unicode), message("app.addKey")];
+  // The news: what is new, or a newer release.
+  const announcement = news ? [printable(news)] : undefined;
   // Beside the mark, each line on its row and the other rows blank, so the block is as tall as the mark.
   const beside = MARK.map(
     (_, row) =>

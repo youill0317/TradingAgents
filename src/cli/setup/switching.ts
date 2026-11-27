@@ -1,9 +1,10 @@
 // Copyright 2026 Tauric Research
 // SPDX-License-Identifier: Apache-2.0
+// Changed in this fork of TradingAgents 1.0.0.
 /**
  * The setup's actions in the chat, where what they save applies to the open session too: a model chosen
  * (or a server saved) runs from the next question, and a key for what the session uses (its model's
- * provider, Tauric's data) is used from then on.
+ * provider) is used from then on.
  */
 
 import { ENV } from "../../config/index.js";
@@ -42,8 +43,7 @@ export function switchingActions<Next>(saved: SetupActions, session: Switching<N
     async saveKey(name, key) {
       await saved.saveKey(name, key);
       const { provider } = session.current();
-      if (name === "tauric" || name === provider || (name === "model" && provider === "openai-compatible"))
-        await reconnect();
+      if (name === provider || (name === "model" && provider === "openai-compatible")) await reconnect();
     },
     // A server saved is the model from here on, as a model chosen is.
     // The conversation goes only to the address given: one the environment names in its place is not used.

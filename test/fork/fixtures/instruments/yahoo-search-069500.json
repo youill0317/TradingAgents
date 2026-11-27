@@ -1,0 +1,35 @@
+{
+ "explains": [],
+ "count": 1,
+ "quotes": [
+  {
+   "exchange": "KSC",
+   "shortname": "SAMSUNG KODEX 200 ETF",
+   "quoteType": "ETF",
+   "symbol": "069500.KS",
+   "index": "quotes",
+   "score": 20020,
+   "typeDisp": "ETF",
+   "longname": "Samsung KODEX 200 Securities ETF",
+   "exchDisp": "KSE",
+   "isYahooFinance": true
+  }
+ ],
+ "news": [],
+ "nav": [],
+ "lists": [],
+ "researchReports": [],
+ "screenerFieldResults": [],
+ "culturalAssets": [],
+ "totalTime": 22,
+ "timeTakenForQuotes": 405,
+ "timeTakenForNews": 0,
+ "timeTakenForAlgowatchlist": 400,
+ "timeTakenForPredefinedScreener": 400,
+ "timeTakenForCrunchbase": 0,
+ "timeTakenForNav": 400,
+ "timeTakenForResearchReports": 0,
+ "timeTakenForScreenerField": 0,
+ "timeTakenForCulturalAssets": 0,
+ "timeTakenForSearchLists": 0
+}

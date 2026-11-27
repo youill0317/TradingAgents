@@ -1,0 +1,11 @@
+{
+  "source": "sec",
+  "name": "submissions-tsm",
+  "url": "https://data.sec.gov/submissions/CIK0001046179.json",
+  "status": 200,
+  "content_type": "application/json",
+  "recorded_at": "2026-11-25T14:37:11.000Z",
+  "bytes": 6790,
+  "hand_made": false,
+  "note": "SEC's answer saved from data.sec.gov on 2026-11-25 with the SEC area's live samples (submissions-tsm.json, 162,574 bytes), trimmed for the tests: filings.recent cut from 1,003 to 32 rows (its newest 15 filings other than insider reports, every periodic report, the insider reports 0001046179-26-000082, 0001046179-26-000083, 0001046179-26-000794, 0001046179-26-000803, 0002114032-26-000002), in SEC's order; every other key, filings.files included, as SEC answered it."
+}

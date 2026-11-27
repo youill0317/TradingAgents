@@ -1,5 +1,6 @@
 // Copyright 2026 Tauric Research
 // SPDX-License-Identifier: Apache-2.0
+// Changed in this fork of TradingAgents 1.0.0.
 /**
  * The user's settings, from `config.json` and `credentials.json` in the home directory, with
  * environment variables taking precedence field by field (flags over both), and the writers of
@@ -58,7 +59,6 @@ type ServerFields = { [K in keyof typeof serverFields]?: z.infer<(typeof serverF
 
 /** The settings a provider block may hold: a server's for the compatible provider, a window for any. */
 const providerFields: Record<ProviderId, Record<string, z.ZodType>> = {
-  tauric: { contextWindow },
   chatgpt: { contextWindow },
   "openai-compatible": serverFields,
   openai: { contextWindow },
@@ -86,11 +86,6 @@ export type Settings = {
    * environment variable, or the config file; undefined when none was.
    */
   namedBy?: string;
-  tauricKey?: string;
-  /** Whether sessions are copied to Tauric. Off unless set on; an unreadable value is off. */
-  sync: boolean;
-  /** Whether sync was set at all (on or off); until it is, an interactive run asks. */
-  syncAsked: boolean;
   /** Every key found, whichever one is used: the credentials the app holds, scrubbed from model errors. */
   keys: string[];
   /** Where each key used was found: its environment variable, or "stored" (no values). */
@@ -155,8 +150,6 @@ export async function loadSettings(
       return [provider, credentials[provider]];
     }),
   ) as { [P in HostedProvider]?: string };
-  // Tauric's key serves its data as well as its model.
-  const tauricKey = hostedKeys.tauric;
 
   // "provider-default" leaves it to the provider, over a level the file sets.
   const reasoningSetting = flags.reasoning ?? file.reasoning;
@@ -258,15 +251,6 @@ export async function loadSettings(
       };
     }
   }
-  // Sync uploads sessions, so it is on only when a setting says exactly "on"; anything else is off.
-  // A variable that is set decides, even when empty (then off).
-  const syncFromEnv = env[ENV.sync] !== undefined;
-  const syncSetting = syncFromEnv ? env[ENV.sync] : file.sync;
-  if (syncSetting !== undefined && syncSetting !== "" && syncSetting !== "on" && syncSetting !== "off") {
-    problems.push(message("config.badSync", { where: syncFromEnv ? ENV.sync : CONFIG_FILE }));
-  }
-  const sync = syncSetting === "on";
-  const syncAsked = syncFromEnv || file.sync === "on" || file.sync === "off";
   // Every key found, also those another one shadows.
   const keys = [
     ...new Set(
@@ -300,9 +284,6 @@ export async function loadSettings(
         : file.modelNamed
           ? { namedBy: CONFIG_FILE }
           : {}),
-    ...(tauricKey ? { tauricKey } : {}),
-    sync,
-    syncAsked,
     keys,
     keyFrom,
     limits: resolved.limits,
@@ -350,7 +331,6 @@ async function readConfigFile(
 ): Promise<{
   model?: RouteName;
   providers?: ProviderBlocks;
-  sync?: unknown;
   limits?: unknown;
   reasoning?: unknown;
   modelNamed?: boolean;
@@ -372,14 +352,12 @@ async function readConfigFile(
   const out: {
     model?: RouteName;
     providers?: ProviderBlocks;
-    sync?: unknown;
     limits?: unknown;
     reasoning?: unknown;
     modelNamed?: boolean;
   } = {
     ...(json.reasoning === undefined ? {} : { reasoning: json.reasoning }),
     ...(model === undefined ? {} : { modelNamed: true }),
-    ...(json.sync === undefined ? {} : { sync: json.sync }),
     ...(json.limits === undefined ? {} : { limits: json.limits }),
   };
   if (typeof model === "string") {
@@ -447,11 +425,6 @@ export function checkEndpoint(value: string): string | undefined {
   if (url.protocol !== "http:" && url.protocol !== "https:") return message("config.urlScheme");
   if (url.username || url.password) return message("config.urlCredentials");
   return undefined;
-}
-
-/** Turn session sync on or off in the config file, keeping its other settings. */
-export function saveSync(on: boolean, paths: Paths): Promise<string> {
-  return rewriteConfig(paths, (current) => ({ ...current, sync: on ? "on" : "off" }));
 }
 
 /**

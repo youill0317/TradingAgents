@@ -1,0 +1,11 @@
+{
+  "source": "yahoo",
+  "name": "quotesummary-005930-ks-profile",
+  "url": "https://query2.finance.yahoo.com/v10/finance/quoteSummary/005930.KS?formatted=false&modules=price,assetProfile,summaryDetail,defaultKeyStatistics,financialData",
+  "status": 200,
+  "content_type": "application/json;charset=utf-8",
+  "recorded_at": "2026-11-25T22:00:00.000Z",
+  "bytes": 1918,
+  "hand_made": true,
+  "note": "Hand-made, not recorded: Yahoo's v10 quoteSummary answer for 005930.KS with the profile's modules, sparser than a US listing's, with invented values; its summaryDetail lacks fulldayPrice, which yahoo-finance2 4.0.6's schema requires (the library refuses the answer with FailedYahooValidationError, its result inside), and gives dividendYield as a percent (1.72), as Yahoo has sent it in some answers."
+}

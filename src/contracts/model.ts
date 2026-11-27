@@ -1,5 +1,6 @@
 // Copyright 2026 Tauric Research
 // SPDX-License-Identifier: Apache-2.0
+// Changed in this fork of TradingAgents 1.0.0.
 /**
  * How the agent loop talks to a language model. One request is one model step: the loop, not the
  * model client, decides when to call tools and when to stop.
@@ -70,23 +71,15 @@ export function withoutReplay(message: Message, { keepReasoning = false } = {}):
   };
 }
 
-/** Providers reached with an API key at their own endpoint; Tauric's key also serves its data. */
-export const HOSTED_PROVIDERS = [
-  "tauric",
-  "openai",
-  "anthropic",
-  "google",
-  "deepseek",
-  "openrouter",
-] as const;
+/** Providers reached with an API key at their own endpoint. */
+export const HOSTED_PROVIDERS = ["openai", "anthropic", "google", "deepseek", "openrouter"] as const;
 export type HostedProvider = (typeof HOSTED_PROVIDERS)[number];
 
 /**
  * Who serves the model: a hosted API, a ChatGPT plan signed in to, or an OpenAI-compatible server. In the
- * order they are offered: Tauric first, then the hosted ones, then a server of one's own.
+ * order they are offered: a ChatGPT plan, then the hosted ones, then a server of one's own.
  */
 export const PROVIDER_IDS = [
-  "tauric",
   "chatgpt",
   "openai",
   "anthropic",

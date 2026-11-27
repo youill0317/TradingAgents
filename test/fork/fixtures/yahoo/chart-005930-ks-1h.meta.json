@@ -1,0 +1,11 @@
+{
+  "source": "yahoo",
+  "name": "chart-005930-ks-1h",
+  "url": "https://query2.finance.yahoo.com/v8/finance/chart/005930.KS?interval=1h&includePrePost=false",
+  "status": 200,
+  "content_type": "application/json;charset=utf-8",
+  "recorded_at": "2026-11-25T22:00:00.000Z",
+  "bytes": 1519,
+  "hand_made": true,
+  "note": "Hand-made, not recorded: Yahoo's v8 chart answer (hourly bars, includePrePost=false) for 005930.KS in the shape yahoo-finance2 4.0.6's chart schema validates, seven bars for each KRX session of 2026-11-24 and 2026-11-25 (09:00-15:30 KST), invented values."
+}

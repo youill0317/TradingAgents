@@ -1,0 +1,11 @@
+{
+  "source": "dart-filings",
+  "name": "list-00126380-b001",
+  "url": "https://opendart.fss.or.kr/api/list.json?crtfc_key=***&corp_code=00126380&bgn_de=20240101&end_de=20261126&pblntf_ty=B&pblntf_detail_ty=B001&sort=date&sort_mth=desc&page_no=1&page_count=100",
+  "status": 200,
+  "content_type": "application/json;charset=UTF-8",
+  "recorded_at": "2026-11-25T22:00:00.000Z",
+  "bytes": 570,
+  "hand_made": true,
+  "note": "Hand-made, not recorded (no request is sent to opendart.fss.or.kr from the development session): list.json's answer in OpenDART's documented JSON (status, message, page_no, page_count, total_count, total_page, and list rows of corp_code, corp_name, stock_code, corp_cls, report_nm, rcept_no, flr_nm, rcept_dt, rm) for Samsung Electronics' major events reports (pblntf_detail_ty B001) received from 2024-01-01 to 2026-11-26, newest first: the rows of list-00126380.json of that type. The tests answer every window of receipt days the provider asks list.json for from these rows, as list.json answers it (by receipt day and page, 013 for none), so no filing is older than 2024-01-01 there. The periodic reports' and the insiders' receipt numbers are those of dart/list-00126380-periodic.json and dart/elestock-00126380.json; the others are invented in OpenDART's form (14 digits, the receipt day first)."
+}

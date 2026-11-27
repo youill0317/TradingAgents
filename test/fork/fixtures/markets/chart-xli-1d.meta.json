@@ -1,0 +1,11 @@
+{
+  "source": "markets",
+  "name": "chart-xli-1d",
+  "url": "https://query2.finance.yahoo.com/v8/finance/chart/XLI?interval=1d",
+  "status": 200,
+  "content_type": "application/json;charset=utf-8",
+  "recorded_at": "2026-11-25T22:00:00.000Z",
+  "bytes": 4934,
+  "hand_made": true,
+  "note": "Hand-made, not recorded (Yahoo answers only yahoo-finance2's own User-Agent, and none was recorded here): Yahoo's v8 chart answer (1d bars) for XLI in the shape yahoo-finance2 4.0.6's chart schema validates, with invented closes (a seeded random walk) for the 73 sessions of 2026-08-14 to 2026-11-25 (Labor Day 2026-09-07 has none), each stamped 09:30 New York time, the adjusted close equal to the close; the last two closes are the quote's in markets/quotes.json."
+}

@@ -2,7 +2,7 @@
 
 ## In the terminal
 
-`tradingagents` starts a session. It opens with the version and the model in use, and a line of news: where to get a Tauric API key when there is none, what changed in a new version, or that a newer release is out. Type a question and press Enter; the plan, the tools it calls and the agents it briefs show as they run, and the thinking streams as it happens. Esc or Ctrl+C stops the running question. With nothing running, Ctrl+C, Ctrl+D on an empty line, or `/exit` leaves.
+`tradingagents` starts a session. It opens with the version and the model in use, and a line of news when there is one: what changed in a new version, or that a newer release is out. Type a question and press Enter; the plan, the tools it calls and the agents it briefs show as they run, and the thinking streams as it happens. Esc or Ctrl+C stops the running question. With nothing running, Ctrl+C, Ctrl+D on an empty line, or `/exit` leaves.
 
 | Key                                               | Does                                                 |
 | ------------------------------------------------- | ---------------------------------------------------- |
@@ -12,20 +12,20 @@
 | Ctrl+R                                            | search earlier questions                             |
 | Shift+Tab                                         | switch the mode: auto or plan                        |
 
-| Command      | Does                                                                                              |
-| ------------ | ------------------------------------------------------------------------------------------------- |
-| `/help`      | commands and keys                                                                                 |
-| `/status`    | the model, data, sync and session                                                                 |
-| `/new`       | start a new session                                                                               |
-| `/resume`    | resume an earlier session, here or in your Tauric account; Ctrl+D on one deletes it, after asking |
-| `/model`     | choose the model this session and new ones run on                                                 |
-| `/login`     | connect a provider, or add a Tauric API key                                                       |
-| `/agents`    | the agents the main agent can ask, and where each comes from                                      |
-| `/skills`    | the skills the main agent can load, and where each comes from                                     |
-| `/export`    | save the last answer as a PDF report, the transcript as Markdown, or both                         |
-| `/copy`      | copy the last answer to the clipboard                                                             |
-| `/changelog` | what changed in this version                                                                      |
-| `/exit`      | leave                                                                                             |
+| Command      | Does                                                                      |
+| ------------ | ------------------------------------------------------------------------- |
+| `/help`      | commands and keys                                                         |
+| `/status`    | the model, data and session                                               |
+| `/new`       | start a new session                                                       |
+| `/resume`    | resume an earlier session; Ctrl+D on one deletes it, after asking         |
+| `/model`     | choose the model this session and new ones run on                         |
+| `/login`     | connect a provider                                                        |
+| `/agents`    | the agents the main agent can ask, and where each comes from              |
+| `/skills`    | the skills the main agent can load, and where each comes from             |
+| `/export`    | save the last answer as a PDF report, the transcript as Markdown, or both |
+| `/copy`      | copy the last answer to the clipboard                                     |
+| `/changelog` | what changed in this version                                              |
+| `/exit`      | leave                                                                     |
 
 `/help` lists the commands and keys, and links to the project.
 
@@ -48,8 +48,10 @@ An answer marks each figure with the result it comes from, numbered in the order
 ```text
 Sources:
 [1] correlation AAPL, MSFT (returns) (computed, as of 2026-11-19)
-[2] price_history AAPL 1y daily (Tauric, as of 2026-11-19)
+[2] price_history AAPL 1y daily (Yahoo, as of 2026-11-19)
 ```
+
+A `web_search` result is listed with the sites its pages came from and whose search found them (`reuters.com, cnbc.com +3 via Anthropic web search`), and the answer cites each page it uses with a link to it.
 
 `-p` prints the same list after the answer, and with `--json` the closing `turn.completed` event carries it as `sources`.
 
@@ -67,13 +69,13 @@ Sources:
 
 ## Sessions
 
-Every session is kept. `tradingagents sessions` lists them, newest first; `--continue` takes up the latest and `--resume <id>` a given one, in the terminal or with `-p`.
+Every session is kept, on this computer, in `sessions/` in the [configuration directory](configuration.md). `tradingagents sessions` lists them, newest first; `--continue` takes up the latest and `--resume <id>` a given one, in the terminal or with `-p`.
 
-`tradingagents sessions delete <id>` deletes a session, here and, when sync is on, from your Tauric account. It asks first at a terminal; without one it needs `--yes`. An open session is never deleted.
+`tradingagents sessions delete <id>` deletes a session. It asks first at a terminal; without one it needs `--yes`. An open session is never deleted.
 
 ## Agents and skills
 
-The main agent answers with its own tools: data tools, compute tools for arithmetic, statistics, technical indicators, portfolio risk and weights over what it has read, a plan, memory, and the results it has recorded. For depth it briefs a specialist agent (`run_agent`), which researches the brief in its own context with its own tools and reports back with its sources; a broad question can go to several at once. For a known kind of research it loads a skill: the method it follows.
+The main agent answers with its own tools: data tools, compute tools for arithmetic, statistics, technical indicators, portfolio risk and weights over what it has read, `web_search` when it is on (see [web search](configuration.md#web-search)), memory, the results it has recorded, and a plan when it has agents to brief. For depth it briefs a specialist agent (`run_agent`), which researches the brief in its own context with its own tools and reports back with its sources; a broad question can go to several at once. For a known kind of research it loads a skill: the method it follows.
 
 | Agent                      | Researches                                                                                                           |
 | -------------------------- | -------------------------------------------------------------------------------------------------------------------- |
@@ -101,7 +103,9 @@ The main agent answers with its own tools: data tools, compute tools for arithme
 | portfolio-review       | Risk      | how a set of holdings behaves together, and how other weights would compare |
 | thesis-review          | Risk      | a challenge to a view: the case against, a pre-mortem, what would break it  |
 
-`/agents` and `/skills` list what a session has, and where each comes from.
+An agent is offered when every data tool it names has a source here, and the built-in skills, written as briefs for the built-in agents, when one of those is. Every data tool has a source today; `statements`, `filings`, `filing_section`, `screen` and `ownership`'s insider view read SEC EDGAR, which needs `SEC_USER_AGENT` ([configuration](configuration.md#public-data)), and for Korean listings `statements`, `filings`, `filing_section` and the insider view read OpenDART, which needs `DART_API_KEY`. So Macro Strategy is offered in every setup, with the built-in skills; Equity Research, Quant Research and Risk Analysis with `SEC_USER_AGENT`; and Risk Analysis with `DART_API_KEY` alone (`screen`, which Equity Research and Quant Research use, reads SEC EDGAR only).
+
+`/agents` and `/skills` list what a session has, where each comes from, and which are not available in it.
 
 ## Your own agents and skills
 
@@ -109,7 +113,7 @@ Add your own agents and skills as Markdown files:
 
 ### Agents
 
-Each agent is one file, `~/.tauric/tradingagents/agents/<name>.md`; a file named like a built-in agent replaces it. The settings go between `---` lines at the top, one `key: value` per line, and the instructions follow:
+Each agent is one file, `~/.config/tradingagents/agents/<name>.md`; a file named like a built-in agent replaces it. The settings go between `---` lines at the top, one `key: value` per line, and the instructions follow:
 
 <!-- biome-ignore format: the example opens with front matter -->
 ```markdown
@@ -134,33 +138,19 @@ You are a chart reader. Study how the stock has traded and report what the numbe
 | `steps`       | its step limit (default 15)                                                                                      |
 | `tier`        | `quick` (default) or `deep`                                                                                      |
 
-Every agent also has the compute tools and can read recorded results. An agent is offered when every tool it names has a source in the session; `/agents` marks one that is not.
+Every agent also has the compute tools (and `web_search` when it is on) and can read recorded results. An agent is offered when every tool it names has a source in the session; `/agents` marks one that is not.
 
 ### Skills
 
 Skills follow the Agent Skills standard, so a skill written for another agent client works here too. A skill is a directory with a `SKILL.md`, read from these places, the first of a name winning:
 
-1. `~/.tauric/tradingagents/skills/<name>/`
+1. `~/.config/tradingagents/skills/<name>/`
 2. `~/.agents/skills/<name>/`, shared between agent clients
 3. the built-in skills
 
 `SKILL.md` starts with YAML frontmatter: `name` (lowercase letters, digits and single hyphens, the directory's name) and `description` (what the skill does and when to use it), and optionally `license`, `compatibility`, `metadata` and `allowed-tools`, which is accepted but does not limit the tools. The method follows in Markdown. Text files under `references/` and `assets/` go with the skill, and the main agent reads them when the method calls for them. Files under `scripts/` are not run: TradingAgents has no shell.
 
 A skill that departs from the standard still loads, with a warning; one without a description, or whose frontmatter is not valid YAML, is skipped. A file that cannot be used is named at start with the reason, as is a skill that takes the place of another.
-
-## Sync
-
-With a Tauric API key, sessions can be copied to your Tauric account as they are saved. Sync is off until you turn it on: the app asks once, after it opens, with Turn on or Keep off; Esc leaves the question for the next start.
-
-```bash
-tradingagents sync on        # or: off, status
-```
-
-A synced copy holds your questions, the answers, the tools' arguments and results, the agents' work, and anything recalled from memory. The complete data behind a result is copied only for Tauric's own data; for other sources, and for a result too large to sync, only the text the model read. Turning sync on copies the current session from its start; turning it off deletes nothing already copied. Copies count toward your account's storage allowance.
-
-With sync on, sessions in your account that are not on this computer show in `/resume` and in `tradingagents sessions`, marked as in your account. Opening one (from `/resume`, or with `--resume <id>`) copies it here and continues it, and it keeps syncing as any session does. A copy holds what was synced, so results from other sources, and results too large to sync, come back as the text the model read. A session on both computers is the one here; if its copy in your account differs, sync pauses for that session and says so.
-
-Deleting a session (`/resume`, then Ctrl+D, or `tradingagents sessions delete <id>`) deletes its copy too, and works on one that is only in your account.
 
 ## Limits
 

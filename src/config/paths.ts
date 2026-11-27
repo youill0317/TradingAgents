@@ -1,5 +1,6 @@
 // Copyright 2026 Tauric Research
 // SPDX-License-Identifier: Apache-2.0
+// Changed in this fork of TradingAgents 1.0.0.
 /**
  * Where the user's settings and data live: the home directory, named after the product, and the
  * entries at its top. Inside `sessions/` and `memory/`, files are named by the code that keeps them.
@@ -32,7 +33,7 @@ const SKILLS_DIR = "skills";
 
 /**
  * Where the user's settings, keys, own agents and skills, sessions and memory live: `<APP>_HOME`
- * (must be absolute), else `~/.tauric/<app>`.
+ * (must be absolute), else `~/.config/<app>` (this fork's own, apart from upstream's directory).
  */
 export function homeDir(env: NodeJS.ProcessEnv = process.env): string {
   const explicit = env[ENV.home];
@@ -40,7 +41,7 @@ export function homeDir(env: NodeJS.ProcessEnv = process.env): string {
     if (!isAbsolute(explicit)) throw new Error(message("config.homeNotAbsolute", { variable: ENV.home }));
     return explicit;
   }
-  return join(homedir(), ".tauric", APP_NAME);
+  return join(homedir(), ".config", APP_NAME);
 }
 
 /** The skills shared by agent apps on this computer (`~/.agents/skills`), read beside the user's own. */

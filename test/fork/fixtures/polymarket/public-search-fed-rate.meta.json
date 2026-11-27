@@ -1,0 +1,11 @@
+{
+  "source": "polymarket",
+  "name": "public-search-fed-rate",
+  "url": "https://gamma-api.polymarket.com/public-search?q=fed+rate&limit_per_type=20",
+  "status": 200,
+  "content_type": "application/json",
+  "recorded_at": "2026-11-25T15:06:26.000Z",
+  "bytes": 7646,
+  "hand_made": false,
+  "note": "An excerpt of a real answer: the first of the 20 events (\"Another Fed rate hike in 2026?\", one market) and the pagination of Polymarket's public search for \"fed rate\" saved with the planning samples (macro/raw/polymarket-public-search-fed.json, 594,239 bytes whole), its bytes unchanged, not recorded again; recorded_at is that answer's HTTP Date."
+}

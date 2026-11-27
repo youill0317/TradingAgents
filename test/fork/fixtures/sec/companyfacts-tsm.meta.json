@@ -1,0 +1,11 @@
+{
+  "source": "sec",
+  "name": "companyfacts-tsm",
+  "url": "https://data.sec.gov/api/xbrl/companyfacts/CIK0001046179.json",
+  "status": 200,
+  "content_type": "application/json",
+  "recorded_at": "2026-11-25T14:39:28.000Z",
+  "bytes": 57643,
+  "hand_made": false,
+  "note": "SEC's complete answer saved from data.sec.gov on 2026-11-25 with the SEC area's live samples (companyfacts-tsm.full.json.gz, 911,248 bytes decoded), cut for the tests to every concept the line catalog reads, LeaseLiabilities and LiabilitiesArisingFromFinancingActivities (the totals a test checks short-term and long-term debt against), dei's EntityCommonStockSharesOutstanding and srt's one concept SEC's answer holds, facts whose period ends on or after 2022-01-01, 356 facts in all; every fact, concept and unit kept is as SEC answered it."
+}

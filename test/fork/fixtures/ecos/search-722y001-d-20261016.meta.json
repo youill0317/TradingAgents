@@ -1,0 +1,11 @@
+{
+  "source": "ecos",
+  "name": "search-722y001-d-20261016",
+  "url": "https://ecos.bok.or.kr/api/StatisticSearch/***/json/kr/1/1000/722Y001/D/20261016/20261125/0101000",
+  "status": 200,
+  "content_type": "application/json;charset=UTF-8",
+  "recorded_at": "2026-11-26T09:00:00.000Z",
+  "bytes": 9621,
+  "hand_made": true,
+  "note": "Hand-made in the JSON the Bank of Korea's ECOS Open API guide (ecos.bok.or.kr/api, developer specification: StatisticSearch, StatisticItemList, StatisticTableList, their JSON rows and RESULT codes) as open-source ECOS clients document it, and the series codes the owner verified (722Y001, 901Y009) give for StatisticSearch: the Bank of Korea base rate (722Y001, item 0101000, cycle D) from 2026-10-16 to 2026-11-25. Rows on weekdays (New Year's Day left out); the values are illustrative, not ECOS's. No ECOS_API_KEY was used, and the key is not in the URL. Listed for a live check."
+}

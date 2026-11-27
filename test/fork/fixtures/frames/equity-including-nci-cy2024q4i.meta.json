@@ -1,0 +1,11 @@
+{
+  "source": "frames",
+  "name": "equity-including-nci-cy2024q4i",
+  "url": "https://data.sec.gov/api/xbrl/frames/us-gaap/StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest/USD/CY2024Q4I.json",
+  "status": 200,
+  "content_type": "application/json",
+  "recorded_at": "2026-11-26T00:00:00.000Z",
+  "bytes": 925,
+  "hand_made": true,
+  "note": "Hand-made: SEC's frame of StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest for CY2024Q4I in the form SEC answers frames (as the saved frames in this folder), holding only the rows of Berkshire Hathaway, Walmart and GE: each row is the fact that company's companyfacts answer (saved from data.sec.gov on 2026-11-25 with the SEC area's samples) marks with frame CY2024Q4I, its accession, period and value as filed (where a saved frame holds the same company, the two agree), and its name and location as SEC's saved frames give them. SEC's own frame holds every filer's row; pts counts the rows given here. Record the real frame to replace it."
+}

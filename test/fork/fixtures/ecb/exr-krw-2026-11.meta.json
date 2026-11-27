@@ -1,0 +1,11 @@
+{
+  "source": "ecb",
+  "name": "exr-krw-2026-11",
+  "url": "https://data-api.ecb.europa.eu/service/data/EXR/D.KRW.EUR.SP00.A?format=csvdata&startPeriod=2026-11-01",
+  "status": 200,
+  "content_type": "text/csv",
+  "recorded_at": "2026-11-25T14:58:44.000Z",
+  "bytes": 4337,
+  "hand_made": false,
+  "note": "A real answer, kept whole: saved with the planning samples (macro/raw/ecb-exr-krw-2026-11.csv, byte for byte), not recorded again; recorded_at is that answer's HTTP Date."
+}

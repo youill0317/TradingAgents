@@ -1,5 +1,6 @@
 // Copyright 2026 Tauric Research
 // SPDX-License-Identifier: Apache-2.0
+// Changed in this fork of TradingAgents 1.0.0.
 /**
  * Sessions on disk: one append-only file per session, so a conversation can be resumed and read
  * back. The file holds the events as the reader saw them (finished text, no reasoning) and, when a
@@ -16,7 +17,6 @@ import {
   errorText,
   type Message,
   message,
-  NOTICE,
   type RouteName,
   withoutReplay,
 } from "../contracts/index.js";
@@ -47,7 +47,6 @@ import {
   SESSION_ID,
   type Turn,
 } from "./engine.js";
-import { type RemoteSessions, SessionSync, type SyncOptions } from "./sync.js";
 
 type Header = { kind: "session"; id: string; created: string };
 type TurnEntry = {
@@ -85,12 +84,7 @@ export type SessionSummary = {
   updated: Date;
   title: string;
   turns: number;
-  /** Only in the Tauric account, not on this computer yet (its turns are not counted). */
-  where?: "account";
 };
-
-/** Copying the session to Tauric, when sync is on: where to, what must never be sent, and whether it still is on. */
-export type SyncSetup = Pick<SyncOptions, "remote" | "metadata" | "stillOn">;
 
 /** Builds the session's engine: a new one, or one continuing where the file left off. */
 export type EngineBuilder = (init: {
@@ -106,8 +100,6 @@ type ModelSwitch = {
   route: RouteName;
   /** Who the new model's replay data may be sent back to; what another model attached is not sent to it. */
   replayKey: string | undefined;
-  /** Where the session is copied, when the switch brings a Tauric key and sync is on. */
-  sync?: SyncSetup;
 };
 
 export class SessionError extends Error {
@@ -119,11 +111,8 @@ export class Session {
   private failed = false;
   /** A payload could not be kept on this computer (said once). */
   private unkept = false;
-  private sync: SessionSync | undefined;
   /** The turn running, if one is: a model switch waits for it to end. */
   private running: object | undefined;
-  /** The copy most recently asked for, by a switch that brought a key. */
-  private wantedSync: SyncSetup | undefined;
   /** The model switched to while a turn ran, taken up when it ends. */
   private next: ModelSwitch | undefined;
 
@@ -142,12 +131,7 @@ export class Session {
   ) {}
 
   /** A new session; if it cannot be saved, it runs unsaved and says so once. */
-  static async start(
-    dir: string,
-    build: EngineBuilder,
-    report: (problem: string) => void,
-    sync?: SyncSetup,
-  ): Promise<Session> {
+  static async start(dir: string, build: EngineBuilder, report: (problem: string) => void): Promise<Session> {
     const id = newSessionId();
     let lock: Lock | undefined;
     let log: LogWriter | undefined;
@@ -178,7 +162,7 @@ export class Session {
         lock,
         { events: [], interrupted: false },
         report,
-      ).syncing(sync);
+      );
       return session;
     } catch (error) {
       await log?.close().catch(() => {});
@@ -197,7 +181,6 @@ export class Session {
     replayKey: string | undefined,
     build: EngineBuilder,
     report: (problem: string) => void,
-    sync?: SyncSetup,
   ): Promise<Session> {
     if (!SESSION_ID.test(id)) throw new SessionError(message("session.badId", { id }));
     const path = fileOf(dir, id);
@@ -240,7 +223,7 @@ export class Session {
         lock,
         replay,
         report,
-      ).syncing(sync);
+      );
       // Resumed on another model than the one it went on with: kept as a switch, so a later switch back
       // does not bring back what this one is not sent. On file before the session is given, so a reader
       // of the file then sees the model it resumed on.
@@ -255,7 +238,6 @@ export class Session {
         session.write([entry]);
         await session.writes;
       }
-      session.catchUp();
       return session;
     } catch (error) {
       await log?.close().catch(() => {});
@@ -295,33 +277,13 @@ export class Session {
       ? { history, ...(historyTokens !== undefined ? { historyTokens } : {}), ...counters }
       : { history: history.map((message) => withoutReplay(message)), ...counters };
     this.current = next.build({ session: this.id, restore, evidence: this.evidence });
-    // The copy changes first, so the change is not sent where the session is no longer copied.
-    if (next.sync) this.syncWith(next.sync);
     const entry: ModelEntry = {
       kind: "model",
       route: next.route,
       ...(next.replayKey !== undefined ? { replayKey: next.replayKey } : {}),
       at: new Date().toISOString(),
     };
-    this.write([entry], (size) => this.sync?.schedule(size));
-  }
-
-  /**
-   * Copy the session through `setup`, from its start: sync turned on while it runs, or a key saved since
-   * that may be another account's, so the copy that ran goes on no further once its last upload has ended.
-   * Of several asked, the last wins.
-   */
-  syncWith(setup: SyncSetup): void {
-    this.wantedSync = setup;
-    this.writes = this.writes.then(async () => {
-      if (this.wantedSync !== setup) return;
-      const running = this.sync;
-      this.sync = undefined;
-      await running?.close().catch(() => {});
-      this.syncing(setup);
-      // Everything written meanwhile goes with the new copy.
-      this.catchUp();
-    });
+    this.write([entry], true);
   }
 
   /** A turn has ended: a model switched to while it ran takes over now. */
@@ -375,7 +337,7 @@ export class Session {
           ...result.history,
           runs: result.runs.map((run) => ({ ...run, messages: withoutReasoning(run.messages) })),
         };
-        this.write([commit], (size) => this.sync?.schedule(size));
+        this.write([commit], true);
         this.ended(running);
         await this.writes;
         return result;
@@ -390,12 +352,11 @@ export class Session {
   }
 
   async close(): Promise<void> {
-    // Every write, those queued while waiting too (a copy started late catches up with one).
+    // Every write, those queued while waiting too.
     for (let waited: Promise<void> | undefined; waited !== this.writes; ) {
       waited = this.writes;
       await waited;
     }
-    await this.sync?.close();
     await this.log?.close().catch(() => {});
     await this.lock?.release();
   }
@@ -418,49 +379,18 @@ export class Session {
     });
   }
 
-  /** Start copying to Tauric, for a session that is saved. */
-  private syncing(setup: SyncSetup | undefined): this {
-    if (setup && this.log) {
-      this.sync = new SessionSync({ ...setup, path: this.log.path, id: this.id, report: this.report });
-    }
-    return this;
-  }
-
   /**
-   * Catch up on what an earlier run of the session did not send. A crash can leave a turn's rows after
-   * its last commit that were never made durable, so the file is made durable before any is sent; a
-   * failure is reported as a write's is.
+   * Queue a write; the first failure is reported once and recording stops. With `durable` (a turn's
+   * commit, a model switch), the write is made durable.
    */
-  private catchUp(): void {
-    const log = this.log;
-    if (!log || !this.sync) return;
-    this.writes = this.writes.then(async () => {
-      if (this.failed) return;
-      try {
-        await log.sync();
-        this.sync?.schedule(await log.size());
-      } catch (error) {
-        this.failed = true;
-        this.report(message("session.noLongerSaved", { reason: errorText(error) }));
-      }
-    });
-  }
-
-  /**
-   * Queue a write; the first failure is reported once and recording stops. With `committed`, the
-   * write is made durable and the file's size then is passed on (only that much is ever synced).
-   */
-  private write(entries: unknown[], committed?: (size: number) => void): void {
+  private write(entries: unknown[], durable = false): void {
     const log = this.log;
     if (!log || !entries.length) return;
     this.writes = this.writes.then(async () => {
       if (this.failed) return;
       try {
         await log.append(...entries);
-        if (committed) {
-          await log.sync();
-          committed(await log.size());
-        }
+        if (durable) await log.sync();
       } catch (error) {
         this.failed = true;
         this.report(message("session.noLongerSaved", { reason: errorText(error) }));
@@ -535,115 +465,23 @@ export function sessionsDir(dir: string): string {
   return join(dir, SESSIONS_DIR);
 }
 
-/** Where an account deletion waits until Tauric confirms it: the session ids, one list. */
-function pendingFile(dir: string): string {
-  return join(sessionsDir(dir), "deleting.json");
-}
-
-export async function pendingDeletions(dir: string): Promise<string[]> {
-  try {
-    const parsed: unknown = JSON.parse((await readPrivate(pendingFile(dir))) ?? "[]");
-    return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === "string") : [];
-  } catch {
-    return [];
-  }
-}
-
-async function setPending(dir: string, change: (ids: string[]) => string[]): Promise<void> {
-  const ids = [...new Set(change(await pendingDeletions(dir)))];
-  if (ids.length || (await readPrivate(pendingFile(dir)).catch(() => undefined)) !== undefined) {
-    await writePrivate(pendingFile(dir), `${JSON.stringify(ids)}\n`);
-  }
-}
-
-/**
- * Where a deletion took effect: here and in the account, here only (no account copy), here with the
- * account's pending, or (a session only in the account) there, or pending there.
- */
-export type Deleted = "everywhere" | "here" | "pending" | "account" | "accountPending";
-
-/**
- * Delete session `id`: here, and from the account through `remote` when sync copies sessions there. A
- * session open anywhere is not deleted. The account deletion is kept before the file goes, and sent again
- * later when Tauric cannot be reached now: "everywhere", "here" (no account copy), or "pending".
- */
-export async function deleteSession(
-  dir: string,
-  id: string,
-  remote?: Pick<RemoteSessions, "deleteSession" | "describe">,
-): Promise<Deleted> {
+/** Delete session `id`; a session open anywhere is not deleted. */
+export async function deleteSession(dir: string, id: string): Promise<void> {
   if (!SESSION_ID.test(id)) throw new SessionError(message("session.badId", { id }));
   const path = fileOf(dir, id);
   try {
     await fs.access(path);
   } catch {
-    // A session only in the account is deleted there, once the account is known to have it: Tauric takes
-    // a deletion of any id, so a mistyped one would otherwise read as deleted.
-    if (!remote) throw new SessionError(message("session.missing", { id }));
-    let found: { size: number } | undefined;
-    try {
-      found = await remote.describe(id);
-    } catch (error) {
-      throw new SessionError(message("sync.deleteUnconfirmed", { id, reason: errorText(error) }));
-    }
-    if (!found) throw new SessionError(message("session.missing", { id }));
-    // Held as a download holds it, so none copies it here while it is being deleted.
-    const lock = await takeLock(dir, id);
-    try {
-      await setPending(dir, (ids) => [...ids, id]);
-    } finally {
-      await lock.release();
-    }
-    return (await sendDeletion(dir, id, remote)) === "everywhere" ? "account" : "accountPending";
+    throw new SessionError(message("session.missing", { id }));
   }
   const lock = await takeLock(dir, id);
   try {
-    if (remote) await setPending(dir, (ids) => [...ids, id]);
     // The kept payloads first: a deletion cut short leaves the session listed, to delete again.
     await fs.rm(keptOf(dir, id), { recursive: true, force: true });
-    // A copy from the account a crash left beside the file holds the same data.
-    await fs.rm(downloadOf(dir, id), { force: true });
     await fs.rm(path);
   } finally {
     await lock.release();
   }
-  if (!remote) return "here";
-  return sendDeletion(dir, id, remote);
-}
-
-/** Delete `id` from the account, kept pending when Tauric cannot be reached now. */
-async function sendDeletion(
-  dir: string,
-  id: string,
-  remote: Pick<RemoteSessions, "deleteSession">,
-): Promise<"everywhere" | "pending"> {
-  try {
-    await remote.deleteSession(id);
-    await setPending(dir, (ids) => ids.filter((pending) => pending !== id));
-    return "everywhere";
-  } catch {
-    return "pending";
-  }
-}
-
-/** Send the account deletions that could not be sent before; those that fail again wait for next time. */
-export async function sendPendingDeletions(
-  dir: string,
-  remote: Pick<RemoteSessions, "deleteSession">,
-): Promise<void> {
-  for (const id of await pendingDeletions(dir)) {
-    try {
-      await remote.deleteSession(id);
-      await setPending(dir, (ids) => ids.filter((pending) => pending !== id));
-    } catch {
-      // Kept for the next run.
-    }
-  }
-}
-
-/** Where a copy from the account is written before it becomes session `id`: hidden, never listed. */
-export function downloadOf(dir: string, id: string): string {
-  return join(sessionsDir(dir), `.${id}.download.tmp`);
 }
 
 export function fileOf(dir: string, id: string): string {
@@ -706,7 +544,6 @@ function restored(
   let historyTokens: number | undefined;
   let seq = 0;
   let turns = 0;
-  let nudged = false;
   /** The replay key the conversation went on with last: a turn's, or a switch's. */
   let inForce: string | undefined;
   const events: EventEnvelope[] = [];
@@ -745,8 +582,6 @@ function restored(
     const { envelope } = entry;
     events.push(envelope);
     // Folded from every recorded event, not only the turns shown again or committed.
-    if (envelope.event.type === "notice" && envelope.event.code === NOTICE.capabilityUnavailable)
-      nudged = true;
     seq = Math.max(seq, envelope.seq + 1);
     turns = Math.max(turns, turnNumber(envelope.turn));
   }
@@ -769,7 +604,6 @@ function restored(
       seq,
       turns,
       ...(historyTokens !== undefined ? { historyTokens } : {}),
-      ...(nudged ? { nudged } : {}),
     },
     replay: { events: replay, interrupted },
     evidence: restoreEvidence(evidenceRows, committed),

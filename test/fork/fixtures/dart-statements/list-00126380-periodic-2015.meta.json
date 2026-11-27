@@ -1,0 +1,11 @@
+{
+  "source": "dart-statements",
+  "name": "list-00126380-periodic-2015",
+  "url": "https://opendart.fss.or.kr/api/list.json?crtfc_key=***&corp_code=00126380&bgn_de=20150101&pblntf_ty=A&sort=date&sort_mth=asc&page_no=1&page_count=100",
+  "status": 200,
+  "content_type": "application/json;charset=UTF-8",
+  "recorded_at": "2026-11-25T22:00:00.000Z",
+  "bytes": 10377,
+  "hand_made": true,
+  "note": "Hand-made, not recorded (no request is sent to opendart.fss.or.kr from the development session): list.json's answer in OpenDART's documented JSON (status, message, page_no, page_count, total_count, total_page, and list rows of corp_code, corp_name, stock_code, corp_cls, report_nm, rcept_no, flr_nm, rcept_dt, rm) for Samsung Electronics' periodic reports (pblntf_ty A) received from 2015-01-01 to 2026-11-25, oldest first, one page: its 48 annual, half-year and quarterly reports from the 2014 annual report on. The receipt numbers of the reports received from 2025 on are those of dart/list-00126380-periodic.json; the others are invented in OpenDART's form (14 digits, the receipt date first)."
+}

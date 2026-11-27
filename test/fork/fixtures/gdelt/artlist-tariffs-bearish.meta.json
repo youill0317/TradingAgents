@@ -1,0 +1,11 @@
+{
+  "source": "gdelt",
+  "name": "artlist-tariffs-bearish",
+  "url": "https://api.gdeltproject.org/api/v2/doc/doc?query=tariffs+tone%3C-5&mode=artlist&format=json&maxrecords=250&sort=datedesc",
+  "status": 200,
+  "content_type": "application/json; charset=utf-8",
+  "recorded_at": "2026-11-25T22:00:00.000Z",
+  "bytes": 1261,
+  "hand_made": true,
+  "note": "Hand-made, not recorded (api.gdeltproject.org was not reachable from the development session): GDELT DOC 2.0's ArtList answer in its documented JSON form ({articles: [{url, url_mobile, title, seendate, socialimage, domain, language, sourcecountry}]}, newest first), with invented articles at reserved example domains: three articles matching \"tariffs\" with a tone below -5 (GDELT's tone<-5 operator), seen 2026-11-24 and 2026-11-25."
+}

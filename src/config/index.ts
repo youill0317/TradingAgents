@@ -1,5 +1,6 @@
 // Copyright 2026 Tauric Research
 // SPDX-License-Identifier: Apache-2.0
+// Changed in this fork of TradingAgents 1.0.0.
 /**
  * Everything a user or the environment sets, and where it lives: the home directory and its files
  * (paths), environment variables (env), config.json (settings), stored keys (credentials), the user's
@@ -42,5 +43,4 @@ export {
   saveCredential,
   saveModel,
   saveServer,
-  saveSync,
 } from "./settings.js";

@@ -1,5 +1,6 @@
 // Copyright 2026 Tauric Research
 // SPDX-License-Identifier: Apache-2.0
+// Changed in this fork of TradingAgents 1.0.0.
 /**
  * The stored keys: `credentials.json` in the home directory, owner-only. It is read more strictly than
  * the settings: a file that is not the user's own is not used. Problems name the field, never a value.
@@ -16,13 +17,9 @@ export const credentialKey = z
   .trim()
   .min(KEYS.minChars)
   .refine((value) => !/[\r\n]/.test(value));
-/** The keys credentials.json keeps: the compatible server's (`model`) and each hosted provider's, Tauric's among them. */
+/** The keys credentials.json keeps: the compatible server's (`model`) and each hosted provider's. */
 export type CredentialName = "model" | HostedProvider;
-export const CREDENTIAL_NAMES: readonly CredentialName[] = [
-  "tauric",
-  "model",
-  ...HOSTED_PROVIDERS.filter((provider) => provider !== "tauric"),
-];
+export const CREDENTIAL_NAMES: readonly CredentialName[] = ["model", ...HOSTED_PROVIDERS];
 const credentialFields = Object.fromEntries(CREDENTIAL_NAMES.map((name) => [name, credentialKey]));
 type FileCredentials = { [N in CredentialName]?: string };
 
