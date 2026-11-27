@@ -13,13 +13,12 @@
  * other targets) are the providers' own tests' business. A tool reading more than one method runs once per
  * method; dcf reads a statement from SEC EDGAR and a profile from Yahoo together; statements runs annual and
  * quarterly, news by symbol (Yahoo) and by topic (GDELT); markets runs each of its 22 views. Then, in a setup
- * with Korea's keys too (DART_API_KEY, ECOS_API_KEY, KOSIS_API_KEY, DATA_GO_KR_API_KEY, NAVER_CLIENT_ID and
- * NAVER_CLIENT_SECRET), Samsung Electronics (XKRX:005930) through every Korean source the same way: its
- * statements, filings, a filing's section and its insider reports from OpenDART, its quote and daily prices
- * from the FSC when Yahoo fails, an ECOS and a KOSIS series, the Bank of Korea's row of the central banks'
- * view, news for Korean words from Naver's news search and GDELT, and the instrument search finding it by its
- * Korean name (korea-routes.test.ts). The providers' own tests hold the golden texts. No request reaches the
- * network.
+ * with Korea's keys too (DART_API_KEY, ECOS_API_KEY, KOSIS_API_KEY and DATA_GO_KR_API_KEY), Samsung
+ * Electronics (XKRX:005930) through every Korean source the same way: its statements, filings, a filing's
+ * section and its insider reports from OpenDART, its quote and daily prices from the FSC when Yahoo fails, an
+ * ECOS and a KOSIS series, the Bank of Korea's row of the central banks' view, news for Korean words from
+ * GDELT, and the instrument search finding it by its Korean name (korea-routes.test.ts). The providers' own
+ * tests hold the golden texts. No request reaches the network.
  */
 import { describe, expect, test } from "bun:test";
 import { MARKET_VIEWS } from "../../../src/data/capabilities.js";
@@ -558,13 +557,11 @@ describe("with Korea's keys too, Samsung Electronics through every Korean source
     expect(rows.at(-1)).toMatchObject({ bank: "Bank of Korea", key: "series:kr.ecos.722y001.0101000" });
   });
 
-  test("news for Korean words, from Naver's news search and GDELT, and article on a Naver article", async () => {
+  test("news for Korean words (GDELT), then article on what it listed", async () => {
     const run = await checkKorea("news", { query: KOREAN_WORDS }, "News search");
-    const ids = (run.payload as { articles: { id: string }[] }).articles.map((article) => article.id);
-    expect(ids.some((id) => id.startsWith("gd:"))).toBe(true);
-    const naver = ids.find((id) => id.startsWith("nv:"));
-    expect(naver).toBeDefined();
-    await checkKorea("article", { id: naver }, "News search");
+    const listed = (run.payload as { articles: { id: string }[] }).articles[0]?.id;
+    expect(listed).toStartWith("gd:");
+    await checkKorea("article", { id: listed }, "News search");
   });
 
   test("find_instrument: the company's Korean name, from OpenDART's company list", async () => {

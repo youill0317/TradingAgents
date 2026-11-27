@@ -135,12 +135,10 @@ test("with the Korean keys: the FSC's prices, and OpenDART's statements, filings
     ecosKey: "ecos-0123456789",
     kosisKey: "kosis-0123456789",
     dataGoKrKey: "datagokr-0123456789",
-    naverClientId: "naver-id",
-    naverClientSecret: "naver-secret",
   };
-  // ECOS, KOSIS and Naver serve inside capabilities declared in every setup (macro series, market views,
-  // news): they add no method. Without SEC_USER_AGENT, OpenDART alone declares the filers' three for Korean
-  // listings (a US listing's answer says to set SEC_USER_AGENT); screens stay SEC EDGAR's.
+  // ECOS and KOSIS serve inside capabilities declared in every setup (macro series, market views): they add
+  // no method. Without SEC_USER_AGENT, OpenDART alone declares the filers' three for Korean listings (a US
+  // listing's answer says to set SEC_USER_AGENT); screens stay SEC EDGAR's.
   const alone = declared(korean);
   expect(alone.served).toEqual({
     ...KEYLESS,

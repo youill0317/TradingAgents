@@ -18,10 +18,10 @@ or supported by Tauric Research.
   FRED, and instrument search reads the fork's catalogs, Yahoo's search and SEC's ticker list. SEC EDGAR is
   read only with `SEC_USER_AGENT` set. Korean sources, each with its own key: OpenDART (a Korean company's
   statements, filings and their sections, insider reports, and its company list for instrument search), the
-  FSC's official KRX end-of-day prices on data.go.kr, the Bank of Korea's ECOS and Statistics Korea's KOSIS
-  (economic series, and the Bank of Korea's base rate among the central banks), and Naver's news search for
-  news in Korean. A built-in agent is offered when every data tool it names is served: macro in every setup,
-  risk with `SEC_USER_AGENT` or `DART_API_KEY`, equity and quant with `SEC_USER_AGENT`; the built-in skills
+  FSC's official KRX end-of-day prices on data.go.kr, and the Bank of Korea's ECOS and Statistics Korea's
+  KOSIS (economic series, and the Bank of Korea's base rate among the central banks). A built-in agent is
+  offered when every data tool it names is served: macro in every setup, risk with `SEC_USER_AGENT` or
+  `DART_API_KEY`, equity and quant with `SEC_USER_AGENT`; the built-in skills
   come with them. The settings, SEC's User-Agent and the agencies' keys, are read from the environment or
   from a `"data"` object in `credentials.json` ([configuration](docs/configuration.md#public-data)); which
   source serves what is in [docs/fork/data-sources.md](docs/fork/data-sources.md), and how the providers are

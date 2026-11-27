@@ -10,8 +10,7 @@
  * Without SEC_USER_AGENT nothing is read from SEC EDGAR, so the SEC-backed data (filings, statements,
  * insider trades, sector screens) is not offered: SEC's fair-access rule asks every program that reads EDGAR
  * to name its sender. A value set where it cannot be used (on more than one line; for SEC_USER_AGENT, with
- * characters a User-Agent cannot carry; for NAVER_CLIENT_ID and NAVER_CLIENT_SECRET, sent in headers, with a
- * character a header cannot carry) is said, and not used: the environment's then gives way to
+ * characters a User-Agent cannot carry) is said, and not used: the environment's then gives way to
  * credentials.json's.
  */
 import { homedir } from "node:os";
@@ -35,13 +34,6 @@ export type PublicDataConfig = {
   kosisKey?: string;
   /** data.go.kr service key (the Financial Services Commission's market data). */
   dataGoKrKey?: string;
-  /** Naver search API client id and secret. */
-  naverClientId?: string;
-  naverClientSecret?: string;
-  /** U.S. Bureau of Economic Analysis API key. */
-  beaKey?: string;
-  /** U.S. Energy Information Administration API key. */
-  eiaKey?: string;
   /** Where answers worth keeping are cached on disk; in memory only when unset. */
   cacheDir?: string;
 };
@@ -54,10 +46,6 @@ export const PUBLIC_DATA_VARS = {
   ecosKey: "ECOS_API_KEY",
   kosisKey: "KOSIS_API_KEY",
   dataGoKrKey: "DATA_GO_KR_API_KEY",
-  naverClientId: "NAVER_CLIENT_ID",
-  naverClientSecret: "NAVER_CLIENT_SECRET",
-  beaKey: "BEA_API_KEY",
-  eiaKey: "EIA_API_KEY",
 } as const satisfies { [Field in Exclude<keyof PublicDataConfig, "cacheDir">]-?: string };
 
 type Field = keyof typeof PUBLIC_DATA_VARS;
@@ -81,16 +69,9 @@ const NOTE = {
 /** A setting as read: its value, why a value set cannot be used, or nothing set at all. */
 type Read = { value: string } | { why: string } | undefined;
 
-/** The settings sent as a request header's value (Naver's client id and secret). */
-const HEADER_VARS: ReadonlySet<string> = new Set([
-  PUBLIC_DATA_VARS.naverClientId,
-  PUBLIC_DATA_VARS.naverClientSecret,
-]);
-
 /**
  * `value` as `variable` uses it: trimmed, on one line, not empty (an empty one is not set); SEC's User-Agent
- * only in printable ASCII, the most a header carries; a setting sent in a header without a character a header
- * cannot carry: one above U+00FF (fetch refuses it) or a control character other than tab (RFC 9110).
+ * only in printable ASCII, the most a header carries.
  */
 function readValue(variable: string, value: unknown): Read {
   if (value === undefined) return undefined;
@@ -102,9 +83,6 @@ function readValue(variable: string, value: unknown): Read {
     return {
       why: "holds characters other than plain ASCII letters, digits and punctuation, which a User-Agent cannot carry",
     };
-  }
-  if (HEADER_VARS.has(variable) && /[^\t\x20-\x7e\x80-\xff]/.test(text)) {
-    return { why: "holds a character the request header it is sent in cannot carry" };
   }
   return { value: text };
 }

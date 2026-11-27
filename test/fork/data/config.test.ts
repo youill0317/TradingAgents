@@ -40,10 +40,6 @@ describe("where each setting is read from", () => {
       ecosKey: "ecos_api_key-value-0123",
       kosisKey: "kosis_api_key-value-0123",
       dataGoKrKey: "data_go_kr_api_key-value-0123",
-      naverClientId: "naver_client_id-value-0123",
-      naverClientSecret: "naver_client_secret-value-0123",
-      beaKey: "bea_api_key-value-0123",
-      eiaKey: "eia_api_key-value-0123",
       cacheDir: join(homedir(), ".cache", "tradingagents", "fork-data"),
     });
   });
@@ -76,20 +72,20 @@ describe("where each setting is read from", () => {
     await credentials({
       data: {
         FRED_API_KEY: 12345,
-        EIA_API_KEY: "multi\nline",
+        KOSIS_API_KEY: "multi\nline",
         FRED_KEY: "typo-value-0123",
         SEC_USER_AGENT: UA,
       },
     });
     const { config, notes } = await publicDataConfig({}, paths);
     expect(config.fredKey).toBeUndefined();
-    expect(config.eiaKey).toBeUndefined();
+    expect(config.kosisKey).toBeUndefined();
     expect(notes).toEqual([
       expect.stringContaining(
         `${paths.credentials}: data.FRED_KEY is not a setting this app reads (it reads SEC_USER_AGENT, FRED_API_KEY,`,
       ),
       `${paths.credentials}: data.FRED_API_KEY is not text, so it is not used`,
-      `${paths.credentials}: data.EIA_API_KEY spans more than one line, so it is not used`,
+      `${paths.credentials}: data.KOSIS_API_KEY spans more than one line, so it is not used`,
     ]);
     expect(notes.join("\n")).not.toContain("typo-value-0123");
     await credentials({ data: ["not", "an", "object"] });
@@ -181,78 +177,6 @@ describe("SEC_USER_AGENT's notes", () => {
   });
 });
 
-describe("NAVER_CLIENT_ID and NAVER_CLIENT_SECRET, sent in request headers", () => {
-  // Invented, in the form Naver's Developers Center issues them (letters and digits).
-  const ID = "Xq3LkZ9pWm2RtY7vBn4C";
-  const SECRET = "Hd8sK2mQ5w";
-
-  test("a character a header cannot carry (a zero-width space pasted in): not used, and said", async () => {
-    const pasted = `${SECRET}${String.fromCharCode(0x200b)}`;
-    const { config, notes } = await publicDataConfig(
-      { SEC_USER_AGENT: UA, NAVER_CLIENT_ID: ID, NAVER_CLIENT_SECRET: pasted },
-      paths,
-    );
-    expect(config.naverClientId).toBe(ID);
-    expect(config.naverClientSecret).toBeUndefined();
-    expect(notes).toEqual([
-      "NAVER_CLIENT_SECRET in the environment holds a character the request header it is sent in cannot carry, so it is not used",
-    ]);
-    expect(notes.join("\n")).not.toContain(SECRET);
-  });
-
-  test("any character above U+00FF, or a control character other than tab: in the environment or the file", async () => {
-    for (const bad of [
-      `${ID}${String.fromCharCode(0xfeff)}x`,
-      `${ID.slice(0, 4)}네이버`,
-      `${ID}${String.fromCharCode(0x2028)}x`,
-      `${ID}${String.fromCharCode(0x01)}x`,
-      `${ID}${String.fromCharCode(0x7f)}x`,
-      `${ID}${String.fromCharCode(0)}x`,
-    ]) {
-      await rm(paths.credentials, { force: true });
-      const fromEnv = await publicDataConfig({ SEC_USER_AGENT: UA, NAVER_CLIENT_ID: bad }, paths);
-      expect(fromEnv.config.naverClientId, JSON.stringify(bad)).toBeUndefined();
-      expect(fromEnv.notes, JSON.stringify(bad)).toEqual([
-        "NAVER_CLIENT_ID in the environment holds a character the request header it is sent in cannot carry, so it is not used",
-      ]);
-      await credentials({ data: { SEC_USER_AGENT: UA, NAVER_CLIENT_ID: bad } });
-      const stored = await publicDataConfig({}, paths);
-      expect(stored.config.naverClientId, JSON.stringify(bad)).toBeUndefined();
-      expect(stored.notes, JSON.stringify(bad)).toEqual([
-        `${paths.credentials}: data.NAVER_CLIENT_ID holds a character the request header it is sent in cannot carry, so it is not used`,
-      ]);
-    }
-    // The environment's gives way to the file's, which a header carries.
-    await credentials({ data: { NAVER_CLIENT_SECRET: SECRET } });
-    const fallback = await publicDataConfig(
-      { SEC_USER_AGENT: UA, NAVER_CLIENT_SECRET: `${SECRET}${String.fromCharCode(0x200b)}` },
-      paths,
-    );
-    expect(fallback.config.naverClientSecret).toBe(SECRET);
-    expect(fallback.notes).toEqual([
-      `NAVER_CLIENT_SECRET in the environment holds a character the request header it is sent in cannot carry, so it is not used; the one under "data" in ${paths.credentials} is used instead`,
-    ]);
-  });
-
-  test("what a header carries is used and says nothing: letters, digits, punctuation, a tab, Latin-1", async () => {
-    for (const good of [
-      ID,
-      "a_b-c.d~e",
-      `ab${String.fromCharCode(9)}cd`,
-      `ab${String.fromCharCode(0xe9)}cd`,
-    ]) {
-      const { config, notes } = await publicDataConfig(
-        { SEC_USER_AGENT: UA, NAVER_CLIENT_ID: good, NAVER_CLIENT_SECRET: good },
-        paths,
-      );
-      expect([config.naverClientId, config.naverClientSecret], JSON.stringify(good)).toEqual([good, good]);
-      expect(notes, JSON.stringify(good)).toEqual([]);
-      // Each is one fetch sends.
-      expect(() => new Headers({ "X-Naver-Client-Id": good })).not.toThrow();
-    }
-  });
-});
-
 describe("where the cache is", () => {
   test("<home>/cache/fork-data when TRADINGAGENTS_HOME names the home", () => {
     expect(cacheDirOf({ TRADINGAGENTS_HOME: "/data/ta", XDG_CACHE_HOME: "/xdg" }, { home: "/data/ta" })).toBe(
@@ -274,11 +198,9 @@ test("the secrets to keep out of what is said: every key and SEC's User-Agent, n
     secretsOf({
       secUserAgent: UA,
       fredKey: "f-0123",
-      naverClientId: "nid-0123",
-      naverClientSecret: "n-0123",
       cacheDir: "/tmp/c",
     }).sort(),
-  ).toEqual(["f-0123", "nid-0123", "n-0123", UA].sort());
+  ).toEqual(["f-0123", UA].sort());
 });
 
 test("data.go.kr's key in either spelling it is handed out in: both are secrets, and neither is said", () => {
