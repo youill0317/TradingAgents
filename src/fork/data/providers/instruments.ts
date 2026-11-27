@@ -87,7 +87,6 @@ import { type DartCompany, type DartCorpList, dartKeyNeeded, dartSource } from "
 import { ECB_CURRENCIES } from "../sources/ecb.js";
 import { ecosKeyNeeded } from "../sources/ecos.js";
 import { kosisKeyNeeded } from "../sources/kosis.js";
-import { hasHangul } from "../sources/naver.js";
 import { type SecCompany, secTicker, secTickers } from "../sources/sec-tickers.js";
 import {
   koreanCandidates,
@@ -100,6 +99,7 @@ import {
   US_EXCHANGES,
 } from "../sources/yahoo.js";
 import { yahooCall } from "../sources/yahoo-call.js";
+import { hasHangul } from "../util/hangul.js";
 
 /** The name answers give this provider. */
 export const INSTRUMENTS_SOURCE = "Instrument search";

@@ -8,9 +8,9 @@
  * periodic reports and their statement lines, filings lists and documents, insider reports
  * (test/fork/fixtures/dart); Yahoo's quote of the Korean listings the instrument search places, and Yahoo
  * failing for Samsung's own quote and chart, so the FSC's prices answer them (fsc/); ECOS's and KOSIS's series
- * and the Bank of Korea's base rate (statistics-korea-routes.test.ts); Naver's news search and GDELT's for
- * the same Korean words (naver/). `withKorea` answers as each source pages: OpenDART's list.json by window and
- * page from the filings lists, the FSC's rows by day and page, Naver's articles from `start`.
+ * and the Bank of Korea's base rate (statistics-korea-routes.test.ts); GDELT's article list for Korean words
+ * (gdelt/). `withKorea` answers as each source pages: OpenDART's list.json by window and page from the filings
+ * lists, the FSC's rows by day and page.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -30,18 +30,13 @@ const DATA_GO_KR_DECODED = "Fk3a9Q+Zr7Lw2/Xp5Tn8Vb1=Hc6Jd4Mg0Ks+Ye3Ru9Wq/Ai2Ov7S
 
 /** Korea's keys, each set: what a setup reading every Korean source is configured with. */
 export const KOREA_KEYS: Required<
-  Pick<
-    PublicDataConfig,
-    "dartKey" | "ecosKey" | "kosisKey" | "dataGoKrKey" | "naverClientId" | "naverClientSecret"
-  >
+  Pick<PublicDataConfig, "dartKey" | "ecosKey" | "kosisKey" | "dataGoKrKey">
 > = {
   dartKey: DART_KEY,
   ecosKey: ECOS_KEY,
   kosisKey: KOSIS_KEY,
   // The "Encoding" spelling, as data.go.kr's page offers it first.
   dataGoKrKey: encodeURIComponent(DATA_GO_KR_DECODED),
-  naverClientId: "nvClientId7Qx2Lw",
-  naverClientSecret: "nvSecret9Zk4Pd",
 };
 
 /** Every spelling of every Korean key that must never be said or sent anywhere but to its own source. */
@@ -163,20 +158,13 @@ const FSC_ROUTES: readonly FixtureRoute[] = [
   },
 ];
 
-/** Naver's news search and GDELT's article list for the same Korean words. */
+/** GDELT's article list for the Korean words. */
 const NEWS_ROUTES: readonly FixtureRoute[] = [
-  {
-    match: (url) =>
-      url.hostname === "openapi.naver.com" &&
-      url.pathname === "/v1/search/news.json" &&
-      url.searchParams.get("query") === KOREAN_WORDS,
-    file: "naver/news-samsung-semiconductor.json",
-  },
   {
     match: (url) =>
       url.hostname === "api.gdeltproject.org" &&
       url.searchParams.get("query") === gdeltQuery({ words: KOREAN_WORDS }),
-    file: "naver/gdelt-artlist-samsung-semiconductor.json",
+    file: "gdelt/artlist-samsung-semiconductor.json",
   },
 ];
 
@@ -244,21 +232,10 @@ async function fscPage(url: URL, response: Response): Promise<Response> {
   return new Response(JSON.stringify(parsed), { status: response.status, headers: response.headers });
 }
 
-/** Naver's page asked: `display` articles from `start`, of the answer's whole list. */
-async function naverPage(url: URL, response: Response): Promise<Response> {
-  const body = (await response.json()) as { items?: unknown[]; start?: number; display?: number };
-  const start = Number(url.searchParams.get("start") ?? "1");
-  const display = Number(url.searchParams.get("display") ?? "10");
-  if (Array.isArray(body.items)) body.items = body.items.slice(start - 1, start - 1 + display);
-  body.start = start;
-  body.display = body.items?.length ?? 0;
-  return new Response(JSON.stringify(body), { status: response.status, headers: response.headers });
-}
-
 /**
  * `inner` answering as the Korean sources page: OpenDART's list.json from the filings lists (each window of
- * receipt days and each page), the FSC's rows by day and page, Naver's articles from `start`. Every other
- * request is `inner`'s; the requests made are listed in `inner`'s.
+ * receipt days and each page), the FSC's rows by day and page. Every other request is `inner`'s; the
+ * requests made are listed in `inner`'s.
  */
 export function withKorea(inner: FixtureFetch): FixtureFetch {
   const answer = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
@@ -272,7 +249,6 @@ export function withKorea(inner: FixtureFetch): FixtureFetch {
     const response = await inner(input, init);
     if (!response.ok) return response;
     if (url.hostname === "apis.data.go.kr") return fscPage(url, response);
-    if (url.hostname === "openapi.naver.com") return naverPage(url, response);
     return response;
   };
   return Object.assign(answer, { requests: inner.requests, unmatched: inner.unmatched }) as FixtureFetch;

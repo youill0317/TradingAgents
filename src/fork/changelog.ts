@@ -21,7 +21,7 @@ const FORK_NOTES: { readonly [version: string]: VersionNotes["sections"] } = {
       items: [
         "This fork needs no data account, and sessions stay on this computer.",
         "Data: quotes and prices, company data, economic series, news, market overviews, event odds and instrument search from free public sources (Yahoo, the U.S. Treasury, the New York Fed, the ECB, FRED, GDELT, Polymarket), and with SEC_USER_AGENT set SEC EDGAR's statements, filings, insider transactions and sector screens over Wikipedia's S&P lists.",
-        "Korean data, each source with its key: OpenDART's statements, filings and insider reports of Korean companies, and their names in instrument search (DART_API_KEY); the FSC's official KRX end-of-day prices (DATA_GO_KR_API_KEY); the Bank of Korea's ECOS and Statistics Korea's KOSIS series (ECOS_API_KEY, KOSIS_API_KEY); Naver's news search for news in Korean (NAVER_CLIENT_ID, NAVER_CLIENT_SECRET).",
+        "Korean data, each source with its key: OpenDART's statements, filings and insider reports of Korean companies, and their names in instrument search (DART_API_KEY); the FSC's official KRX end-of-day prices (DATA_GO_KR_API_KEY); the Bank of Korea's ECOS and Statistics Korea's KOSIS series (ECOS_API_KEY, KOSIS_API_KEY).",
         "Agents: Macro Strategy and the built-in skills are offered in every setup; Equity Research, Quant Research and Risk Analysis with SEC_USER_AGENT set; Risk Analysis with DART_API_KEY set too.",
         "Web search: `web_search` searches the web through Anthropic's or OpenAI's own search with your key for it, or through Google's when TRADINGAGENTS_WEB_SEARCH names it.",
         "Models: OpenAI, Anthropic, Google, DeepSeek, OpenRouter, AI subscriptions (ChatGPT), or self-hosted models.",

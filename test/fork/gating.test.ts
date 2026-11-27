@@ -19,8 +19,8 @@
  * prediction markets; with SEC_USER_AGENT also statements, filings, insider transactions and sector screens
  * (SEC EDGAR); with DART_API_KEY statements, filings and insider transactions for Korean listings (OpenDART),
  * and no sector screen. The other Korean keys add sources to capabilities served in every setup (the FSC's
- * prices after Yahoo's, ECOS's and KOSIS's series, the Bank of Korea in the market views, Naver's news), so
- * they gate nothing. Instrument search gates no agent: no agent names find_instrument.
+ * prices after Yahoo's, ECOS's and KOSIS's series, the Bank of Korea in the market views), so they gate
+ * nothing. Instrument search gates no agent: no agent names find_instrument.
  */
 // The network guard, also when this file is run from elsewhere than the repository's root.
 import "./net-guard.js";
@@ -57,8 +57,6 @@ const KOREAN_KEYS: PublicDataConfig = {
   ecosKey: "ecos-0123456789",
   kosisKey: "kosis-0123456789",
   dataGoKrKey: "datagokr-0123456789",
-  naverClientId: "naver-id",
-  naverClientSecret: "naver-secret",
 };
 
 /** Every setting the fork reads, each set (made-up values: building an engine asks no source anything). */
@@ -69,10 +67,6 @@ const EVERY_SETTING: PublicDataConfig = {
   ecosKey: "ecos-0123456789",
   kosisKey: "kosis-0123456789",
   dataGoKrKey: "datagokr-0123456789",
-  naverClientId: "naver-id",
-  naverClientSecret: "naver-secret",
-  beaKey: "bea-0123456789",
-  eiaKey: "eia-0123456789",
 };
 
 /**
@@ -102,8 +96,8 @@ const CONFIGURED: readonly { name: string; publicData: PublicDataConfig; offered
     publicData: { dartKey: "dart-0123456789" },
     offered: { agents: ["macro", "risk"], skills: BUILT_IN_SKILLS },
   },
-  // The same two with every Korean key: the FSC's prices, ECOS's and KOSIS's series, the Bank of Korea's rate
-  // and Naver's news join capabilities already served in every setup, and none of them serves screen.
+  // The same two with every Korean key: the FSC's prices, ECOS's and KOSIS's series and the Bank of Korea's
+  // rate join capabilities already served in every setup, and none of them serves screen.
   {
     name: "every Korean key, without SEC_USER_AGENT",
     publicData: KOREAN_KEYS,

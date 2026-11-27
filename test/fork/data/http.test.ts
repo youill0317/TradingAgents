@@ -356,13 +356,13 @@ describe("the rates services publish", () => {
       undefined,
       undefined,
     ]);
-    // None for OpenDART, ECOS, data.go.kr or Naver: their documents give no number of requests a second or a
-    // minute, and their daily quotas are theirs to enforce.
-    expect(
-      ["opendart.fss.or.kr", "ecos.bok.or.kr", "apis.data.go.kr", "openapi.naver.com"].map((host) =>
-        ruleFor(host),
-      ),
-    ).toEqual([undefined, undefined, undefined, undefined]);
+    // None for OpenDART, ECOS or data.go.kr: their documents give no number of requests a second or a minute,
+    // and their daily quotas are theirs to enforce.
+    expect(["opendart.fss.or.kr", "ecos.bok.or.kr", "apis.data.go.kr"].map((host) => ruleFor(host))).toEqual([
+      undefined,
+      undefined,
+      undefined,
+    ]);
   });
 
   test("SEC: ten requests in any second, across its hosts", async () => {
@@ -494,15 +494,15 @@ describe("who is named, and what is never said", () => {
       const { fetch, requests } = scripted(ok("{}"));
       const { http, timer } = client(fetch);
       const error = await failure(
-        http.get("https://openapi.naver.com/v1/search/news.json?query=x", {
-          source: "Naver",
-          headers: { "X-Naver-Client-Id": "Xq3LkZ9pWm2RtY7vBn4C", "X-Naver-Client-Secret": value },
+        http.get("https://api.example.com/v1/items?query=x", {
+          source: "Example",
+          headers: { Accept: "application/json", "X-Api-Key": value },
           redirect,
         }),
       );
       expect(error.kind).toBe("unavailable");
       expect(error.message).toBe(
-        "Naver was not asked: the X-Naver-Client-Secret header of its request holds a character a header cannot carry.",
+        "Example was not asked: the X-Api-Key header of its request holds a character a header cannot carry.",
       );
       expect(error.message).not.toContain("Hd8sK2mQ5w");
       expect(requests).toEqual([]);
@@ -548,7 +548,7 @@ describe("who is named, and what is never said", () => {
       port: 0,
       fetch(request) {
         const url = new URL(request.url);
-        reached.push(`${url.pathname}${url.search} ${request.headers.get("x-naver-client-secret") ?? "-"}`);
+        reached.push(`${url.pathname}${url.search} ${request.headers.get("x-api-key") ?? "-"}`);
         return new Response("elsewhere");
       },
     });
@@ -580,7 +580,7 @@ describe("who is named, and what is never said", () => {
       const keyed = {
         source: "OpenDART",
         redirect: "same-origin" as const,
-        headers: { "X-Naver-Client-Secret": KEY },
+        headers: { "X-Api-Key": KEY },
       };
       expect(await http.text(`${base}/same?crtfc_key=${KEY}`, keyed)).toBe("landed at /landed");
       const refused = await failure(http.get(`${base}/away?crtfc_key=${KEY}`, keyed));

@@ -40,6 +40,8 @@ export const cases: FixtureCase[] = [
   articles("artlist-market", gdeltQuery({})),
   articles("artlist-chip-export-controls", gdeltQuery({ words: "chip export controls" })),
   articles("artlist-tariffs-bearish", gdeltQuery({ words: "tariffs", tone: "bearish" })),
+  // Words in Korean (the setup with Korea's keys, test/fork/data/korea-routes.test.ts).
+  articles("artlist-samsung-semiconductor", gdeltQuery({ words: "삼성전자 반도체" })),
   // Nothing matching, and a search GDELT refuses in words (a keyword too short).
   articles("artlist-empty", gdeltQuery({ words: "zzqx vvkj" })),
   { ...articles("refusal-keyword", "an"), file: "refusal-keyword.txt" },

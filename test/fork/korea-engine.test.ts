@@ -3,9 +3,9 @@
 // Added in this fork of TradingAgents 1.0.0.
 /**
  * One question to an engine set up with Korea's keys, end to end and offline: createEngine builds the fork's
- * providers from `publicData` (DART_API_KEY, ECOS_API_KEY, KOSIS_API_KEY, DATA_GO_KR_API_KEY and Naver's id
- * and secret, no SEC_USER_AGENT) over a fetch that answers the sources from fixtures (data/korea-routes.test.ts)
- * and passes the model's requests to a scripted model on 127.0.0.1. The model finds Samsung Electronics by its
+ * providers from `publicData` (DART_API_KEY, ECOS_API_KEY, KOSIS_API_KEY and DATA_GO_KR_API_KEY, no
+ * SEC_USER_AGENT) over a fetch that answers the sources from fixtures (data/korea-routes.test.ts) and passes
+ * the model's requests to a scripted model on 127.0.0.1. The model finds Samsung Electronics by its
  * Korean name with find_instrument, then reads, for the key it was given, the statements, the filings, and the
  * section of the first filing listed; then it answers. Every call succeeds, from OpenDART; no key is in any
  * request the model receives, and each key reaches only its own source.

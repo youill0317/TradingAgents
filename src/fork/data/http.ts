@@ -301,8 +301,8 @@ export type HttpOptions = {
   /**
    * Which redirects are followed: every one (`follow`, fetch's own way, the default), or only those to the
    * request's own origin (`same-origin`, which Korea's sources and the recorder pass for a request carrying a
-   * key in its address or headers): a redirect elsewhere is not followed, so the key goes nowhere but its
-   * source, and the request is unavailable.
+   * key in its address): a redirect elsewhere is not followed, so the key goes nowhere but its source, and
+   * the request is unavailable.
    */
   redirect?: "follow" | "same-origin";
   /**

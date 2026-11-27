@@ -30,8 +30,7 @@ key or plan, and keeps your sessions on this computer.
   reports, and finding Korean companies by their Korean or English names; the FSC's official KRX end-of-day
   prices on data.go.kr (`DATA_GO_KR_API_KEY`) when Yahoo does not answer for a Korean listing; the Bank of
   Korea's ECOS (`ECOS_API_KEY`) and Statistics Korea's KOSIS (`KOSIS_API_KEY`) for Korean economic series and
-  the Bank of Korea's base rate among the central banks; Naver's news search (`NAVER_CLIENT_ID` and
-  `NAVER_CLIENT_SECRET`) for news searched in Korean.
+  the Bank of Korea's base rate among the central banks.
 - **Web search**: `web_search`, through Anthropic's or OpenAI's own web search, or Google's when named
   ([below](#web-search)).
 - **Compute**: arithmetic, statistics, returns and risk, correlation and beta, technical indicators,
@@ -46,11 +45,6 @@ With `DART_API_KEY` and no `SEC_USER_AGENT`, Risk Analysis is offered, with stat
 listings; Equity Research and Quant Research also use the sector screen, which SEC EDGAR serves. `/agents`
 and `/skills` show which are offered. An agent of your own is offered when the data tools it names have a
 source ([docs/usage.md](docs/usage.md#your-own-agents-and-skills)).
-
-## What is coming
-
-Earnings history and EPS trends, and wider catalogs of economic series. `BEA_API_KEY` and `EIA_API_KEY` are
-read already, for the U.S. Bureau of Economic Analysis's and Energy Information Administration's data.
 
 ## Build and install
 

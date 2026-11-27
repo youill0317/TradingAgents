@@ -66,13 +66,13 @@ src/fork/data/
     fsc.ts          the FSC's stock prices on data.go.kr (the key in either spelling, either address)
     ecos.ts         the Bank of Korea's ECOS: StatisticSearch, its item and table lists
     kosis.ts        Statistics Korea's KOSIS: parameter data, search, items
-    naver.ts        Naver's news search
   util/
     zip.ts          readZip(): stored and deflated entries, checked (no ZIP64, no encryption)
     xml.ts          parseXml() and helpers: tolerant, never throws, no recursion, linear time
     html.ts         htmlToText(): blocks to lines, tables to tab-separated rows, scripts and ix:header left out
     entities.ts     character references for both
     csv.ts          readCsv(), csvTable(), numberOf(): the agencies' CSV files (RFC 4180, read by header)
+    hangul.ts       hasHangul(): whether a text holds Hangul (a search in Korean)
   providers/        one module per routes.ts key, each exporting a stable factory:
     yahoo.ts        yahooComposite(deps)       "Yahoo"
     fsc.ts          fscProvider(deps)          "FSC"
@@ -116,11 +116,10 @@ DART_API_KEY, a Korean listing's statements, filings, sections and insider view 
 it wherever they are declared, and so does a search in Hangul that finds nothing); with
 DATA_GO_KR_API_KEY, `fscProvider` a Korean listing's quote and daily prices after Yahoo; with ECOS_API_KEY and
 KOSIS_API_KEY, `statisticsProvider` their series (and instrument search their catalog entries), and with
-ECOS_API_KEY `marketsProvider` the Bank of Korea's row of central_banks; with NAVER_CLIENT_ID and
-NAVER_CLIENT_SECRET, `newsProvider` Naver's news search beside GDELT for words in Korean. So the engine offers
-macro with the 16 built-in skills without SEC_USER_AGENT and DART_API_KEY, macro and risk with DART_API_KEY and
-no SEC_USER_AGENT (equity and quant also name the sector screen), and all four built-in agents with
-SEC_USER_AGENT (`test/fork/gating.test.ts`).
+ECOS_API_KEY `marketsProvider` the Bank of Korea's row of central_banks. So the engine offers macro with the 16
+built-in skills without SEC_USER_AGENT and DART_API_KEY, macro and risk with DART_API_KEY and no SEC_USER_AGENT
+(equity and quant also name the sector screen), and all four built-in agents with SEC_USER_AGENT
+(`test/fork/gating.test.ts`).
 
 ### Who changes what
 
@@ -213,35 +212,29 @@ A Korean listing the composite cannot answer must pass the call on (`notFound: "
 its environment variable, else from the `"data"` object in `credentials.json` under the same name
 (`{"data": {"FRED_API_KEY": "..."}}`):
 
-| Field                                | Variable                                                                                                       |
-| ------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
-| `secUserAgent`                       | `SEC_USER_AGENT` (a name and an email: SEC's fair-access rule; not a secret, but personal)                     |
-| `fredKey`                            | `FRED_API_KEY`                                                                                                 |
-| `dartKey`                            | `DART_API_KEY`                                                                                                 |
-| `ecosKey`                            | `ECOS_API_KEY`                                                                                                 |
-| `kosisKey`                           | `KOSIS_API_KEY`                                                                                                |
-| `dataGoKrKey`                        | `DATA_GO_KR_API_KEY`                                                                                           |
-| `naverClientId`, `naverClientSecret` | `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET`                                                                       |
-| `beaKey`, `eiaKey`                   | `BEA_API_KEY`, `EIA_API_KEY`                                                                                   |
-| `cacheDir`                           | `<home>/cache/fork-data` with `TRADINGAGENTS_HOME`, else `${XDG_CACHE_HOME:-~/.cache}/tradingagents/fork-data` |
+| Field          | Variable                                                                                                       |
+| -------------- | -------------------------------------------------------------------------------------------------------------- |
+| `secUserAgent` | `SEC_USER_AGENT` (a name and an email: SEC's fair-access rule; not a secret, but personal)                     |
+| `fredKey`      | `FRED_API_KEY`                                                                                                 |
+| `dartKey`      | `DART_API_KEY`                                                                                                 |
+| `ecosKey`      | `ECOS_API_KEY`                                                                                                 |
+| `kosisKey`     | `KOSIS_API_KEY`                                                                                                |
+| `dataGoKrKey`  | `DATA_GO_KR_API_KEY`                                                                                           |
+| `cacheDir`     | `<home>/cache/fork-data` with `TRADINGAGENTS_HOME`, else `${XDG_CACHE_HOME:-~/.cache}/tradingagents/fork-data` |
 
 `dartKey` is read by the filers provider (OpenDART's statements, filings and insider reports) and instrument
 search (OpenDART's company list), `ecosKey` by the statistics and markets providers, `kosisKey` by the
-statistics provider, `dataGoKrKey` by the FSC provider, `naverClientId` and `naverClientSecret` by the news
-provider. `beaKey` and `eiaKey` are read for sources this version does not have (BEA, EIA), and
-`docs/configuration.md` says so.
+statistics provider, `dataGoKrKey` by the FSC provider.
 
 The notes it returns are said as the session starts, like web_search's: SEC_USER_AGENT unset (nothing is read
 from SEC EDGAR, how to set it, that it is SEC's fair-access rule and not a secret), or set without an email; a
 setting set where it cannot be used, said as such and not used: on more than one line, not text, empty in the
-file, for SEC_USER_AGENT with characters other than plain ASCII (a User-Agent cannot carry them), or for
-NAVER_CLIENT_ID and NAVER_CLIENT_SECRET, sent in request headers, with a character a header cannot carry (one
-above U+00FF, which fetch refuses, or a control character other than tab). An environment value that cannot be
-used gives way to the one under `"data"`, and the note says so; when SEC_USER_AGENT has no usable value at
-all, a note says nothing is read from SEC EDGAR. A `"data"` that is not an object, or a name in it the app
-does not read, is said too. A note names a setting, never its value. `secretsOf(config)` lists every value
-that must never be said (each key, data.go.kr's in both the spellings it hands keys out in, and the SEC
-User-Agent); the HTTP client and the cache are built with it.
+file, or for SEC_USER_AGENT with characters other than plain ASCII (a User-Agent cannot carry them). An
+environment value that cannot be used gives way to the one under `"data"`, and the note says so; when
+SEC_USER_AGENT has no usable value at all, a note says nothing is read from SEC EDGAR. A `"data"` that is not
+an object, or a name in it the app does not read, is said too. A note names a setting, never its value.
+`secretsOf(config)` lists every value that must never be said (each key, data.go.kr's in both the spellings it
+hands keys out in, and the SEC User-Agent); the HTTP client and the cache are built with it.
 
 A capability whose source needs a setting that is not there is not declared when the whole capability rests
 on it: without SEC_USER_AGENT the SEC-backed capabilities (statements, filings, screens) are not declared,
@@ -281,7 +274,7 @@ What a request does:
 - A host with a published rate (`HOST_RULES`) waits for its turn: SEC 10 requests a second shared by every
   `*.sec.gov` host, FRED's API (`api.stlouisfed.org`) 120 a minute, FRED's website (`fred.stlouisfed.org`,
   the keyless download) one a second (its robots.txt's `Crawl-delay: 1`), GDELT's API one every 5 s, KOSIS
-  (`kosis.kr`) 200 a minute. OpenDART, ECOS, data.go.kr and Naver publish no such number; their daily quotas
+  (`kosis.kr`) 200 a minute. OpenDART, ECOS and data.go.kr publish no such number; their daily quotas
   are theirs to enforce. Turns are
   given in the order asked; a start is counted when it is actually made, and a request whose timer woke
   late waits until the window holds room, so starts never exceed the published rate in any window. A
@@ -303,7 +296,7 @@ What a request does:
 - One retry, after `RETRY_PAUSE_MS` (1 s), of a dropped connection or a 5xx. A request that ran past its
   deadline, or was cancelled, is not retried.
 - Redirects are followed as fetch follows them, unless the caller passes `redirect: "same-origin"`, as Korea's
-  sources do with their keys in the address or headers (OpenDART, the FSC, ECOS, KOSIS, Naver), and the
+  sources do with their keys in the address (OpenDART, the FSC, ECOS, KOSIS), and the
   recorder for any address holding a key: a redirect to the request's own origin (scheme, host and port) is
   followed, up to the Fetch standard's 20; one elsewhere is not, and the request is `unavailable`, its address
   unsaid, so their keys reach nothing but their sources. FRED's API, whose address carries `FRED_API_KEY`,
@@ -634,8 +627,8 @@ expect(fetch.unmatched).toEqual([]);
   there. A data tool added without a call there fails it too. Then, with Korea's keys too
   (`korea-routes.test.ts`), Samsung Electronics through every Korean source the same way: statements,
   filings, sections and insider reports (OpenDART), quote and daily prices (the FSC, Yahoo failing), an ECOS
-  and a KOSIS series, central_banks' Bank of Korea row, news for Korean words (Naver and GDELT) and
-  find_instrument by its Korean name; no key is said in any of them.
+  and a KOSIS series, central_banks' Bank of Korea row, news for Korean words (GDELT) and find_instrument by
+  its Korean name; no key is said in any of them.
 - `test/fork/gating.test.ts` pins the agents and skills an engine offers: as built (`AS_BUILT`: macro with
   the 16 built-in skills), and with the fork's providers as each configuration builds them over a fixture
   fetch (macro without SEC_USER_AGENT and DART_API_KEY; macro and risk with DART_API_KEY, or every Korean key,
