@@ -121,7 +121,7 @@ Each agent is one file, `~/.config/tradingagents/agents/<name>.md`; a file named
 name: charts
 label: Chart reader
 description: How one stock has traded: trend, moving averages and momentum.
-tools: [quote, price_history]
+tools: [quote, price_history, technicals]
 steps: 8
 ---
 

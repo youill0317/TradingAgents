@@ -223,8 +223,9 @@ its environment variable, else from the `"data"` object in `credentials.json` un
 | `cacheDir`     | `<home>/cache/fork-data` with `TRADINGAGENTS_HOME`, else `${XDG_CACHE_HOME:-~/.cache}/tradingagents/fork-data` |
 
 `dartKey` is read by the filers provider (OpenDART's statements, filings and insider reports) and instrument
-search (OpenDART's company list), `ecosKey` by the statistics and markets providers, `kosisKey` by the
-statistics provider, `dataGoKrKey` by the FSC provider.
+search (OpenDART's company list), `ecosKey` by the statistics and markets providers and instrument search,
+`kosisKey` by the statistics provider and instrument search, `dataGoKrKey` by the FSC provider and the Yahoo
+composite.
 
 The notes it returns are said as the session starts, like web_search's: SEC_USER_AGENT unset (nothing is read
 from SEC EDGAR, how to set it, that it is SEC's fair-access rule and not a secret), or set without an email; a
